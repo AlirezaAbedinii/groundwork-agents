@@ -26,7 +26,7 @@ def test_defaults_load_without_any_env() -> None:
     assert s.embedding_provider == "openai"
     assert s.generation_model == "gpt-4o-mini"
     assert s.embedding_model == "text-embedding-3-small"
-    assert s.default_mode == "dense"
+    assert s.default_mode == "hybrid"
     assert s.top_k == 10
     assert s.dedup_cosine_threshold == 0.95
     assert s.openai_api_key == ""  # no secret needed to construct

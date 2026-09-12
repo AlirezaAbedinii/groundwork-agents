@@ -91,7 +91,8 @@ class Settings(BaseSettings):
 
     # -- Retrieval / fusion / rerank ---------------------------------------
     default_mode: RetrievalMode = Field(
-        default="dense", description="Default retrieval mode (MVP=dense, V1 adds hybrid)."
+        default="hybrid",
+        description="Default retrieval mode: hybrid (dense + BM25 + rerank) or dense-only.",
     )
     top_k: int = Field(default=10, ge=1, description="Top-k chunks retrieved per source.")
     rerank_candidates: int = Field(

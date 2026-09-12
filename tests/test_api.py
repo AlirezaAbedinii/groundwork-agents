@@ -73,15 +73,9 @@ class FakePipeline:
 def client(tmp_path):
     """App wired with a fake pipeline + a real (temp) trace store."""
     settings = Settings(_env_file=None)
-
-    def factory(mode: str):
-        if mode == "hybrid":
-            raise NotImplementedError("Hybrid retrieval is a V1 feature; use mode='dense'.")
-        return FakePipeline(mode, _answered)
-
     app = create_app(
         settings,
-        pipeline_factory=factory,
+        pipeline_factory=lambda mode: FakePipeline(mode, _answered),
         trace_store=TraceStore(tmp_path / "traces.sqlite"),
     )
     return TestClient(app)
@@ -98,7 +92,7 @@ def test_ask_happy_path_returns_documented_schema(client: TestClient) -> None:
 
     assert body["answer"].endswith("[1].")
     assert body["refused"] is False
-    assert body["mode"] == "dense"
+    assert body["mode"] == "hybrid"  # no mode in the request -> settings.default_mode
     assert body["confidence"] == pytest.approx(0.88)
     assert body["confidence_breakdown"]["citation_coverage"] == 1.0
     assert body["confidence_breakdown"]["verified"] is True
