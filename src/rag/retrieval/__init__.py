@@ -3,8 +3,9 @@
 The public entrypoint is :func:`build_retriever`, which routes on ``mode``:
 
 * ``dense``  — embed query -> Chroma top-k (cosine).
-* ``hybrid`` — dense + BM25 in parallel -> Reciprocal Rank Fusion (configurable
-  weights) -> local cross-encoder rerank (top-20 -> top-5 by default).
+* ``hybrid`` — dense and BM25 candidate lists -> Reciprocal Rank Fusion
+  (configurable weights) -> local cross-encoder rerank (top-20 -> top-5 by
+  default).
 
 Both retrievers expose the same
 ``retrieve(query, top_k, stopwatch) -> list[ScoredChunk]`` interface so callers
