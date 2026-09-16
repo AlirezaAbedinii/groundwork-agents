@@ -25,6 +25,8 @@ def test_defaults_load_without_any_env() -> None:
     assert s.llm_provider == "openai"
     assert s.embedding_provider == "openai"
     assert s.generation_model == "gpt-4o-mini"
+    assert s.eval_judge_model == "gpt-4o"
+    assert s.eval_judge_model != s.generation_model  # the generator must not grade itself
     assert s.embedding_model == "text-embedding-3-small"
     assert s.default_mode == "hybrid"
     assert s.top_k == 10
@@ -108,3 +110,15 @@ def test_offline_embeddings_need_no_openai_key() -> None:
 def test_get_settings_is_cached() -> None:
     assert get_settings() is get_settings()
     assert isinstance(get_settings().corpus_dir, Path)
+
+
+def test_judge_client_uses_eval_judge_model_on_same_provider() -> None:
+    """The eval judge is built from eval_judge_model, not generation_model."""
+    from rag.generation.llm_client import OpenAIChatClient, get_chat_client
+
+    s = _settings(openai_api_key="sk-test", generation_model="gpt-4o-mini")
+    generator = get_chat_client(s)
+    judge = get_chat_client(s, model=s.eval_judge_model)
+    assert isinstance(generator, OpenAIChatClient) and isinstance(judge, OpenAIChatClient)
+    assert generator.model == "gpt-4o-mini"
+    assert judge.model == "gpt-4o"

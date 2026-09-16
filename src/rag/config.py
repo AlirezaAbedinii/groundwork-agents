@@ -68,6 +68,11 @@ class Settings(BaseSettings):
         default="gpt-4o-mini",
         description="Generation model id (cheap tier in dev, strong tier for final eval).",
     )
+    eval_judge_model: str = Field(
+        default="gpt-4o",
+        description="Model id for the evaluation judge (correctness, faithfulness, citation "
+        "checks). Deliberately not generation_model, so the generator never grades itself.",
+    )
     embedding_model: str = Field(
         default="text-embedding-3-small",
         description="Embedding model id (or a sentence-transformers id for offline).",

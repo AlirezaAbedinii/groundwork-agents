@@ -113,14 +113,17 @@ class AnthropicChatClient:
         return ChatResult(text=text, usage=usage)
 
 
-def get_chat_client(settings: Settings | None = None) -> ChatClient:
-    """Build the configured single-provider chat client, validating its key."""
+def get_chat_client(settings: Settings | None = None, *, model: str | None = None) -> ChatClient:
+    """Build the configured single-provider chat client, validating its key.
+
+    ``model`` overrides ``settings.generation_model`` on the same provider — used
+    to build the evaluation judge from ``settings.eval_judge_model``.
+    """
     settings = settings or get_settings()
     settings.validate_required_keys()
+    model = model or settings.generation_model
     if settings.llm_provider == "openai":
-        return OpenAIChatClient(model=settings.generation_model, api_key=settings.openai_api_key)
+        return OpenAIChatClient(model=model, api_key=settings.openai_api_key)
     if settings.llm_provider == "anthropic":
-        return AnthropicChatClient(
-            model=settings.generation_model, api_key=settings.anthropic_api_key
-        )
+        return AnthropicChatClient(model=model, api_key=settings.anthropic_api_key)
     raise ValueError(f"Unknown llm_provider: {settings.llm_provider!r}")

@@ -299,7 +299,8 @@ def _run_real(records: list[GoldenRecord], settings: Settings, mode: str) -> Eva
     from rag.pipeline import RAGPipeline
 
     pipeline = RAGPipeline.from_settings(settings, mode=mode)
-    judge = get_chat_client(settings)  # single provider; judge shares the provider
+    # Same provider as generation, but a different model: the generator never grades itself.
+    judge = get_chat_client(settings, model=settings.eval_judge_model)
     return evaluate(records, pipeline, judge)
 
 

@@ -90,7 +90,7 @@ def _evaluate_config(settings: Settings, mode: str, records) -> EvalReport:
     from rag.pipeline import RAGPipeline
 
     pipeline = RAGPipeline.from_settings(settings, mode=mode)
-    judge = get_chat_client(settings)
+    judge = get_chat_client(settings, model=settings.eval_judge_model)
     return evaluate(records, pipeline, judge)
 
 
