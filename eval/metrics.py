@@ -7,10 +7,13 @@ Two kinds of metric live here:
   ``rag.generation.llm_client.ChatClient``), so tests inject a scripted fake.
   Metrics: **correctness** (answer vs the hand-written ``expected_answer``) and
   **faithfulness** (is every claim supported by the retrieved context?).
-* **Deterministic** — no LLM involved. Metrics: **retrieval relevance** (was a
-  golden ``supporting_source`` present in the top-k retrieved chunks?) and
-  **citation accuracy** (share of citations the verification judge marked
-  supported — computed by the pipeline at answer time, tallied here).
+  **Citation accuracy** is judge-based too: every resolved citation is
+  re-verified against its cited chunk by the *eval* judge. The pipeline's own
+  verdicts (the generation model checking its own citations at answer time)
+  are tallied separately as ``citation_accuracy_self`` so the gap between the
+  two — the self-grading bias — is visible in every report.
+* **Deterministic** — no LLM involved. Metric: **retrieval relevance** (was a
+  golden ``supporting_source`` present in the top-k retrieved chunks?).
 
 Each returns a :class:`MetricResult` with a normalized ``score`` in [0, 1] and a
 boolean ``passed`` (judge metrics also carry the raw 1–5 rating).
@@ -20,6 +23,8 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from typing import Protocol
+
+from rag.generation.citations import verify_citations
 
 # A rating at or above this (on the 1–5 judge scale) counts as a pass.
 PASS_THRESHOLD = 4
@@ -165,14 +170,20 @@ def score_retrieval_relevance(
     )
 
 
-def score_citation_accuracy(citations: list) -> MetricResult | None:
-    """Share of judged citations marked supported (from pipeline verification).
+def score_citation_accuracy(
+    citations: list, *, name: str = "citation_accuracy"
+) -> MetricResult | None:
+    """Share of judged citations marked supported — a tally of ``supported`` flags.
 
     Citation objects need ``resolved`` and ``supported`` attributes
     (``rag.generation.citations.Citation`` satisfies this). Unresolved
     citations count against accuracy — citing a chunk that was never retrieved
     is an accuracy failure, not a gap. Returns ``None`` when there are no
-    citations or verification never ran (all ``supported`` are None).
+    citations or nothing was verified (all ``supported`` are None).
+
+    Called directly on the pipeline's citations this reports the pipeline's
+    *own* verdicts (use ``name="citation_accuracy_self"``); see
+    :func:`score_citation_accuracy_judged` for the independent number.
     """
     if not citations:
         return None
@@ -182,9 +193,27 @@ def score_citation_accuracy(citations: list) -> MetricResult | None:
     good = sum(1 for c in judged if c.resolved and c.supported)
     score = good / len(judged)
     return MetricResult(
-        name="citation_accuracy",
+        name=name,
         score=score,
         passed=score >= 1.0,
         rating=None,
         detail=f"{good}/{len(judged)} citations supported",
     )
+
+
+def score_citation_accuracy_judged(
+    answer: str, citations: list, contexts: list, judge: Judge
+) -> MetricResult | None:
+    """Re-verify every resolved citation with the *eval* judge, then tally.
+
+    Independent of the ``supported`` flags the pipeline set at answer time (the
+    generation model grading its own citations): the same claim-vs-chunk prompt
+    is re-run through ``judge``, so the difference between this and the
+    ``citation_accuracy_self`` tally is the self-grading bias. ``contexts`` must
+    be the ranked list the answer's ``[n]`` indices refer to
+    (``AnswerResult.contexts``). Returns ``None`` when there are no citations.
+    """
+    if not citations:
+        return None
+    verified, _judge_usage = verify_citations(answer, citations, contexts, judge)
+    return score_citation_accuracy(verified)

@@ -40,6 +40,7 @@ from eval.metrics import (  # noqa: E402
     MetricResult,
     refusal_correctness,
     score_citation_accuracy,
+    score_citation_accuracy_judged,
     score_correctness,
     score_faithfulness,
     score_retrieval_relevance,
@@ -70,7 +71,8 @@ class RecordEval:
     correctness: MetricResult
     faithfulness: MetricResult | None
     retrieval_relevance: MetricResult | None
-    citation_accuracy: MetricResult | None
+    citation_accuracy: MetricResult | None  # eval-judge re-verification
+    citation_accuracy_self: MetricResult | None  # the pipeline's own verdicts
     cost_usd: float
     total_ms: float
     timings_ms: dict = field(default_factory=dict)
@@ -103,6 +105,9 @@ class EvalReport:
                         ),
                         "citation_accuracy": (
                             asdict(r.citation_accuracy) if r.citation_accuracy else None
+                        ),
+                        "citation_accuracy_self": (
+                            asdict(r.citation_accuracy_self) if r.citation_accuracy_self else None
                         ),
                         "cost_usd": round(r.cost_usd, 6),
                         "total_ms": round(r.total_ms, 3),
@@ -155,9 +160,17 @@ def evaluate(records: list[GoldenRecord], answerer, judge: Judge) -> EvalReport:
         faithfulness = (
             None if answer.refused else score_faithfulness(answer.answer, context, judge)
         )
-        # Deterministic metrics: top-k hit + verified-citation share.
         relevance = score_retrieval_relevance(rec.supporting_sources, answer.contexts)
-        accuracy = None if answer.refused else score_citation_accuracy(answer.citations)
+        # Citation accuracy twice: the eval judge re-checks every citation against its
+        # chunk (headline), and the pipeline's own answer-time verdicts are tallied as
+        # "self" so the gap between the two is visible.
+        if answer.refused:
+            accuracy = accuracy_self = None
+        else:
+            accuracy = score_citation_accuracy_judged(
+                answer.answer, answer.citations, answer.contexts, judge
+            )
+            accuracy_self = score_citation_accuracy(answer.citations, name="citation_accuracy_self")
 
         results.append(
             RecordEval(
@@ -168,6 +181,7 @@ def evaluate(records: list[GoldenRecord], answerer, judge: Judge) -> EvalReport:
                 faithfulness=faithfulness,
                 retrieval_relevance=relevance,
                 citation_accuracy=accuracy,
+                citation_accuracy_self=accuracy_self,
                 cost_usd=answer.cost_usd,
                 total_ms=answer.timings_ms.get("total_ms", 0.0),
                 timings_ms=dict(answer.timings_ms),
@@ -182,6 +196,9 @@ def _aggregate(results: list[RecordEval]) -> EvalReport:
     faith = [r.faithfulness.score for r in results if r.faithfulness is not None]
     relevance = [r.retrieval_relevance.score for r in results if r.retrieval_relevance]
     accuracy = [r.citation_accuracy.score for r in results if r.citation_accuracy]
+    accuracy_self = [
+        r.citation_accuracy_self.score for r in results if r.citation_accuracy_self
+    ]
     costs = [r.cost_usd for r in results]
 
     # Per-stage latency series across all evaluated questions -> P50/P95/P99.
@@ -201,6 +218,8 @@ def _aggregate(results: list[RecordEval]) -> EvalReport:
         "retrieval_relevance_n": len(relevance),
         "citation_accuracy_mean": _mean(accuracy),
         "citation_accuracy_n": len(accuracy),
+        "citation_accuracy_self_mean": _mean(accuracy_self),
+        "citation_accuracy_self_n": len(accuracy_self),
         "answered": sum(1 for r in results if not r.refused),
         "refused": sum(1 for r in results if r.refused),
         "total_cost_usd": round(sum(costs), 6),
@@ -238,8 +257,12 @@ def print_summary(report: EvalReport) -> None:
     print(
         f"  retrieval_relevance rate={agg['retrieval_relevance_rate']:.3f}"
         f" (n={agg['retrieval_relevance_n']})"
-        f"  citation_accuracy mean={agg['citation_accuracy_mean']:.3f}"
+    )
+    print(
+        f"  citation_accuracy  judge={agg['citation_accuracy_mean']:.3f}"
         f" (n={agg['citation_accuracy_n']})"
+        f"  pipeline-self={agg['citation_accuracy_self_mean']:.3f}"
+        f" (n={agg['citation_accuracy_self_n']})"
     )
     print(f"  answered={agg['answered']}  refused={agg['refused']}")
     total_p = agg["latency_ms"].get("total_ms", {})
@@ -289,7 +312,10 @@ def _run_smoke(records: list[GoldenRecord]) -> EvalReport:
 
     class FakeJudge:
         def complete(self, system: str, user: str) -> ChatResult:
-            return ChatResult("Rating: 5", TokenUsage(50, 5))
+            # Citation re-verification expects a SUPPORTED/UNSUPPORTED verdict;
+            # the rating metrics expect "Rating: N".
+            verdict = "SUPPORTED" if "UNSUPPORTED" in system else "Rating: 5"
+            return ChatResult(verdict, TokenUsage(50, 5))
 
     return evaluate(subset, FakeAnswerer(), FakeJudge())
 
