@@ -19,6 +19,7 @@ def _report(correctness: float, relevance: float, cost: float, p95: float) -> Ev
             "faithfulness_mean": 0.9,
             "retrieval_relevance_rate": relevance,
             "citation_accuracy_mean": 0.8,
+            "citation_accuracy_self_mean": 0.9,
             "refused": 3,
             "mean_cost_usd": cost,
             "latency_ms": {"total_ms": {"p50": p95 / 2, "p95": p95, "p99": p95 * 1.2}},
@@ -37,6 +38,8 @@ def test_comparison_rows_pull_the_right_numbers_per_column() -> None:
 
     assert by_label["Answer correctness (mean)"] == ["0.700", "0.850"]
     assert by_label["Retrieval relevance"] == ["0.600", "0.900"]
+    assert by_label["Citation accuracy (eval judge)"] == ["0.800", "0.800"]
+    assert by_label["Citation accuracy (pipeline self-check)"] == ["0.900", "0.900"]
     assert by_label["Mean cost / query (USD)"] == ["0.001100", "0.001300"]
     assert by_label["P95 total latency (ms)"] == ["900.0", "1400.0"]
 
