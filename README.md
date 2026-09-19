@@ -14,7 +14,10 @@
 > Every number in this README was produced by the repo's own evaluation
 > harness ([how to reproduce](#reproducing-the-numbers)) and pasted from its
 > report — measured with `gpt-4o-mini` as both generator and judge, citation
-> verification on, on 2026-07-07.
+> verification on, on 2026-07-07. The harness has since moved to a separate
+> judge model that re-verifies every citation itself (see
+> [Evaluation results](#evaluation-results)); these numbers predate that change
+> and will be re-measured.
 
 A production-grade **Retrieval-Augmented Generation** service: it ingests
 multi-format documentation, retrieves the most relevant passages, and generates
@@ -113,9 +116,21 @@ questions, questions with **no answer in the corpus** (the system must refuse),
 and ambiguous questions. Ground-truth answers are human-written and verified —
 never LLM-generated. See [`eval/golden/SCHEMA.md`](eval/golden/SCHEMA.md).
 
-> Numbers below are produced by `eval/run_eval.py` / `eval/compare.py` (judge:
-> `gpt-4o-mini`; generation: `gpt-4o-mini`; citation verification on) and are
-> pasted verbatim from `eval/reports/comparison.md`.
+**The judge is not the generator.** Grading uses a separate model
+(`EVAL_JUDGE_MODEL`, default `gpt-4o`) rather than the generation model
+(`gpt-4o-mini`), so the generator never scores its own output. **Citation
+accuracy is judge-verified**: the eval judge re-checks every citation against
+the chunk it cites, using the same claim-vs-source prompt the pipeline uses at
+answer time but a different model. The pipeline's own answer-time verdicts are
+still tallied, as `citation_accuracy_self`, and every report carries both
+numbers so the self-grading gap is visible rather than hidden.
+
+> The tables below were measured **before** that change — `gpt-4o-mini` as
+> both generator and judge, and citation accuracy taken from the pipeline's
+> own verification (what the harness now reports as `citation_accuracy_self`).
+> They are pasted verbatim from the `eval/reports/comparison.md` of that run
+> and will be re-measured with the separate judge; expect the citation numbers
+> in particular to move.
 
 ### Hybrid vs dense-only
 
@@ -124,7 +139,7 @@ never LLM-generated. See [`eval/golden/SCHEMA.md`](eval/golden/SCHEMA.md).
 | Answer correctness (mean) | 0.769 | **0.896** |
 | Faithfulness (mean) | 1.000 | 1.000 |
 | Retrieval relevance | 1.000 | 1.000 |
-| Citation accuracy | 0.932 | **0.975** |
+| Citation accuracy (pipeline self-check) | 0.932 | **0.975** |
 | Correct refusals (11 no-answer Qs) | 0 / 11 | **8 / 11** |
 | Mean cost / query (USD) | 0.000301 | **0.000196** |
 | P95 total latency (ms) | 7321 | 8025 |
@@ -149,7 +164,7 @@ discriminating metrics are correctness, refusals, and citation accuracy.
 | Answer correctness (mean) | 0.896 | 0.891 | 0.891 |
 | Faithfulness (mean) | 1.000 | 1.000 | 1.000 |
 | Retrieval relevance | 1.000 | 1.000 | 1.000 |
-| Citation accuracy | 0.975 | **0.988** | 0.954 |
+| Citation accuracy (pipeline self-check) | 0.975 | **0.988** | 0.954 |
 | Mean cost / query (USD) | 0.000196 | 0.000197 | 0.000194 |
 | P95 total latency (ms) | 6748 | 6839 | **5097** |
 
@@ -221,7 +236,8 @@ is verification batching, not retrieval.
   context they were generated from; citations pointing outside the retrieved
   set are flagged, and an LLM-as-judge pass confirms each cited chunk actually
   supports its claim (unsupported ones are surfaced, and lower the composite
-  confidence).
+  confidence). That answer-time pass uses the generation model, so the eval
+  harness repeats it with a separate judge model and reports both.
 - **One LLM provider** (OpenAI *or* Anthropic behind one interface) — no
   multi-provider routing. **File-based Chroma** — zero extra infrastructure.
   **Streamlit, not React; no auth; no streaming** — deliberately out of scope to
