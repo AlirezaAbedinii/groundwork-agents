@@ -32,7 +32,7 @@ Dockerfiles and Compose stack. The root holds only what spans both: the CI
 workflow (one job per service, run from the service directory), a Makefile that
 delegates to the services, the Dependabot configuration and the README.
 
-The old repositories are archived, not deleted, with a note pointing here.
+The original repositories stay online as they are; development continues here.
 
 ## Consequences
 
@@ -48,15 +48,15 @@ The old repositories are archived, not deleted, with a note pointing here.
 - CI runs both services on Python 3.12. The retrieval service's Dockerfile still
   builds from `python:3.11-slim`; it moves to 3.12 when the images are rebuilt
   for deployment in Phase 4, so that CI tests the interpreter the images ship.
-- Links into the archived repositories stay valid, since their hashes are
-  unchanged.
+- The original repositories keep their hashes, so links into them stay valid,
+  and every one of their commits is also reachable here under `services/`.
 
 ## Alternatives
 
 - **Rewrite the histories with `git filter-repo`** so every original commit
   already places its files under the prefix. Path-scoped `git log` would then
   work without flags, but every hash changes and the imported history no longer
-  matches the archived repositories.
+  matches the original repositories.
 - **Squashed import** (`git subtree add --squash`): one commit per service and
   no history. Rejected for the same reason: the history is part of the record.
 - **Three repositories**, the two services plus a platform repository for MCP,
