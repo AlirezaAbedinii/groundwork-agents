@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+# no trailing slash: also matches the per-service .venv symlinks
+.venv
+.pytest_cache/
+.ruff_cache/
+.env
+# local working notes, not published
+/CLAUDE.md
+/docs/plans/
