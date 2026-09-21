@@ -1,6 +1,8 @@
 # RAG Hybrid Search
 
-[![CI](https://github.com/AlirezaAbedinii/rag-hybrid-search/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaAbedinii/rag-hybrid-search/actions/workflows/ci.yml)
+The retrieval service of [Groundwork](../../README.md).
+
+[![CI](https://github.com/AlirezaAbedinii/groundwork-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaAbedinii/groundwork-agents/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230)](https://github.com/astral-sh/ruff)
 ![License](https://img.shields.io/badge/license-MIT-green)
@@ -76,7 +78,7 @@ citation verified.
 Requires Docker + an OpenAI API key.
 
 ```bash
-git clone https://github.com/AlirezaAbedinii/rag-hybrid-search.git && cd rag-hybrid-search
+git clone https://github.com/AlirezaAbedinii/groundwork-agents.git && cd groundwork-agents/services/rag
 cp .env.example .env                 # put your OPENAI_API_KEY in .env
 docker compose up -d --build         # API :8000, UI :8501
 docker compose run --rm seed         # index the sample corpus (idempotent)

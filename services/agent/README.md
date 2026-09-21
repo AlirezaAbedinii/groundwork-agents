@@ -1,6 +1,8 @@
 # Agent Orchestration System
 
-[![CI](https://github.com/AlirezaAbedinii/agent-orchestration-system/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaAbedinii/agent-orchestration-system/actions/workflows/ci.yml)
+The agent orchestrator of [Groundwork](../../README.md).
+
+[![CI](https://github.com/AlirezaAbedinii/groundwork-agents/actions/workflows/ci.yml/badge.svg)](https://github.com/AlirezaAbedinii/groundwork-agents/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
@@ -50,7 +52,7 @@ I built a multi-agent orchestration system where AI agents decompose complex tas
 ## Quickstart
 
 ```bash
-git clone https://github.com/AlirezaAbedinii/agent-orchestration-system && cd agent-orchestration-system
+git clone https://github.com/AlirezaAbedinii/groundwork-agents && cd groundwork-agents/services/agent
 cp .env.example .env              # add API keys — or set MOCK_LLM=1 for a keyless run
 docker compose up -d --build      # full stack; migrations + demo seed run automatically
 make demo                         # showcase scenario — pauses once for your approval
