@@ -344,7 +344,7 @@ The e2e suite pins the six system-level behaviors, plus a full lifecycle:
 6. **Graceful failure recovery**: a forced specialist exception retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
 7. **Full lifecycle**: the demo scenario start-to-finish with programmatic approvals — final output, memory write-back, cleared working memory, complete trace tree, non-zero computed cost.
 
-All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration suite against postgres, redis, and chroma service containers. The e2e suite needs the full compose stack, so it runs locally via `make e2e`.
+All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration and e2e suites against postgres, redis, and chroma service containers. Locally, `make e2e` runs the e2e suite against the compose services.
 
 > Note: integration/e2e tests run against the compose services and truncate state between tests — re-run `make demo` afterwards if you want showcase data back in the UIs.
 

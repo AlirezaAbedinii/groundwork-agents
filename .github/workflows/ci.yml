@@ -150,5 +150,7 @@ jobs:
                   time.sleep(3)
           PY
 
-      - name: Integration tests (mock LLM against real services)
-        run: python -m pytest tests/integration -q -m "not live" -rs
+      - name: Integration and e2e tests (mock LLM against real services)
+        # Both suites share the conftest contract (migrate, seed, truncate
+        # between tests) and need only the three service containers.
+        run: python -m pytest tests/integration tests/e2e -q -m "not live" -rs
