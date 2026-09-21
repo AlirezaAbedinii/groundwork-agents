@@ -6,13 +6,13 @@ supersedes it.
 
 | ADR | Title | Status |
 |---|---|---|
-| — | *none yet* | |
+| [0001](0001-monorepo-layout.md) | One repository for both services, imported with git subtree | accepted |
 
 ## Format
 
 `NNNN-short-title.md`, four sections:
 
-- **Context** — the situation and the constraints that forced a choice.
-- **Decision** — what was decided, in one or two sentences.
-- **Consequences** — what becomes easier, what becomes harder, what to watch.
-- **Alternatives** — what else was considered and why it lost.
+- **Context**: the situation and the constraints that forced a choice.
+- **Decision**: what was decided, in one or two sentences.
+- **Consequences**: what becomes easier, what becomes harder, what to watch.
+- **Alternatives**: what else was considered and why it lost.
