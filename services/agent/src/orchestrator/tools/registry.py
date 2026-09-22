@@ -51,8 +51,26 @@ class ToolRegistry:
         except Exception:
             return False  # let invoke() produce the proper error/logging
 
+    def tool_definitions_for(self, specialist: str) -> list[dict]:
+        """Native tool definitions (OpenAI function format) for the tools a specialist may call.
+
+        The parameters are each ToolSpec's Pydantic input schema, so the model
+        is shown exactly the contract invoke() validates arguments against.
+        """
+        return [
+            {
+                "type": "function",
+                "function": {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": spec.input_schema.model_json_schema(),
+                },
+            }
+            for spec in self.tools_for(specialist)
+        ]
+
     def describe_for(self, specialist: str) -> str:
-        """Prompt block listing the tools a specialist may call."""
+        """Prompt block listing the tools a specialist may call (legacy prompt-and-parse loop)."""
         lines = []
         for spec in self.tools_for(specialist):
             fields = ", ".join(

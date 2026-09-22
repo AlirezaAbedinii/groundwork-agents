@@ -1,6 +1,8 @@
 import pytest
+from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
 
+from orchestrator.llm.router import SPECIALISTS
 from orchestrator.tools.base import (
     InMemoryInvocationStore,
     RateLimitExceededError,
@@ -10,6 +12,7 @@ from orchestrator.tools.base import (
     ToolSpec,
     UnknownToolError,
 )
+from orchestrator.tools.defaults import build_default_registry
 from orchestrator.tools.registry import ToolRegistry
 
 
@@ -112,7 +115,31 @@ def test_handler_exception_logged_as_failure(store):
     assert store.records[0].status == "failure"
 
 
-def test_describe_for_lists_owned_tools_only(registry):
-    description = registry.describe_for("research")
-    assert "echo" in description and "msg: str" in description
-    assert registry.describe_for("writing") == "(no tools available)"
+def test_tool_definitions_cover_owned_tools_with_their_schema(registry):
+    (definition,) = registry.tool_definitions_for("research")
+    assert definition["type"] == "function"
+    assert definition["function"]["name"] == "echo"
+    assert definition["function"]["description"] == "Echo the message back"
+    parameters = definition["function"]["parameters"]
+    assert parameters["type"] == "object"
+    assert parameters["required"] == ["msg"]
+    assert parameters["properties"]["msg"]["type"] == "string"
+
+    assert registry.tool_definitions_for("writing") == []
+
+
+def test_default_tools_all_produce_native_definitions():
+    registry = build_default_registry(InMemoryInvocationStore())
+    definitions = {
+        definition["function"]["name"]: definition
+        for specialist in SPECIALISTS
+        for definition in registry.tool_definitions_for(specialist)
+    }
+    assert set(definitions) == {"web_search", "file_read", "file_write", "code_exec", "db_query", "api_call"}
+    for name, definition in definitions.items():
+        assert definition["type"] == "function", name
+        assert definition["function"]["description"], name
+        assert definition["function"]["parameters"]["type"] == "object", name
+        assert definition["function"]["parameters"]["required"], name
+        # what bind_tools runs on every tool: a well-formed definition passes through unchanged
+        assert convert_to_openai_tool(definition) == definition, name
