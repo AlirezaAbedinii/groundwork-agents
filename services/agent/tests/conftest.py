@@ -17,3 +17,10 @@ from orchestrator.main import create_app
 @pytest.fixture()
 def client() -> TestClient:
     return TestClient(create_app())
+
+
+@pytest.fixture(scope="session")
+def anyio_backend() -> str:
+    # Async tests run on the anyio pytest plugin; pin the backend so each test
+    # runs once on asyncio (trio is not installed).
+    return "asyncio"
