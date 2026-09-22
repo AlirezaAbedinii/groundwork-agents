@@ -1,10 +1,11 @@
 """Replay system.
 
-Every LLM call is recorded (llm_calls) with its full prompt and response, so
-any past execution can be re-run deterministically: the replay client serves
-recorded responses — matched by exact (agent, prompt) first, then per-agent
-order for prompts that drifted — and never touches a provider, so a strict
-replay costs zero API calls (there is no fallback to fall through to).
+Every LLM call is recorded (llm_calls) with its full prompt (the text
+rendering of the message list) and response, so any past execution can be
+re-run deterministically: the replay client serves recorded responses —
+matched by exact (agent, prompt) first, then per-agent order for prompts that
+drifted — and never touches a provider, so a strict replay costs zero API
+calls (there is no fallback to fall through to).
 
 A fork modifies one step: recorded calls strictly before step k replay as-is,
 step k's response is replaced with the human-provided text, and everything
@@ -18,8 +19,14 @@ from __future__ import annotations
 import hashlib
 import logging
 from collections import defaultdict, deque
+from dataclasses import replace
 
-from orchestrator.llm.mock import LLMResponse
+from langchain_core.messages import BaseMessage
+from pydantic import BaseModel
+
+from orchestrator.llm.messages import render_messages
+from orchestrator.llm.mock import LLMResponse, ToolCall
+from orchestrator.llm.structured import validate_output
 
 logger = logging.getLogger(__name__)
 
@@ -58,21 +65,58 @@ class ReplayLLMClient:
                 return index
         return None
 
+    async def chat(
+        self,
+        agent: str,
+        messages: list[BaseMessage],
+        *,
+        tools: list[dict] | None = None,
+        output_schema: type[BaseModel] | None = None,
+        producer_provider: str | None = None,
+    ) -> LLMResponse:
+        record = self._next(agent, render_messages(messages))
+        if record is None:
+            return await self._fallback.chat(
+                agent, messages, tools=tools, output_schema=output_schema, producer_provider=producer_provider
+            )
+        response = self._response(record)
+        if output_schema is not None:
+            response = replace(response, parsed=validate_output(response.text, output_schema))
+        return response
+
     def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
+        record = self._next(agent, prompt)
+        if record is None:
+            return self._fallback.complete(agent, prompt, producer_provider=producer_provider)
+        return self._response(record)
+
+    def _next(self, agent: str, prompt: str) -> dict | None:
+        """The next unconsumed record for this call, or None when the fallback should run."""
         index = self._pop(self._by_key[_prompt_key(agent, prompt)])
         if index is None:
             index = self._pop(self._by_agent[agent])
         if index is None:
             if self._fallback is not None:
-                return self._fallback.complete(agent, prompt, producer_provider=producer_provider)
+                return None
             raise ReplayDivergenceError(
                 f"Replay diverged: no recorded call left for agent {agent!r}"
             )
         self._consumed.add(index)
-        record = self._records[index]
+        return self._records[index]
+
+    def _response(self, record: dict) -> LLMResponse:
         if record["id"] in self._overrides:
+            # A human-provided replacement is plain text: it carries no tool
+            # calls, so it ends the tool loop for that step.
             return LLMResponse(text=self._overrides[record["id"]], model="replay:modified")
-        return LLMResponse(text=record["response"], model=f"replay:{record['model']}")
+        return LLMResponse(
+            text=record["response"],
+            tool_calls=tuple(
+                ToolCall(id=call["id"], name=call["name"], arguments=dict(call["arguments"]))
+                for call in record.get("tool_calls") or ()
+            ),
+            model=f"replay:{record['model']}",
+        )
 
 
 def create_replay_task(original_task_id: str, llm_call_id: str | None = None) -> tuple[str, str]:

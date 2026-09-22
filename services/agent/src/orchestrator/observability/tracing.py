@@ -8,11 +8,11 @@ Full LLM prompts/responses are stored in `llm_calls`, referenced by span id.
 
 Tracing is opt-in per process: nothing is exported until `setup_tracing()`
 installs the provider (the production runner does; unit tests never do, so
-their spans are no-ops). LangGraph runs nodes in worker threads where OTel
-context does not propagate, so each task run opens a root span whose context
-is kept in a task_id-keyed registry; node spans attach to it explicitly and
-everything inside a node (LLM, tool, review, memory spans) nests via normal
-context propagation.
+their spans are no-ops). LangGraph runs sync nodes in the executor and async
+nodes on the loop, and OTel context does not propagate into the executor, so
+each task run opens a root span whose context is kept in a task_id-keyed
+registry; node spans attach to it explicitly and everything inside a node
+(LLM, tool, review, memory spans) nests via normal context propagation.
 """
 
 from __future__ import annotations
@@ -25,11 +25,15 @@ from contextvars import ContextVar
 from datetime import datetime, timezone
 from functools import lru_cache
 
+from langchain_core.messages import BaseMessage
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
 from opentelemetry.trace import StatusCode
+from pydantic import BaseModel
+
+from orchestrator.llm.messages import render_messages
 
 logger = logging.getLogger(__name__)
 
@@ -220,31 +224,48 @@ class TracedLLMClient:
         self.inner = inner
         self._calls = calls
 
+    async def chat(
+        self,
+        agent: str,
+        messages: list[BaseMessage],
+        *,
+        tools: list[dict] | None = None,
+        output_schema: type[BaseModel] | None = None,
+        producer_provider: str | None = None,
+    ):
+        with child_span(f"llm:{agent}", kind="llm", agent=agent) as span:
+            response = await self.inner.chat(
+                agent, messages, tools=tools, output_schema=output_schema, producer_provider=producer_provider
+            )
+            self._record(span, agent, render_messages(messages), response)
+        return response
+
     def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
+        with child_span(f"llm:{agent}", kind="llm", agent=agent) as span:
+            response = self.inner.complete(agent, prompt, producer_provider=producer_provider)
+            self._record(span, agent, prompt, response)
+        return response
+
+    def _record(self, span, agent: str, prompt: str, response) -> None:
         from orchestrator.llm.pricing import cost_usd
 
-        with child_span(f"llm:{agent}", kind="llm", agent=agent) as span:
-            span.set_attribute("orchestrator.agent", agent)
-            response = self.inner.complete(agent, prompt, producer_provider=producer_provider)
-            cost = cost_usd(response.model, response.prompt_tokens, response.completion_tokens)
-            set_attr(span, "model", response.model)
-            set_attr(span, "prompt_tokens", response.prompt_tokens)
-            set_attr(span, "completion_tokens", response.completion_tokens)
-            set_attr(span, "cost_usd", cost)
-            if self._calls is not None:
-                span_context = span.get_span_context()
-                span_id = (
-                    format(span_context.span_id, "016x") if span_context.span_id else None
-                )
-                self._calls.record(
-                    span_id=span_id,
-                    task_id=current_task_id(),
-                    agent=agent,
-                    model=response.model,
-                    prompt=prompt,
-                    response=response.text,
-                    prompt_tokens=response.prompt_tokens,
-                    completion_tokens=response.completion_tokens,
-                    cost_usd=cost,
-                )
-        return response
+        span.set_attribute("orchestrator.agent", agent)
+        cost = cost_usd(response.model, response.prompt_tokens, response.completion_tokens)
+        set_attr(span, "model", response.model)
+        set_attr(span, "prompt_tokens", response.prompt_tokens)
+        set_attr(span, "completion_tokens", response.completion_tokens)
+        set_attr(span, "cost_usd", cost)
+        if self._calls is not None:
+            span_context = span.get_span_context()
+            span_id = format(span_context.span_id, "016x") if span_context.span_id else None
+            self._calls.record(
+                span_id=span_id,
+                task_id=current_task_id(),
+                agent=agent,
+                model=response.model,
+                prompt=prompt,
+                response=response.text,
+                prompt_tokens=response.prompt_tokens,
+                completion_tokens=response.completion_tokens,
+                cost_usd=cost,
+            )

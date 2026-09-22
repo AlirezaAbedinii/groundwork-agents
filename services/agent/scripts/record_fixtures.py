@@ -2,8 +2,8 @@
 """Capture live LLM responses as MOCK_LLM fixtures.
 
 Runs a request through the full graph against the real providers, recording
-every (agent, prompt) → response pair as ``<out>/<sha16>.json`` — the
-exact-match form the fixture player checks first (see orchestrator/llm/mock.py).
+every (agent, rendered messages) → response pair as ``<out>/<sha16>.json`` —
+the exact-match form the fixture player checks first (see orchestrator/llm/mock.py).
 Escalations are auto-approved so recording runs unattended.
 
 Requires real API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY) and the infra
@@ -31,30 +31,44 @@ class RecordingLLM:
     """Wraps the real client and writes one exact-key fixture per call."""
 
     def __init__(self, inner, out_dir: Path):
-        from orchestrator.llm.mock import fixture_key
-
         self._inner = inner
         self._out = out_dir
-        self._key = fixture_key
         self.recorded = 0
+
+    async def chat(self, agent: str, messages, *, tools=None, output_schema=None, producer_provider=None):
+        from orchestrator.llm.messages import render_messages
+
+        response = await self._inner.chat(
+            agent, messages, tools=tools, output_schema=output_schema, producer_provider=producer_provider
+        )
+        self._write(agent, render_messages(messages), response)
+        return response
 
     def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
         response = self._inner.complete(agent, prompt, producer_provider=producer_provider)
+        self._write(agent, prompt, response)
+        return response
+
+    def _write(self, agent: str, prompt: str, response) -> None:
+        from orchestrator.llm.mock import fixture_key
+
         payload = {
             "agent": agent,
             "prompt": prompt,
             "response": {
                 "text": response.text,
+                "tool_calls": [
+                    {"id": call.id, "name": call.name, "arguments": call.arguments} for call in response.tool_calls
+                ],
                 "model": response.model,
                 "prompt_tokens": response.prompt_tokens,
                 "completion_tokens": response.completion_tokens,
             },
         }
-        path = self._out / f"{self._key(agent, prompt)}.json"
+        path = self._out / f"{fixture_key(agent, prompt)}.json"
         path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         self.recorded += 1
         print(f"  recorded {agent:<10} → {path.name}")
-        return response
 
 
 def _optional_memory_backends():

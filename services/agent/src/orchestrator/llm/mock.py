@@ -46,10 +46,10 @@ from pathlib import Path
 from typing import Any
 
 from langchain_core.messages import BaseMessage
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from orchestrator.llm.messages import render_messages
-from orchestrator.llm.structured import StructuredOutputError
+from orchestrator.llm.structured import validate_output
 
 
 @dataclass(frozen=True)
@@ -122,10 +122,7 @@ class MockLLMClient:
             payload = self._default(agent, key)
         response = _to_response(payload, key)
         if output_schema is not None:
-            try:
-                response = replace(response, parsed=output_schema.model_validate_json(response.text))
-            except ValidationError as exc:
-                raise StructuredOutputError(str(exc)) from exc
+            response = replace(response, parsed=validate_output(response.text, output_schema))
         return response
 
     def complete(
