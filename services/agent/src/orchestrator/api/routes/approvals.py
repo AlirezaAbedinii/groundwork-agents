@@ -6,6 +6,7 @@ import json
 from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, ValidationError
 
 from orchestrator.config import get_settings
@@ -135,5 +136,5 @@ async def chat_about_approval(approval_id: str, body: ChatRequest) -> dict:
         working=json.dumps(WorkingMemory().snapshot(task_id))[:2000],
         question=body.question,
     )
-    answer = get_llm_client().complete("hitl", prompt).text
+    answer = (await get_llm_client().chat("hitl", [HumanMessage(content=prompt)])).text
     return {"approval_id": approval_id, "question": body.question, "answer": answer}

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from langchain_core.messages import HumanMessage
+
 from orchestrator.agents.base import BaseAgent
 from orchestrator.planning.decomposer import decompose
 from orchestrator.planning.schemas import ExecutionPlan
@@ -23,10 +25,10 @@ Write the final deliverable for the user. Respond with the deliverable text only
 class Supervisor(BaseAgent):
     name = "supervisor"
 
-    def plan(self, request: str, memories: str | None = None) -> ExecutionPlan:
-        return decompose(self.llm, request, memories=memories)
+    async def plan(self, request: str, memories: str | None = None) -> ExecutionPlan:
+        return await decompose(self.llm, request, memories=memories)
 
-    def synthesize(self, request: str, outputs: dict[str, str]) -> str:
+    async def synthesize(self, request: str, outputs: dict[str, str]) -> str:
         rendered = "\n".join(f"[{sid}]\n{text}\n" for sid, text in sorted(outputs.items()))
         prompt = SYNTH_PROMPT.format(marker=SYNTH_MARKER, request=request, outputs=rendered)
-        return self.complete(prompt).text
+        return (await self.chat([HumanMessage(content=prompt)])).text

@@ -169,7 +169,7 @@ def build_graph(
                     memories_block, retrieved_ids = retrieved.block, retrieved.ids
             set_attr(span, "memories_injected", len(retrieved_ids))
             try:
-                plan = supervisor.plan(state["request"], memories=memories_block)
+                plan = await supervisor.plan(state["request"], memories=memories_block)
             except PlanValidationError as error:
                 span.set_attribute("orchestrator.status", "failure")
                 repo.set_status(state["task_id"], "failed", error=str(error))
@@ -349,7 +349,7 @@ def build_graph(
                 spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate
             )
             with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
-                verdict = reviewer.review(
+                verdict = await reviewer.review(
                     spec["description"],
                     spec.get("expected_output_format", "plain text"),
                     result.output,
@@ -520,7 +520,7 @@ def build_graph(
                 if result.get("status") == "completed"
             }
             set_attr(span, "inputs", sorted(outputs))
-            return {"final_output": supervisor.synthesize(state["request"], outputs)}
+            return {"final_output": await supervisor.synthesize(state["request"], outputs)}
 
     def final_gate(state: TaskState) -> dict:
         if not state.get("require_human_review"):
@@ -574,7 +574,7 @@ def build_graph(
                 try:
                     with child_span("memory:extract", kind="memory") as memory_span:
                         results = state.get("subtask_results", {})
-                        extracted = extract_memories(
+                        extracted = await extract_memories(
                             llm,
                             request=state["request"],
                             outputs={

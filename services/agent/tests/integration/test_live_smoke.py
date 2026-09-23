@@ -11,13 +11,14 @@ from orchestrator.planning.decomposer import decompose
 pytestmark = pytest.mark.live
 
 
+@pytest.mark.anyio
 @pytest.mark.skipif(
     not get_settings().openai_api_key, reason="OPENAI_API_KEY not configured"
 )
-def test_live_decomposition_produces_valid_plan():
+async def test_live_decomposition_produces_valid_plan():
     from orchestrator.llm.clients import RealLLMClient
 
-    plan = decompose(
+    plan = await decompose(
         RealLLMClient(),
         "Research the three most popular open-source vector databases, compare their "
         "GitHub activity, and write a one-page recommendation memo.",

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from langchain_core.messages import HumanMessage
+from pydantic import BaseModel, Field
 
 from orchestrator.llm.clients import LLMClient
-from orchestrator.llm.structured import StructuredOutputError, parse_structured
+from orchestrator.llm.structured import StructuredOutputError
 from orchestrator.memory.longterm import LongTermMemory
 
 # Stable marker; mock fixtures match on it.
@@ -22,27 +23,23 @@ Tools used per subtask: {tools}
 
 Final deliverable:
 {final}
-
-Respond with ONLY JSON:
-{{"episode": "<one paragraph: what was asked, the approach that worked, the tools used>",
-  "facts": ["<domain fact discovered>", "..."],
-  "preferences": ["<user preference observed>", "..."]}}
-Use empty lists when nothing applies.
 """
 
 RETRY_SUFFIX = """
 
-Your previous reply could not be parsed ({error}). Respond with ONLY the JSON object.
+Your previous reply was invalid ({error}). Extract the memories again.
 """
 
 
 class ExtractedMemories(BaseModel):
-    episode: str
-    facts: list[str] = []
-    preferences: list[str] = []
+    episode: str = Field(description="One paragraph: what was asked, the approach that worked, the tools used")
+    facts: list[str] = Field(default_factory=list, description="Domain facts discovered; empty when none apply")
+    preferences: list[str] = Field(
+        default_factory=list, description="User preferences observed; empty when none apply"
+    )
 
 
-def extract_memories(
+async def extract_memories(
     llm: LLMClient, *, request: str, outputs: dict[str, str], tools_used: dict[str, list[str]], final_output: str
 ) -> ExtractedMemories:
     prompt = EXTRACT_PROMPT.format(
@@ -52,12 +49,15 @@ def extract_memories(
         tools={sid: calls for sid, calls in sorted(tools_used.items())},
         final=final_output,
     )
-    response = llm.complete("memory", prompt)
     try:
-        return parse_structured(response.text, ExtractedMemories)
+        return await _extract(llm, prompt)
     except StructuredOutputError as error:
-        retry = llm.complete("memory", prompt + RETRY_SUFFIX.format(error=error))
-        return parse_structured(retry.text, ExtractedMemories)
+        return await _extract(llm, prompt + RETRY_SUFFIX.format(error=error))
+
+
+async def _extract(llm: LLMClient, prompt: str) -> ExtractedMemories:
+    response = await llm.chat("memory", [HumanMessage(content=prompt)], output_schema=ExtractedMemories)
+    return response.parsed
 
 
 def store_extracted(

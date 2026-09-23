@@ -47,8 +47,8 @@ def delete_user_memory(user_id: str) -> dict:
 
 
 @router.post("/maintenance/consolidate")
-def run_consolidation(body: MaintenanceRequest) -> dict:
-    return consolidate(
+async def run_consolidation(body: MaintenanceRequest) -> dict:
+    return await consolidate(
         LongTermMemory(), get_llm_client(), user_id=body.user_id, events=MemoryEventStore()
     )
 

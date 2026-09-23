@@ -11,6 +11,7 @@ from collections import defaultdict
 from typing import TYPE_CHECKING
 
 import numpy as np
+from langchain_core.messages import HumanMessage
 
 from orchestrator.config import get_settings
 from orchestrator.llm.clients import LLMClient
@@ -73,7 +74,7 @@ def _clusters(similarities: np.ndarray, threshold: float) -> list[list[int]]:
     return components
 
 
-def consolidate(
+async def consolidate(
     longterm: LongTermMemory,
     llm: LLMClient,
     *,
@@ -112,9 +113,8 @@ def consolidate(
                 members = [indices[i] for i in component]
                 member_ids = [ids[i] for i in members]
                 bullets = "\n".join(f"- {docs[i]}" for i in members)
-                summary = llm.complete(
-                    "memory", CONSOLIDATE_PROMPT.format(marker=CONSOLIDATE_MARKER, texts=bullets)
-                ).text.strip()
+                prompt = CONSOLIDATE_PROMPT.format(marker=CONSOLIDATE_MARKER, texts=bullets)
+                summary = (await llm.chat("memory", [HumanMessage(content=prompt)])).text.strip()
 
                 now = time.time()
                 total_access = sum(int(metas[i].get("access_count", 0)) for i in members)

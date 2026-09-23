@@ -1,6 +1,7 @@
 """ExecutionPlan / Subtask schemas.
 
-The supervisor emits these via structured output. Validation enforces unique
+The supervisor emits these via native structured output: the provider is
+given this schema, field descriptions included. Validation enforces unique
 subtask ids, resolvable dependencies, and an acyclic dependency graph.
 """
 
@@ -29,9 +30,11 @@ class Subtask(BaseModel):
 
 
 class ExecutionPlan(BaseModel):
-    task_summary: str = ""
+    task_summary: str = Field("", description="One sentence summarising the task")
     subtasks: list[Subtask] = Field(min_length=1)
-    confidence: float = Field(ge=0.0, le=1.0)
+    confidence: float = Field(
+        ge=0.0, le=1.0, description="Your confidence, from 0.0 to 1.0, that this plan solves the task"
+    )
 
     @model_validator(mode="after")
     def _validate_dag(self) -> "ExecutionPlan":

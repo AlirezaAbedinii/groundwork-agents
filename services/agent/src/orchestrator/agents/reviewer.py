@@ -5,10 +5,11 @@ Routed to a different provider than the producing agent (llm/router.py).
 
 from __future__ import annotations
 
+from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, Field
 
 from orchestrator.agents.base import BaseAgent
-from orchestrator.llm.structured import StructuredOutputError, parse_structured
+from orchestrator.llm.structured import StructuredOutputError
 
 # Stable marker; mock fixtures and tests match on it.
 REVIEW_MARKER = "Review the following specialist output"
@@ -24,24 +25,23 @@ Specialist output:
 ---
 
 Score the output 1-5 (5 = excellent, meets the subtask and format; 1 = unusable).
-Respond with ONLY JSON: {{"score": <1-5>, "feedback": "<what is wrong or missing, if anything>"}}
 """
 
 RETRY_SUFFIX = """
 
-Your previous reply could not be parsed ({error}). Respond with ONLY the JSON object.
+Your previous verdict was invalid ({error}). Score the output again, from 1 to 5.
 """
 
 
 class ReviewVerdict(BaseModel):
     score: int = Field(ge=1, le=5)
-    feedback: str = ""
+    feedback: str = Field("", description="What is wrong or missing, if anything")
 
 
 class Reviewer(BaseAgent):
     name = "reviewer"
 
-    def review(
+    async def review(
         self,
         description: str,
         expected_format: str,
@@ -55,9 +55,13 @@ class Reviewer(BaseAgent):
             expected_format=expected_format,
             output=output,
         )
-        response = self.complete(prompt, producer_provider=producer_provider)
         try:
-            return parse_structured(response.text, ReviewVerdict)
+            return await self._verdict(prompt, producer_provider)
         except StructuredOutputError as error:
-            retry = self.complete(prompt + RETRY_SUFFIX.format(error=error), producer_provider=producer_provider)
-            return parse_structured(retry.text, ReviewVerdict)
+            return await self._verdict(prompt + RETRY_SUFFIX.format(error=error), producer_provider)
+
+    async def _verdict(self, prompt: str, producer_provider: str | None) -> ReviewVerdict:
+        response = await self.chat(
+            [HumanMessage(content=prompt)], output_schema=ReviewVerdict, producer_provider=producer_provider
+        )
+        return response.parsed

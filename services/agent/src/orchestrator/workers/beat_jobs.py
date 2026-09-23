@@ -5,6 +5,8 @@ The same operations are manually triggerable via POST /memory/maintenance/*.
 
 from __future__ import annotations
 
+import asyncio
+
 from celery.schedules import crontab
 
 from orchestrator.workers.celery_app import celery_app
@@ -23,7 +25,7 @@ def consolidate_memories(user_id: str | None = None) -> dict:
     from orchestrator.memory.management import consolidate
 
     longterm, llm, events = _deps()
-    return consolidate(longterm, llm, user_id=user_id, events=events)
+    return asyncio.run(consolidate(longterm, llm, user_id=user_id, events=events))
 
 
 @celery_app.task(name="orchestrator.memory.expire")
