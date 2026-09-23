@@ -6,6 +6,8 @@ actionable feedback, the rework loop must re-dispatch the specialist with that
 feedback, and the second attempt must pass.
 """
 
+import asyncio
+
 from orchestrator.agents.specialists.base import FEEDBACK_MARKER
 
 DEMO_REQUEST = (
@@ -43,7 +45,7 @@ def test_reviewer_rejects_citation_free_draft_then_rework_passes(client):
     assert rework_prompts and any("Missing citations" in p for p in rework_prompts)
 
     # w1 was dispatched twice: the draft wave and the rework wave
-    from orchestrator.graph.runner import get_production_graph
+    from orchestrator.graph.runner import task_state
 
-    state = get_production_graph().get_state({"configurable": {"thread_id": task_id}})
+    state = asyncio.run(task_state(task_id))
     assert state.values["dispatch_log"].count(["w1"]) == 2

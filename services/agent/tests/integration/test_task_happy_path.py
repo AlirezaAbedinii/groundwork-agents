@@ -4,6 +4,8 @@ Covers plan validity, all four specialists using their tools, parallel wave
 batching, DB persistence, and the Postgres checkpointer.
 """
 
+import asyncio
+
 import sqlalchemy as sa
 
 from orchestrator.config import get_settings
@@ -50,9 +52,9 @@ def test_happy_path_full_lifecycle(client):
             ("code", "code_exec"), ("writing", "file_write")} <= used
 
     # parallel dispatch: the first scheduler wave batched the 3 independent subtasks
-    from orchestrator.graph.runner import get_production_graph
+    from orchestrator.graph.runner import task_state
 
-    state = get_production_graph().get_state({"configurable": {"thread_id": task_id}})
+    state = asyncio.run(task_state(task_id))
     dispatch_log = state.values["dispatch_log"]
     assert dispatch_log[0] == ["s1", "s2", "s3"]
     assert dispatch_log[1] == ["s4"]

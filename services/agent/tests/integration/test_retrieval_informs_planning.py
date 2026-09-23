@@ -5,8 +5,11 @@ memory ids must be recorded.
 
 from pathlib import Path
 
+import pytest
+
 from orchestrator.db.repo import DBInvocationStore, DBTaskRepo, MemoryEventStore
 from orchestrator.graph.builder import build_graph
+from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.retrieval import MEMORIES_MARKER
@@ -33,6 +36,10 @@ class RecordingLLM:
         self.inner = inner
         self.calls: list[tuple[str, str]] = []
 
+    async def chat(self, agent, messages, **kwargs):
+        self.calls.append((agent, render_messages(messages)))
+        return await self.inner.chat(agent, messages, **kwargs)
+
     def complete(self, agent, prompt, *, producer_provider=None):
         self.calls.append((agent, prompt))
         return self.inner.complete(agent, prompt, producer_provider=producer_provider)
@@ -42,7 +49,8 @@ def _planning_prompt(calls) -> str:
     return next(p for agent, p in calls if agent == "supervisor" and PLAN_MARKER in p)
 
 
-def test_second_similar_task_plans_with_retrieved_memory():
+@pytest.mark.anyio
+async def test_second_similar_task_plans_with_retrieved_memory():
     llm = RecordingLLM(MockLLMClient(Path("tests/fixtures/llm")))
     repo = DBTaskRepo()
     graph = build_graph(
@@ -54,15 +62,15 @@ def test_second_similar_task_plans_with_retrieved_memory():
         memory_events=MemoryEventStore(),
     )
 
-    def run(task_id: str, request: str):
-        return graph.invoke(
+    async def run(task_id: str, request: str):
+        return await graph.ainvoke(
             {"task_id": task_id, "request": request, "user_id": "default",
              "subtask_results": {}, "dispatch_log": []}
         )
 
     # task A: no memories exist yet, so planning sees none
     task_a = repo.create_task(REQUEST_A, user_id="default")
-    state_a = run(task_a, REQUEST_A)
+    state_a = await run(task_a, REQUEST_A)
     assert repo.get_task(task_a)["status"] == "completed"
     assert MEMORIES_MARKER not in _planning_prompt(llm.calls)
     assert state_a["retrieved_memory_ids"] == []
@@ -70,7 +78,7 @@ def test_second_similar_task_plans_with_retrieved_memory():
     # task A': similar request — planning must be informed by A's memories
     llm.calls.clear()
     task_b = repo.create_task(REQUEST_B, user_id="default")
-    state_b = run(task_b, REQUEST_B)
+    state_b = await run(task_b, REQUEST_B)
     assert repo.get_task(task_b)["status"] == "completed"
 
     prompt = _planning_prompt(llm.calls)

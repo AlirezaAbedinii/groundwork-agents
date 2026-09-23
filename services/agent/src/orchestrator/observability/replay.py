@@ -136,7 +136,7 @@ def create_replay_task(original_task_id: str, llm_call_id: str | None = None) ->
     return new_task_id, mode
 
 
-def run_replay(
+async def run_replay(
     new_task_id: str,
     original_task_id: str,
     llm_call_id: str | None = None,
@@ -144,7 +144,7 @@ def run_replay(
 ) -> None:
     from orchestrator.db.repo import DBInvocationStore, DBLLMCallStore, DBTaskRepo
     from orchestrator.graph.builder import build_graph
-    from orchestrator.graph.checkpointing import get_checkpointer
+    from orchestrator.graph.checkpointing import open_checkpointer
     from orchestrator.hitl.queue import ApprovalQueue
     from orchestrator.llm.clients import get_llm_client
     from orchestrator.memory.working import WorkingMemory
@@ -169,29 +169,30 @@ def run_replay(
         llm = TracedLLMClient(
             ReplayLLMClient(pool, overrides, fallback), calls=DBLLMCallStore()
         )
-        graph = build_graph(
-            llm=llm,
-            registry=build_default_registry(DBInvocationStore()),
-            repo=repo,
-            checkpointer=get_checkpointer(),
-            working=WorkingMemory(),
-            longterm=None,  # replays must not read or write long-term memory
-            memory_events=None,
-            approvals=ApprovalQueue(),
-        )
-        bundle = repo.get_task(new_task_id)
-        with task_run_span(new_task_id, run_name):
-            graph.invoke(
-                {
-                    "task_id": new_task_id,
-                    "request": bundle["request"],
-                    "user_id": bundle["user_id"],
-                    "require_human_review": False,
-                    "subtask_results": {},
-                    "dispatch_log": [],
-                },
-                config={"configurable": {"thread_id": new_task_id}},
+        async with open_checkpointer() as checkpointer:
+            graph = build_graph(
+                llm=llm,
+                registry=build_default_registry(DBInvocationStore()),
+                repo=repo,
+                checkpointer=checkpointer,
+                working=WorkingMemory(),
+                longterm=None,  # replays must not read or write long-term memory
+                memory_events=None,
+                approvals=ApprovalQueue(),
             )
+            bundle = repo.get_task(new_task_id)
+            with task_run_span(new_task_id, run_name):
+                await graph.ainvoke(
+                    {
+                        "task_id": new_task_id,
+                        "request": bundle["request"],
+                        "user_id": bundle["user_id"],
+                        "require_human_review": False,
+                        "subtask_results": {},
+                        "dispatch_log": [],
+                    },
+                    config={"configurable": {"thread_id": new_task_id}},
+                )
     except Exception as error:
         logger.exception("Replay %s of %s crashed", new_task_id, original_task_id)
         repo.set_status(new_task_id, "failed", error=str(error))

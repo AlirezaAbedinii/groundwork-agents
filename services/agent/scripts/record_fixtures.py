@@ -22,6 +22,7 @@ Play the recording back:
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import sys
 from pathlib import Path
@@ -93,7 +94,7 @@ def _optional_memory_backends():
     return working, longterm
 
 
-def main() -> None:
+async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("request", help="task request to run and record")
     parser.add_argument("--user", default="default")
@@ -140,7 +141,7 @@ def main() -> None:
     )
     config = {"configurable": {"thread_id": task_id}}
     print(f"recording task {task_id}: {args.request}")
-    graph.invoke(
+    await graph.ainvoke(
         {
             "task_id": task_id,
             "request": args.request,
@@ -151,9 +152,11 @@ def main() -> None:
         },
         config=config,
     )
-    while graph.get_state(config).next:  # auto-approve any escalation and resume
+    while (await graph.aget_state(config)).next:  # auto-approve any escalation and resume
         print("  escalation hit → auto-approving to keep the recording unattended")
-        graph.invoke(Command(resume={"action": "approve", "notes": "record_fixtures auto-approval"}), config=config)
+        await graph.ainvoke(
+            Command(resume={"action": "approve", "notes": "record_fixtures auto-approval"}), config=config
+        )
 
     bundle = repo.get_task(task_id) or {}
     print(
@@ -163,4 +166,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

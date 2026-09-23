@@ -3,8 +3,10 @@ completion extracts memories into every applicable ChromaDB collection, and
 memory events are recorded.
 """
 
+import pytest
+
 from orchestrator.db.repo import DBTaskRepo, MemoryEventStore
-from orchestrator.graph.runner import get_production_graph
+from orchestrator.graph.runner import production_graph
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import WorkingMemory
 
@@ -15,31 +17,32 @@ REQUEST = (
 )
 
 
-def test_working_memory_lifecycle_and_extraction():
+@pytest.mark.anyio
+async def test_working_memory_lifecycle_and_extraction():
     repo = DBTaskRepo()
     task_id = repo.create_task(REQUEST, user_id="default")
-    graph = get_production_graph()
     working = WorkingMemory()
 
     plan_in_memory = False
     output_counts: list[int] = []
-    stream = graph.stream(
-        {
-            "task_id": task_id,
-            "request": REQUEST,
-            "user_id": "default",
-            "subtask_results": {},
-            "dispatch_log": [],
-        },
-        {"configurable": {"thread_id": task_id}},
-        stream_mode="updates",
-    )
-    for update in stream:
-        node = next(iter(update))
-        if node == "plan":
-            plan_in_memory = working.get_plan(task_id) is not None
-        if node == "gather":
-            output_counts.append(len(working.get_subtask_outputs(task_id)))
+    async with production_graph() as graph:
+        stream = graph.astream(
+            {
+                "task_id": task_id,
+                "request": REQUEST,
+                "user_id": "default",
+                "subtask_results": {},
+                "dispatch_log": [],
+            },
+            {"configurable": {"thread_id": task_id}},
+            stream_mode="updates",
+        )
+        async for update in stream:
+            node = next(iter(update))
+            if node == "plan":
+                plan_in_memory = working.get_plan(task_id) is not None
+            if node == "gather":
+                output_counts.append(len(working.get_subtask_outputs(task_id)))
 
     # the plan landed in working memory, outputs grew wave by wave, then cleared
     assert plan_in_memory

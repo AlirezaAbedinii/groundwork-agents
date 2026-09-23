@@ -111,17 +111,17 @@ def resolve_approval(
 
 
 @router.post("/{approval_id}/chat")
-def chat_about_approval(approval_id: str, body: ChatRequest) -> dict:
+async def chat_about_approval(approval_id: str, body: ChatRequest) -> dict:
     """Clarifying questions for the paused task, grounded in checkpointed
     state, the approval's decision context, and working memory."""
     approval = ApprovalQueue().get(approval_id)
     if approval is None:
         raise HTTPException(status_code=404, detail=f"Approval {approval_id} not found")
 
-    from orchestrator.graph.runner import get_production_graph
+    from orchestrator.graph.runner import task_state
 
     task_id = approval["task_id"]
-    snapshot = get_production_graph().get_state({"configurable": {"thread_id": task_id}})
+    snapshot = await task_state(task_id)
     values = snapshot.values or {}
     context = approval.get("context") or {}
 

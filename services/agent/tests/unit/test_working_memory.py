@@ -6,6 +6,8 @@ implementation, which the integration suite exercises against a live server).
 
 import json
 
+import pytest
+
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
 from orchestrator.llm.mock import MockLLMClient
@@ -87,7 +89,8 @@ def _fx(directory, name, agent, text, match=None):
     (directory / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
 
 
-def test_graph_shares_and_clears_working_memory(tmp_path):
+@pytest.mark.anyio
+async def test_graph_shares_and_clears_working_memory(tmp_path):
     plan = {
         "task_summary": "t",
         "confidence": 0.9,
@@ -115,8 +118,8 @@ def test_graph_shares_and_clears_working_memory(tmp_path):
         working=memory,
     )
     task_id = repo.create_task("look up A and summarize", user_id="alice")
-    graph.invoke({"task_id": task_id, "request": "look up A and summarize",
-                  "user_id": "alice", "subtask_results": {}, "dispatch_log": []})
+    await graph.ainvoke({"task_id": task_id, "request": "look up A and summarize",
+                         "user_id": "alice", "subtask_results": {}, "dispatch_log": []})
 
     assert ("start", task_id, "alice") in memory.calls
     assert ("set_plan", task_id) in memory.calls

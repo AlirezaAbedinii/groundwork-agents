@@ -6,6 +6,8 @@ complete trace tree (including the parallel research fan-out, the reviewer
 rejection → rework, and both escalation gates), and a non-zero computed cost.
 """
 
+import asyncio
+
 from orchestrator.config import get_settings
 
 WARMUP_REQUEST = (
@@ -65,9 +67,9 @@ def test_full_lifecycle_demo_scenario(client):
     assert "https://github.com/qdrant/qdrant" in memo.read_text(encoding="utf-8")
 
     # parallel research fan-out, analysis fan-in, then the rework wave
-    from orchestrator.graph.runner import get_production_graph
+    from orchestrator.graph.runner import task_state
 
-    state = get_production_graph().get_state({"configurable": {"thread_id": task_id}})
+    state = asyncio.run(task_state(task_id))
     assert state.values["dispatch_log"] == [["r1", "r2", "r3"], ["a1"], ["w1"], ["w1"]]
 
     # --- trace tree ---------------------------------------------------------

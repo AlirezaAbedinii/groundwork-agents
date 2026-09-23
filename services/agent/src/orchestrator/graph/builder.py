@@ -15,6 +15,10 @@ resumes the graph with the human decision. Note that an interrupted node
 re-executes its pre-interrupt code on resume — everything before an interrupt
 is therefore idempotent (the approval queue is keyed by task_id + gate_key).
 
+The nodes that call the LLM (plan, execute, synthesize, deliver) are
+coroutines and the graph runs under ``ainvoke``; the other nodes only do
+bookkeeping and stay plain functions, which LangGraph runs in its executor.
+
 Dependencies (LLM client, tool registry, repo, memory, approval queue,
 checkpointer) are injectable so unit tests can run the full graph without
 Postgres or provider APIs.
@@ -145,7 +149,7 @@ def build_graph(
             working.start(state["task_id"], state.get("user_id", "default"))
             return {}
 
-    def plan_node(state: TaskState) -> dict:
+    async def plan_node(state: TaskState) -> dict:
         with node_span(state["task_id"], "plan", kind="planning") as span:
             memories_block = None
             retrieved_ids: list[str] = []
@@ -251,7 +255,7 @@ def build_graph(
                 update["dispatch_log"] = [[payload["spec"]["id"] for payload in wave]]
             return update
 
-    def execute(payload: dict) -> dict:
+    async def execute(payload: dict) -> dict:
         spec = payload["spec"]
         sid = spec["id"]
         task_id = payload["task_id"]
@@ -336,9 +340,9 @@ def build_graph(
             task_id, f"execute:{sid}", kind="specialist",
             sid=sid, specialist=spec["specialist"], attempt=attempts,
         ) as span:
-            return _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span)
+            return await _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span)
 
-    def _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span) -> dict:
+    async def _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span) -> dict:
         repo.record_subtask(task_id, sid, status="running", attempts=attempts)
         try:
             result = specialists[spec["specialist"]].execute(
@@ -508,7 +512,7 @@ def build_graph(
             "subtask_results": {sid: {**retry_entry, "feedback": feedback}},
         }
 
-    def synthesize(state: TaskState) -> dict:
+    async def synthesize(state: TaskState) -> dict:
         with node_span(state["task_id"], "synthesize", kind="synthesis") as span:
             outputs = {
                 sid: result.get("output", "")
@@ -563,7 +567,7 @@ def build_graph(
                 }
             return {"hitl_decision": {"gate": "final", "action": "approve"}}
 
-    def deliver(state: TaskState) -> dict:
+    async def deliver(state: TaskState) -> dict:
         with node_span(state["task_id"], "deliver"):
             repo.set_final_output(state["task_id"], state.get("final_output") or "")
             if longterm is not None:
