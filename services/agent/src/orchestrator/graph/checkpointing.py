@@ -16,10 +16,10 @@ _tables_ready = False
 async def open_checkpointer() -> AsyncIterator[AsyncPostgresSaver]:
     """An async Postgres checkpointer on its own connection, closed on exit.
 
-    AsyncPostgresSaver is bound to the event loop it is created on, and graphs
-    here run on short-lived loops (one per Celery task via asyncio.run, one per
-    TestClient request), so a cached saver would outlive its loop and keep its
-    connection open. Each graph run opens one and closes it instead.
+    AsyncPostgresSaver is bound to the event loop it is created on, and a process
+    can run graphs on many loops over its life (the test client makes one per
+    request), so a cached saver could outlive its loop and keep its connection
+    open. Each graph run opens one and closes it instead.
     """
     global _tables_ready
     url = get_settings().database_url.replace("+psycopg", "")
