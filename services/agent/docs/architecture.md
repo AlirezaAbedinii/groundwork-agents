@@ -76,7 +76,8 @@ Two run modes share every line of orchestration code:
 | 3 | **Reviewer** | Scores every specialist deliverable 1–5 with feedback | **the other provider** (`anthropic:claude-sonnet-5`) |
 
 Routing lives in one place (`llm/router.py`): agents call
-`client.complete(agent, prompt)` and never see providers. The reviewer's
+`await client.chat(agent, messages, tools=…, output_schema=…)` and never see
+providers. The reviewer's
 route depends on the *producer's* provider — an OpenAI-produced deliverable is
 reviewed by Anthropic and vice versa — so a provider-wide blind spot can't
 grade its own homework. Specialists are a prompt-role plus a tool allowlist,
@@ -116,12 +117,16 @@ demo and tests assert real parallelism (`wave 1: r1, r2, r3`). Subtasks
 carrying rework feedback or a failed attempt re-enter the next wave with that
 context in their prompt.
 
-**Inside `execute`.** The specialist runs a bounded tool loop (structured
-JSON actions, max `MAX_TOOL_ITERATIONS`), then the reviewer scores the
-deliverable. Score ≥ threshold → completed; below → `rework` with feedback
-(max `MAX_SPECIALIST_RETRIES` cycles); an exception → `failed_attempt` with a
-revised-approach instruction for the retry. A sensitive tool call inside the
-loop pauses the whole run through the tool gate before the call executes.
+**Inside `execute`.** The specialist runs a bounded loop of native tool calls
+(at most `MAX_TOOL_ITERATIONS` model turns; a batch of calls is one turn). The
+model can ask for several tools in one turn: sensitive calls go to the tool
+gate first, the rest run concurrently, and every call's result goes back to
+the model before its next turn. A tool error is one of those results, not a
+failure. Then the reviewer scores the deliverable. Score ≥ threshold →
+completed; below → `rework` with feedback (max `MAX_SPECIALIST_RETRIES`
+cycles); running out of turns or an error outside the tools → `failed_attempt`
+with a revised-approach instruction for the retry. A sensitive tool call pauses
+the whole run through the tool gate before any call of its turn executes.
 
 **Four human gates**: `escalate_plan` (confidence / user request, before any
 work), the in-loop tool gate (sensitive calls), `escalate_subtask` (double
@@ -137,16 +142,16 @@ approval row → `interrupt()`.
    preferences; top-k per collection, filtered by user) and injects the hits
    into the planning prompt in a labeled block; retrieved ids are recorded to
    the audit log and the trace.
-3. **Planning** — structured decomposition into an `ExecutionPlan`
-   (subtasks with specialist, inputs, expected format, complexity,
-   `depends_on`, plan confidence). Pydantic validation enforces unique ids,
+3. **Planning** — decomposition into an `ExecutionPlan` through native
+   structured output (subtasks with specialist, inputs, expected format,
+   complexity, `depends_on`, plan confidence). Pydantic validation enforces unique ids,
    resolvable dependencies, and acyclicity; one retry with the validation
    error in-prompt, then the task fails rather than executing a broken plan.
 4. **Plan gate** — low confidence or user-requested review pauses here,
    before any agent work.
 5. **Execution** — DAG waves fan out; specialists read working memory, call
-   owned tools through the registry (permission + rate-limit checks, full
-   I/O logging), and write results back.
+   owned tools natively, several per turn and in parallel, through the registry
+   (permission + rate-limit checks, full I/O logging), and write results back.
 6. **Review** — every deliverable is scored by the cross-provider reviewer;
    rejections loop back with feedback.
 7. **Synthesis & delivery** — the supervisor composes the final output from
@@ -161,7 +166,7 @@ approval row → `interrupt()`.
 | Store | Holds | Why this store |
 |---|---|---|
 | **Redis** | Task-scoped working memory (plan, subtask outputs, intermediates, error log, TTL-guarded); Celery broker/results; tool rate-limit counters | Shared scratch space needs speed and TTLs, not durability |
-| **PostgreSQL** | Tasks, plans, subtasks, tool invocations, approvals, spans, LLM calls (full prompts/responses), LangGraph checkpoints, memory audit log, seeded `demo` schema for `db_query` | Everything that must survive a restart or be queried relationally |
+| **PostgreSQL** | Tasks, plans, subtasks, tool invocations, approvals, spans, LLM calls (full prompts, responses and tool calls), LangGraph checkpoints, memory audit log, seeded `demo` schema for `db_query` | Everything that must survive a restart or be queried relationally |
 | **ChromaDB** | Long-term semantic memory in three collections with importance/recency/access metadata | Similarity retrieval is the access pattern; metadata drives consolidation and expiration |
 
 ## Human-in-the-loop mechanics
@@ -208,7 +213,7 @@ deciding.
 agent / tool / memory / gate code
   └─ OpenTelemetry spans (custom attributes: agent, model, sid, tokens, cost, status, …)
        └─ custom SpanExporter → Postgres `spans` table
-            ├─ `llm_calls` table: full prompt + response per call, FK to span
+            ├─ `llm_calls` table: full prompt, response and tool calls per call, FK to span
             ├─ trace explorer (Streamlit) reads via /traces API
             └─ cost report joins llm_calls × static price table + tool invocations
                                         + approval review times
@@ -225,18 +230,21 @@ tooling is demonstrable in keyless runs; `replay:` calls price at zero.
 Aggregates: cost per task type (the plan's specialist mix), most expensive
 agents, tool usage patterns, escalation-rate trend.
 
-**Replay.** Every LLM and tool call is recorded with full I/O, so a past run
-can be re-executed with a playback client that has *no fallback* — zero API
-calls is structural. Fork mode substitutes an edited response at step k and
-runs live from there; the comparison aligns original and fork by
+**Replay.** Every LLM and tool call is recorded with full I/O, including the
+tool calls each model turn asked for, so a past run can be re-executed with a
+playback client that has *no fallback* — zero API calls is structural. Fork
+mode substitutes an edited response at step k (text only: at a tool-calling
+step it ends that specialist's tool loop) and runs live from there; the comparison aligns original and fork by
 (agent, prompt) rather than sequence position, so parallel-branch timing
 doesn't produce false divergences.
 
 ## Determinism and testing strategy
 
 - `MOCK_LLM=1` swaps the provider client for a fixture player behind the same
-  interface; fixtures are matched exact-first (sha of agent+prompt), then by
-  in-prompt substring markers, then per-agent defaults.
+  interface; fixtures are matched exact-first (sha of agent + rendered
+  messages), then by substring markers (the fixture with the most matching
+  markers wins, so a later turn's fixture adds a marker from the tool result it
+  follows), then per-agent defaults. Fixtures can return native tool calls.
 - Fixtures are captured from live runs by `scripts/record_fixtures.py`, which
   wraps the real client in a recorder and auto-approves any gate.
 - External-effect tools (`web_search`, `api_call`) are mocked at the tool
@@ -256,10 +264,12 @@ doesn't produce false divergences.
    an independent measurement. Cost: a second provider dependency —
    worthwhile because the reviewer is the only agent whose judgment gates
    everything else.
-2. **Validated plans over trusted plans.** Structured output is parsed into
-   Pydantic models with cycle detection (Kahn's algorithm) before anything
-   runs; one retry with the validation error in-prompt, then fail fast. A
-   malformed plan should be a clean failure, not a half-executed graph.
+2. **Validated plans over trusted plans.** Native structured output (JSON
+   schema, strict on OpenAI) fixes the plan's shape; Pydantic then checks what
+   a schema cannot — unique ids, known dependencies, no cycles (Kahn's
+   algorithm) — before anything runs; one retry with the validation error
+   in-prompt, then fail fast. A malformed plan should be a clean failure, not a
+   half-executed graph.
 3. **Interrupt + checkpoint as the HITL primitive.** Pausing is the hard part
    of human-in-the-loop; LangGraph's interrupt/checkpointer gives durable,
    resumable pauses at any node, so approvals are graph states rather than
@@ -273,6 +283,14 @@ doesn't produce false divergences.
 6. **Memory degrades, never blocks.** Retrieval/extraction failures log a
    warning and continue; a flaky vector store must not fail a task that
    otherwise succeeded.
+7. **Tool errors are results.** A failed tool call goes back to the model as
+   an error result it can act on (retry with other arguments, use another
+   tool), instead of failing the attempt; attempts fail only on the turn budget
+   or errors outside the tools. See
+   [ADR 0002](../../../docs/decisions/0002-native-tool-calling.md).
+8. **Async where it waits.** The LLM client and the nodes that call it are
+   async and the graph runs under `ainvoke`; tools and bookkeeping stay
+   synchronous, with tools in worker threads so a batch runs concurrently.
 7. **Importance = f(access, recency).** Retrieval bumps access counts, so the
    memories that inform plans are exactly the ones consolidation keeps and
    expiration spares — usage is the relevance signal.

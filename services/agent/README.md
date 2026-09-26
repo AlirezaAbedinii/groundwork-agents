@@ -164,8 +164,8 @@ flowchart LR
 ```
 
 1. **Intake** — a request comes in via `POST /tasks`; a task row is created and the graph runs (inline in-process for development, Celery-backed in the composed stack).
-2. **Plan** — the supervisor first retrieves similar past episodes, domain facts, and user preferences from long-term memory and plans with them in context. It decomposes the request into subtasks with dependencies, assigns each to a specialist, and reports a confidence score. Plans are schema-validated (unique ids, resolvable dependencies, no cycles) and retried once if invalid.
-3. **Schedule & execute** — independent subtasks run in parallel; each specialist works through a bounded tool-use loop, calling only the tools it owns. Outputs, intermediate results, and errors land in shared working memory as they happen.
+2. **Plan** — the supervisor first retrieves similar past episodes, domain facts, and user preferences from long-term memory and plans with them in context. It decomposes the request into subtasks with dependencies, assigns each to a specialist, and reports a confidence score. Plans come back as native structured output, are validated (unique ids, resolvable dependencies, no cycles), and are retried once if invalid.
+3. **Schedule & execute** — independent subtasks run in parallel; each specialist runs a bounded loop of native tool calls, calling only the tools it owns: the model can ask for several tools in one turn, they run in parallel, and a failing tool comes back to the model as an error it can act on. Outputs, intermediate results, and errors land in shared working memory as they happen.
 4. **Review** — every deliverable is scored 1–5 by a reviewer running on a *different model provider* than the specialist that produced it, so a shared provider blind spot can't rubber-stamp its own output. Rejections go back to the specialist with feedback (up to 2 rework cycles).
 5. **Escalate or synthesize** — low plan confidence, two failures on the same subtask, exhausted rework, a sensitive tool call, or a user-requested review pauses the run: the graph checkpoints, the full decision context lands in the approval queue, and the reviewer is notified. Execution resumes from the exact pause point with the human's decision. Otherwise the supervisor synthesizes the final deliverable from the completed subtasks.
 6. **Remember** — the finished task is distilled (what was asked, what approach worked, tools used, facts discovered, preferences observed) into long-term memory, and the task's working memory is cleared. This is how the system gets better at repeated kinds of work.
@@ -266,7 +266,9 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | Persistent state | PostgreSQL — tasks, plans, subtasks, tool invocations, memory audit | ✅ |
 | Short-term memory | Redis — task-scoped working memory | ✅ |
 | Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
-| Async execution | Celery + Redis — workers consume runs/resumes/replays, beat schedules memory maintenance | ✅ |
+| Tool calling | Native function calling on both providers — tool schemas from the Pydantic inputs, parallel calls, errors returned to the model | ✅ |
+| Structured outputs | Native JSON-schema output for plans, review verdicts and memory extraction (strict on OpenAI) | ✅ |
+| Async execution | Async LLM client and graph (`ainvoke`, async Postgres checkpointer); Celery + Redis workers for runs/resumes/replays, beat for memory maintenance | ✅ |
 | Human-in-the-loop | LangGraph interrupts + approval queue, four resolution actions, review UI (Streamlit) | ✅ |
 | Observability | OpenTelemetry → Postgres exporter, trace explorer, cost tracking, replay/fork | ✅ |
 | Containerization | 7-service docker-compose with healthchecks, dependency ordering, auto-migration/seed | ✅ |
@@ -341,8 +343,10 @@ The e2e suite pins the six system-level behaviors, plus a full lifecycle:
 3. **The reviewer catches deliberately bad output** — a citation-free memo draft is rejected with feedback and the rework loop re-runs the specialist.
 4. **Memory improves planning**: a second similar task retrieves what the first one learned, provably inside the planning prompt and recorded in the trace.
 5. **All five escalation triggers** fire under simulation, map to their approval level, pause the run, and resume on approval.
-6. **Graceful failure recovery**: a forced specialist exception retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
+6. **Graceful failure recovery**: a specialist that keeps calling a nonexistent tool runs out of turns, retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
 7. **Full lifecycle**: the demo scenario start-to-finish with programmatic approvals — final output, memory write-back, cleared working memory, complete trace tree, non-zero computed cost.
+
+The tool-call loop itself is pinned by `tests/unit/test_specialist_loop.py`: every call answered before the model's next turn, parallel calls in call order, tool errors as results, the approval gate, and the turn budget.
 
 All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration and e2e suites against postgres, redis, and chroma service containers. Locally, `make e2e` runs the e2e suite against the compose services.
 
@@ -355,7 +359,7 @@ src/orchestrator/
 ├── config.py              # settings (env-driven)
 ├── main.py                # FastAPI app
 ├── api/routes/             # tasks.py, memory.py, approvals.py, traces.py, replay.py
-├── llm/                    # provider routing, structured-output parsing, mock fixture player
+├── llm/                    # async chat client (native tools, structured outputs), routing, mock fixture player
 ├── agents/                 # supervisor, reviewer, specialists (research/analysis/writing/code)
 ├── planning/                # ExecutionPlan/Subtask schemas + decomposition
 ├── graph/                  # LangGraph state, nodes, conditional edges, checkpointing

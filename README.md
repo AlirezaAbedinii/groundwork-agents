@@ -15,8 +15,9 @@ from two services:
   search with a reranker, and the service refuses to answer when the documents
   do not support an answer.
 - **Agent service** (`services/agent`): breaks a request into tasks, runs
-  specialist agents that use tools, pauses for human approval when a step calls
-  for it, and records a trace of every step with its cost.
+  specialist agents that call tools through the providers' native tool calling,
+  pauses for human approval when a step calls for it, and records a trace of
+  every step with its cost.
 
 Both services run locally today, each with its own tests and measured results
 (see their READMEs). The work in progress connects them: the agents will call
@@ -68,7 +69,7 @@ The service READMEs cover endpoints, configuration and local development.
 | Phase | Scope | Status |
 |---|---|---|
 | 0 | Two services with tests and CI, brought into one repository | done |
-| 1 | Native tool calling and structured outputs in the agent loop | planned |
+| 1 | Native tool calling and structured outputs in the agent loop | done |
 | 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | planned |
 | 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | planned |
 | 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | planned |

@@ -7,6 +7,7 @@ supersedes it.
 | ADR | Title | Status |
 |---|---|---|
 | [0001](0001-monorepo-layout.md) | One repository for both services, imported with git subtree | accepted |
+| [0002](0002-native-tool-calling.md) | Native tool calling, structured outputs, and an async core | accepted |
 
 ## Format
 
