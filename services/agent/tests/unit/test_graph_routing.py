@@ -146,6 +146,40 @@ async def test_two_tool_calls_in_one_turn_run_as_one_batch(tmp_path, repo, monke
     assert state["final_output"] == "DONE"
 
 
+async def test_two_sensitive_calls_in_one_turn_get_one_approval_each(tmp_path, repo):
+    posts = [tool_call("api_call", {"method": "POST", "url": f"https://api.github.com/announce/{n}"}) for n in "ab"]
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask("s1", "research", "Post both announcements")], 0.9),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    fx(tmp_path, "r_posts", "research", "", match=["Post both announcements"], tool_calls=posts)
+    fx(tmp_path, "r_done", "research", "BOTH-POSTED",
+       match=["Post both announcements", "[mock] response from https://api.github.com/announce/a",
+              "[mock] response from https://api.github.com/announce/b"])
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "announce twice", queue)
+
+    # the first POST waits for its own approval ...
+    (first,) = queue.list(status="pending")
+    queue.resolve(first["id"], action="approve")
+    await graph.ainvoke(Command(resume={"action": "approve", "payload": {}, "notes": ""}), config)
+
+    # ... and the second for another one, rather than re-pausing on the resolved first
+    (second,) = queue.list(status="pending")
+    assert second["gate_key"] != first["gate_key"]
+    assert [a["proposed_action"]["arguments"]["url"] for a in (first, second)] == [
+        "https://api.github.com/announce/a", "https://api.github.com/announce/b",
+    ]
+    queue.resolve(second["id"], action="approve")
+    finished = await graph.ainvoke(Command(resume={"action": "approve", "payload": {}, "notes": ""}), config)
+
+    assert finished["subtask_results"]["s1"]["output"] == "BOTH-POSTED"
+    assert finished["final_output"] == "DONE"
+    assert repo.tasks[task_id]["status"] == "completed"
+
+
 async def test_reviewer_rejection_routes_back_with_feedback_then_succeeds(tmp_path, repo):
     fx(tmp_path, "plan", "supervisor",
        plan_text([subtask("s1", "writing", "draft the memo")], 0.9),

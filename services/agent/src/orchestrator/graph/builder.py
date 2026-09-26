@@ -274,7 +274,16 @@ def build_graph(
             workspace=settings.workspace_root / task_id,
         )
 
+        # One approval per sensitive call. A turn can ask for the same tool twice and a
+        # rework attempt can reach the same turn again, so the key carries the attempt and
+        # the call's position among this turn's gate consultations. A resumed run
+        # re-executes this node from the start and consults the gate in the same order,
+        # so it finds the same approvals again.
+        consulted: dict[int, int] = {}  # turn -> gate consultations so far
+
         def tool_gate(tool_name: str, arguments: dict, iteration: int, transcript: list[str]) -> dict:
+            position = consulted.get(iteration, 0)
+            consulted[iteration] = position + 1
             escalation = sensitive_operation(tool_name, True)
             level = level_for(escalation.trigger)
             proposed = {
@@ -312,7 +321,7 @@ def build_graph(
             }
             common = dict(
                 task_id=task_id,
-                gate_key=f"tool:{sid}:{tool_name}:{iteration}",
+                gate_key=f"tool:{sid}:{tool_name}:a{attempts}:{iteration}.{position}",
                 trigger=escalation.trigger.value,
                 context=package,
                 proposed_action=proposed,
