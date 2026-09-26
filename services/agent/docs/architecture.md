@@ -291,6 +291,9 @@ doesn't produce false divergences.
 8. **Async where it waits.** The LLM client and the nodes that call it are
    async and the graph runs under `ainvoke`; tools and bookkeeping stay
    synchronous, with tools in worker threads so a batch runs concurrently.
+   Celery workers run every task on one event loop per thread, because the
+   providers' HTTP clients belong to the loop that opened them
+   ([ADR 0003](../../../docs/decisions/0003-one-event-loop-per-worker.md)).
 7. **Importance = f(access, recency).** Retrieval bumps access counts, so the
    memories that inform plans are exactly the ones consolidation keeps and
    expiration spares — usage is the relevance signal.
