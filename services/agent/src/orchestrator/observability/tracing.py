@@ -22,6 +22,7 @@ import logging
 from collections.abc import Callable
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import asdict
 from datetime import datetime, timezone
 from functools import lru_cache
 
@@ -255,6 +256,8 @@ class TracedLLMClient:
         set_attr(span, "prompt_tokens", response.prompt_tokens)
         set_attr(span, "completion_tokens", response.completion_tokens)
         set_attr(span, "cost_usd", cost)
+        if response.tool_calls:
+            set_attr(span, "tool_calls", [call.name for call in response.tool_calls])
         if self._calls is not None:
             span_context = span.get_span_context()
             span_id = format(span_context.span_id, "016x") if span_context.span_id else None
@@ -265,6 +268,7 @@ class TracedLLMClient:
                 model=response.model,
                 prompt=prompt,
                 response=response.text,
+                tool_calls=[asdict(call) for call in response.tool_calls],
                 prompt_tokens=response.prompt_tokens,
                 completion_tokens=response.completion_tokens,
                 cost_usd=cost,

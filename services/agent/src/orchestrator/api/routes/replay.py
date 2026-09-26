@@ -36,6 +36,7 @@ def list_steps(task_id: str) -> dict:
                 "model": call["model"],
                 "prompt": call["prompt"][:200],
                 "response": call["response"][:200],
+                "tool_calls": [tool_call["name"] for tool_call in call["tool_calls"]],
                 "prompt_tokens": call["prompt_tokens"],
                 "completion_tokens": call["completion_tokens"],
                 "created_at": call["created_at"],

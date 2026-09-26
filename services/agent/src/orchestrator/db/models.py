@@ -77,6 +77,8 @@ class LLMCallRow(Base):
     model: Mapped[str] = mapped_column(String(64))
     prompt: Mapped[str] = mapped_column(Text)
     response: Mapped[str] = mapped_column(Text)
+    # native tool calls the model asked for: [{"id", "name", "arguments"}]; replay serves them back
+    tool_calls: Mapped[list | None] = mapped_column(JSON, nullable=True)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0)
     completion_tokens: Mapped[int] = mapped_column(Integer, default=0)
     cost_usd: Mapped[float] = mapped_column(Float, default=0.0)

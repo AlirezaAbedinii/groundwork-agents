@@ -2,11 +2,23 @@
 with zero API calls; a fork at step k replays the prefix, applies the human
 modification, diverges afterwards, and the comparison shows exactly that."""
 
+import sqlalchemy as sa
+
+from orchestrator.db.session import get_engine
+
 REQUEST = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
     "compute the GitHub star ranking from the demo database, generate a comparison "
     "table using Python, and write a comparison memo saved as memo.md."
 )
+
+
+def _tools_run(task_id: str) -> list[str]:
+    with get_engine().connect() as connection:
+        return sorted(connection.execute(
+            sa.text("SELECT tool_name FROM tool_invocations WHERE task_id = :t AND status = 'success'"),
+            {"t": task_id},
+        ).scalars())
 
 
 def _run_original(client) -> dict:
@@ -40,6 +52,9 @@ def test_strict_replay_reproduces_original_with_zero_api_calls(client):
     assert replay_calls
     assert all(call["model"].startswith("replay:") for call in replay_calls)
     assert client.get(f"/traces/{replay_id}/costs").json()["total_usd"] == 0.0
+
+    # the recorded tool calls were served back, so the same tools ran again
+    assert _tools_run(replay_id) == _tools_run(original_id) != []
 
 
 def test_fork_at_step_k_replays_prefix_and_diverges_after(client):

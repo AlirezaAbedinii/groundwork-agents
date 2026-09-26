@@ -1,6 +1,8 @@
 """Trace tree completeness, parent/child integrity, escalation spans, and the
 cost endpoints (per-task hand-computed total + the four aggregate rollups)."""
 
+import json
+
 import pytest
 
 from orchestrator.llm.pricing import cost_usd
@@ -72,6 +74,12 @@ def test_trace_tree_is_complete_with_intact_links(client):
     llm_span = by_id[plan_call["span_id"]]
     assert llm_span["kind"] == "llm"
     assert llm_span["parent_id"] == plan_span["id"]
+
+    # native tool calls are stored on the call and named on its llm span
+    search_call = next(call for call in calls if call["agent"] == "research" and call["tool_calls"])
+    assert [tool_call["name"] for tool_call in search_call["tool_calls"]] == ["web_search"]
+    assert search_call["tool_calls"][0]["arguments"] == {"query": "Chroma vector database"}
+    assert json.loads(by_id[search_call["span_id"]]["attributes"]["tool_calls"]) == ["web_search"]
 
 
 def test_escalation_spans_carry_trigger_and_resolution(client):

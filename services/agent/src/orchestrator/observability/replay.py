@@ -1,8 +1,8 @@
 """Replay system.
 
 Every LLM call is recorded (llm_calls) with its full prompt (the text
-rendering of the message list) and response, so any past execution can be
-re-run deterministically: the replay client serves recorded responses —
+rendering of the message list), its response text and the native tool calls it
+asked for, so any past execution can be re-run deterministically: the replay client serves recorded responses —
 matched by exact (agent, prompt) first, then per-agent order for prompts that
 drifted — and never touches a provider, so a strict replay costs zero API
 calls (there is no fallback to fall through to).
@@ -10,6 +10,8 @@ calls (there is no fallback to fall through to).
 A fork modifies one step: recorded calls strictly before step k replay as-is,
 step k's response is replaced with the human-provided text, and everything
 after runs live (the regular client), so the execution genuinely diverges.
+The replacement is text only: at a specialist's tool-calling step it ends that
+specialist's tool loop, and the text becomes its output.
 Replays and forks run as new tasks (tasks.replay_of points at the original)
 with long-term memory disabled — a replay must not learn.
 """
@@ -229,11 +231,16 @@ def _align_steps(original_calls: list[dict], fork_calls: list[dict]) -> list[dic
             "agent": call["agent"],
             "model": call["model"],
             "response": call["response"][:300],
+            "tool_calls": [tool_call["name"] for tool_call in call.get("tool_calls") or []],
         }
+
+    def _answer(call: dict) -> tuple[str, list]:
+        """What the model returned: its text and the calls it asked for (ids differ per run)."""
+        return call["response"], [(c["name"], c["arguments"]) for c in call.get("tool_calls") or []]
 
     steps = []
     for step, (original, fork) in enumerate(pairs, start=1):
-        diverged = fork is None or original["response"] != fork["response"]
+        diverged = fork is None or _answer(original) != _answer(fork)
         steps.append(
             {"step": step, "original": _side(original), "fork": _side(fork), "diverged": diverged}
         )

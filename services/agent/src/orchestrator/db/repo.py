@@ -78,6 +78,7 @@ class DBLLMCallStore:
             "model": row.model,
             "prompt": row.prompt,
             "response": row.response,
+            "tool_calls": row.tool_calls or [],
             "prompt_tokens": row.prompt_tokens,
             "completion_tokens": row.completion_tokens,
             "cost_usd": row.cost_usd,
