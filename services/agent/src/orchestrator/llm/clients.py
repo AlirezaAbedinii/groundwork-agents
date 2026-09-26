@@ -3,8 +3,7 @@
 Agents call ``await client.chat(agent, messages, tools=..., output_schema=...,
 producer_provider=...)`` and stay oblivious to providers; routing happens here
 (via llm/router.py). MOCK_LLM=1 swaps in the fixture player so nothing leaves
-the process. ``complete`` is the legacy prompt-string path, kept only until
-its last callers move to ``chat``.
+the process.
 """
 
 from __future__ import annotations
@@ -30,10 +29,6 @@ class LLMClient(Protocol):
         tools: list[dict] | None = None,
         output_schema: type[BaseModel] | None = None,
         producer_provider: str | None = None,
-    ) -> LLMResponse: ...
-
-    def complete(
-        self, agent: str, prompt: str, *, producer_provider: str | None = None
     ) -> LLMResponse: ...
 
 
@@ -101,15 +96,6 @@ class RealLLMClient:
             ),
             model=model_id,
             **_usage(message),
-        )
-
-    def complete(
-        self, agent: str, prompt: str, *, producer_provider: str | None = None
-    ) -> LLMResponse:
-        choice = route(agent, producer_provider)
-        message = self._chat_model(choice.provider, choice.model).invoke(prompt)
-        return LLMResponse(
-            text=message.text, model=f"{choice.provider}:{choice.model}", **_usage(message)
         )
 
 

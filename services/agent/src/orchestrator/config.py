@@ -49,7 +49,7 @@ class Settings(BaseSettings):
 
     # Tools
     workspace_root: Path = Path("task_workspaces")
-    max_tool_iterations: int = 5
+    max_tool_iterations: int = 5  # model turns per specialist attempt; a parallel batch of tool calls is one turn
     api_call_allowlist: list[str] = ["api.github.com"]
     code_exec_backend: Literal["docker", "subprocess"] = "docker"
     code_exec_image: str = "orchestrator-sandbox"

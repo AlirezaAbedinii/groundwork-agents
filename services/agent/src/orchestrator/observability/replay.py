@@ -86,12 +86,6 @@ class ReplayLLMClient:
             response = replace(response, parsed=validate_output(response.text, output_schema))
         return response
 
-    def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
-        record = self._next(agent, prompt)
-        if record is None:
-            return self._fallback.complete(agent, prompt, producer_provider=producer_provider)
-        return self._response(record)
-
     def _next(self, agent: str, prompt: str) -> dict | None:
         """The next unconsumed record for this call, or None when the fallback should run."""
         index = self._pop(self._by_key[_prompt_key(agent, prompt)])

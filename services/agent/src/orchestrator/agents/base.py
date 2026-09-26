@@ -26,6 +26,3 @@ class BaseAgent:
         return await self.llm.chat(
             self.name, messages, tools=tools, output_schema=output_schema, producer_provider=producer_provider
         )
-
-    def complete(self, prompt: str, *, producer_provider: str | None = None) -> LLMResponse:
-        return self.llm.complete(self.name, prompt, producer_provider=producer_provider)

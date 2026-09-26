@@ -32,9 +32,6 @@ Fixture file format (v2)::
 With ``output_schema`` the fixture's text is validated against the schema and
 returned as ``LLMResponse.parsed``; invalid text raises ``StructuredOutputError``
 exactly as the real client does for a provider parsing failure.
-
-``complete`` (prompt string in, first matching fixture wins) is the legacy sync
-path and goes away with the last of its callers.
 """
 
 from __future__ import annotations
@@ -125,21 +122,10 @@ class MockLLMClient:
             response = replace(response, parsed=validate_output(response.text, output_schema))
         return response
 
-    def complete(
-        self, agent: str, prompt: str, *, producer_provider: str | None = None
-    ) -> LLMResponse:
-        key = fixture_key(agent, prompt)
-        exact = self.fixtures_dir / f"{key}.json"
-        if exact.exists():
-            return _to_response(json.loads(exact.read_text(encoding="utf-8")), key)
-        if matches := self._matches(agent, prompt):
-            return _to_response(matches[0][1], key)
-        return _to_response(self._default(agent, key), key)
-
     def _matches(self, agent: str, text: str) -> list[tuple[int, dict]]:
         """(needle count, payload) for every match-fixture of *agent* whose needles all occur in *text*.
 
-        Filename order, so callers can take the first or the best.
+        In filename order, which breaks ties between equal needle counts.
         """
         found: list[tuple[int, dict]] = []
         for path in sorted(self.fixtures_dir.glob("*.json")):

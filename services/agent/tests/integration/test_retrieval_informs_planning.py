@@ -40,10 +40,6 @@ class RecordingLLM:
         self.calls.append((agent, render_messages(messages)))
         return await self.inner.chat(agent, messages, **kwargs)
 
-    def complete(self, agent, prompt, *, producer_provider=None):
-        self.calls.append((agent, prompt))
-        return self.inner.complete(agent, prompt, producer_provider=producer_provider)
-
 
 def _planning_prompt(calls) -> str:
     return next(p for agent, p in calls if agent == "supervisor" and PLAN_MARKER in p)

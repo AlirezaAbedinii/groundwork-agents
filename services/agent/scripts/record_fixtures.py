@@ -45,11 +45,6 @@ class RecordingLLM:
         self._write(agent, render_messages(messages), response)
         return response
 
-    def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
-        response = self._inner.complete(agent, prompt, producer_provider=producer_provider)
-        self._write(agent, prompt, response)
-        return response
-
     def _write(self, agent: str, prompt: str, response) -> None:
         from orchestrator.llm.mock import fixture_key
 

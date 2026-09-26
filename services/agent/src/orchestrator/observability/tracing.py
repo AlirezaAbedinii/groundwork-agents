@@ -241,12 +241,6 @@ class TracedLLMClient:
             self._record(span, agent, render_messages(messages), response)
         return response
 
-    def complete(self, agent: str, prompt: str, *, producer_provider: str | None = None):
-        with child_span(f"llm:{agent}", kind="llm", agent=agent) as span:
-            response = self.inner.complete(agent, prompt, producer_provider=producer_provider)
-            self._record(span, agent, prompt, response)
-        return response
-
     def _record(self, span, agent: str, prompt: str, response) -> None:
         from orchestrator.llm.pricing import cost_usd
 

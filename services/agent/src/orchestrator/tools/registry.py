@@ -69,17 +69,6 @@ class ToolRegistry:
             for spec in self.tools_for(specialist)
         ]
 
-    def describe_for(self, specialist: str) -> str:
-        """Prompt block listing the tools a specialist may call (legacy prompt-and-parse loop)."""
-        lines = []
-        for spec in self.tools_for(specialist):
-            fields = ", ".join(
-                f"{name}: {getattr(f.annotation, '__name__', str(f.annotation))}"
-                for name, f in spec.input_schema.model_fields.items()
-            )
-            lines.append(f"- {spec.name}: {spec.description} (arguments: {fields})")
-        return "\n".join(lines) if lines else "(no tools available)"
-
     @staticmethod
     def _span_status(exc: BaseException) -> str:
         if isinstance(exc, (UnknownToolError, ToolPermissionError)):
