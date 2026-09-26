@@ -1,8 +1,9 @@
 {
   "agent": "research",
-  "match": ["shaky emerging topic", "Transcript: (none yet)"],
+  "match": ["shaky emerging topic"],
   "response": {
-    "text": "{\"action\": \"tool\", \"tool\": \"web_search\", \"arguments\": {\"query\": \"shaky emerging topic overview\"}}",
+    "text": "",
+    "tool_calls": [{"name": "web_search", "arguments": {"query": "shaky emerging topic overview"}}],
     "model": "mock-gpt-4o-mini", "prompt_tokens": 280, "completion_tokens": 35
   }
 }

@@ -1,5 +1,5 @@
 {
   "agent": "code",
   "match": ["comparison table using Python", "TABLE-OK"],
-  "response": {"text": "{\"action\": \"final\", \"output\": \"CODE-TABLE: TABLE-OK\"}"}
+  "response": {"text": "CODE-TABLE: TABLE-OK"}
 }

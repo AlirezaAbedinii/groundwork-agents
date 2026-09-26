@@ -1,8 +1,9 @@
 {
   "agent": "research",
-  "match": ["Research Weaviate", "Transcript: (none yet)"],
+  "match": ["Research Weaviate"],
   "response": {
-    "text": "{\"action\": \"tool\", \"tool\": \"web_search\", \"arguments\": {\"query\": \"Weaviate open-source vector database GitHub\"}}",
+    "text": "",
+    "tool_calls": [{"name": "web_search", "arguments": {"query": "Weaviate open-source vector database GitHub"}}],
     "model": "mock-gpt-4o-mini", "prompt_tokens": 310, "completion_tokens": 40
   }
 }

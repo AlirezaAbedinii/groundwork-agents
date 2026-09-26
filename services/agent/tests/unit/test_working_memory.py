@@ -10,6 +10,7 @@ import pytest
 
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
+from orchestrator.hitl.queue import InMemoryApprovalQueue
 from orchestrator.llm.mock import MockLLMClient
 from orchestrator.memory.working import InMemoryWorkingMemory
 from orchestrator.tools.base import InMemoryInvocationStore
@@ -105,8 +106,8 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
     }
     _fx(tmp_path, "plan", "supervisor", json.dumps(plan), match=["Create an execution plan"])
     _fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    _fx(tmp_path, "research", "research", json.dumps({"action": "final", "output": "A-FACTS"}))
-    _fx(tmp_path, "writing", "writing", json.dumps({"action": "final", "output": "SUMMARY"}))
+    _fx(tmp_path, "research", "research", "A-FACTS")
+    _fx(tmp_path, "writing", "writing", "SUMMARY")
     _fx(tmp_path, "reviewer", "reviewer", json.dumps({"score": 5, "feedback": ""}))
 
     memory = RecordingWorkingMemory()
@@ -116,6 +117,7 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
         registry=build_default_registry(InMemoryInvocationStore()),
         repo=repo,
         working=memory,
+        approvals=InMemoryApprovalQueue(),  # an unexpected escalation must not reach Postgres
     )
     task_id = repo.create_task("look up A and summarize", user_id="alice")
     await graph.ainvoke({"task_id": task_id, "request": "look up A and summarize",

@@ -345,7 +345,7 @@ def build_graph(
     async def _execute_body(payload, spec, sid, task_id, base, attempts, ctx, tool_gate, span) -> dict:
         repo.record_subtask(task_id, sid, status="running", attempts=attempts)
         try:
-            result = specialists[spec["specialist"]].execute(
+            result = await specialists[spec["specialist"]].execute(
                 spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate
             )
             with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:

@@ -1,5 +1,5 @@
 {
   "agent": "code",
-  "match": ["comparison table using Python", "Transcript: (none yet)"],
-  "response": {"text": "{\"action\": \"tool\", \"tool\": \"code_exec\", \"arguments\": {\"code\": \"print('TABLE-OK')\"}}"}
+  "match": ["comparison table using Python"],
+  "response": {"text": "", "tool_calls": [{"name": "code_exec", "arguments": {"code": "print('TABLE-OK')"}}]}
 }

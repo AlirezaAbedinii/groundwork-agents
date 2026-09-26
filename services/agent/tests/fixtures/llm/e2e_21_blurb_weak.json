@@ -2,7 +2,7 @@
   "agent": "writing",
   "match": ["product blurb"],
   "response": {
-    "text": "{\"action\": \"final\", \"output\": \"WEAK-BLURB: it is a product. it launches soon. it exists.\"}",
+    "text": "WEAK-BLURB: it is a product. it launches soon. it exists.",
     "model": "mock-gpt-4o-mini", "prompt_tokens": 340, "completion_tokens": 30
   }
 }

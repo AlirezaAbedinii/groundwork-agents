@@ -1,8 +1,9 @@
 {
   "agent": "research",
-  "match": ["Research Qdrant", "Transcript: (none yet)"],
+  "match": ["Research Qdrant"],
   "response": {
-    "text": "{\"action\": \"tool\", \"tool\": \"web_search\", \"arguments\": {\"query\": \"Qdrant open-source vector database GitHub\"}}",
+    "text": "",
+    "tool_calls": [{"name": "web_search", "arguments": {"query": "Qdrant open-source vector database GitHub"}}],
     "model": "mock-gpt-4o-mini", "prompt_tokens": 310, "completion_tokens": 40
   }
 }
