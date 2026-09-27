@@ -1,10 +1,11 @@
 """FastAPI app + routes.
 
 ``POST /v1/ask`` answers a question with citations, confidence, and latency/cost
-metadata, and logs a full trace per request. OpenAPI docs are served at ``/docs``.
+metadata, and logs a full trace per request. ``POST /v1/search`` runs retrieval
+alone, so it works without a generation key. OpenAPI docs are served at ``/docs``.
 
 The app is built by :func:`create_app`, which accepts injectable factories so
-tests can swap the pipeline/trace store for fakes. Real provider clients are
+tests can swap the pipeline/retriever/trace store for fakes. Real provider clients are
 constructed **lazily on first use** — importing this module, serving ``/docs``,
 and running ``/health`` all work with no API key configured; a missing key
 surfaces as a clear 503 on the endpoints that need it.
@@ -12,12 +13,15 @@ surfaces as a clear 503 on the endpoints that need it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import TypeVar
 
 from fastapi import FastAPI, HTTPException
 
 from ..config import ConfigError, Settings, get_settings
+from ..indexing.vector_store import ScoredChunk
+from ..observability.metrics import Stopwatch
 from ..observability.trace_store import TraceStore
-from ..pipeline import AnswerResult, RAGPipeline
+from ..pipeline import AnswerResult, RAGPipeline, SupportsRetrieve
 from .schemas import (
     AskRequest,
     AskResponse,
@@ -27,11 +31,15 @@ from .schemas import (
     DocumentsResponse,
     IngestRequest,
     IngestResponse,
+    SearchHit,
+    SearchRequest,
+    SearchResponse,
     StatsResponse,
     UsageModel,
 )
 
 PipelineFactory = Callable[[str], RAGPipeline]
+RetrieverFactory = Callable[[str], SupportsRetrieve]
 # indexer(path) -> IndexSummary-like; store_factory() -> object with list_sources/count.
 Indexer = Callable[[str], object]
 StoreFactory = Callable[[], object]
@@ -42,6 +50,46 @@ def _default_pipeline_factory(settings: Settings) -> PipelineFactory:
         return RAGPipeline.from_settings(settings, mode=mode)
 
     return factory
+
+
+def _default_retriever_factory(settings: Settings) -> RetrieverFactory:
+    def factory(mode: str) -> SupportsRetrieve:
+        from ..retrieval import build_retriever
+
+        return build_retriever(mode, settings=settings)
+
+    return factory
+
+
+_Built = TypeVar("_Built")
+
+
+def _build_for_mode(factory: Callable[[str], _Built], mode: str) -> _Built:
+    """Build ``mode``'s pipeline or retriever; a missing piece becomes a 501/503."""
+    try:
+        return factory(mode)
+    except NotImplementedError as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except ConfigError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        # e.g. hybrid mode before the BM25 index has been seeded.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ImportError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"Server missing a dependency: {exc}"
+        ) from exc
+
+
+def _to_hit(chunk: ScoredChunk) -> SearchHit:
+    return SearchHit(
+        chunk_id=chunk.chunk_id,
+        text=chunk.text,
+        score=chunk.score,
+        source_file=str(chunk.metadata.get("source_file", "")),
+        # The index stores "" for "no heading" (Chroma rejects None).
+        section_heading=chunk.metadata.get("section_heading") or None,
+    )
 
 
 def _to_response(result: AnswerResult) -> AskResponse:
@@ -81,6 +129,7 @@ def create_app(
     settings: Settings | None = None,
     *,
     pipeline_factory: PipelineFactory | None = None,
+    retriever_factory: RetrieverFactory | None = None,
     trace_store: TraceStore | None = None,
     indexer: Indexer | None = None,
     store_factory: StoreFactory | None = None,
@@ -101,6 +150,8 @@ def create_app(
     app.state.pipeline_factory = pipeline_factory or _default_pipeline_factory(settings)
     app.state.trace_store = trace_store  # created lazily so imports touch no disk
     app.state.pipelines = {}  # mode -> RAGPipeline, built on first use
+    app.state.retriever_factory = retriever_factory or _default_retriever_factory(settings)
+    app.state.retrievers = {}  # mode -> retriever for /v1/search, built on first use
     app.state.indexer = indexer
     app.state.store_factory = store_factory
 
@@ -125,20 +176,14 @@ def create_app(
 
     def _get_pipeline(mode: str) -> RAGPipeline:
         if mode not in app.state.pipelines:
-            try:
-                app.state.pipelines[mode] = app.state.pipeline_factory(mode)
-            except NotImplementedError as exc:
-                raise HTTPException(status_code=501, detail=str(exc)) from exc
-            except ConfigError as exc:
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            except FileNotFoundError as exc:
-                # e.g. hybrid mode before the BM25 index has been seeded.
-                raise HTTPException(status_code=503, detail=str(exc)) from exc
-            except ImportError as exc:
-                raise HTTPException(
-                    status_code=503, detail=f"Server missing a dependency: {exc}"
-                ) from exc
+            app.state.pipelines[mode] = _build_for_mode(app.state.pipeline_factory, mode)
         return app.state.pipelines[mode]
+
+    def _get_retriever(mode: str) -> SupportsRetrieve:
+        # Only the retriever: no chat client, so no generation key is needed.
+        if mode not in app.state.retrievers:
+            app.state.retrievers[mode] = _build_for_mode(app.state.retriever_factory, mode)
+        return app.state.retrievers[mode]
 
     @app.get("/health", tags=["ops"])
     def health() -> dict:
@@ -170,6 +215,23 @@ def create_app(
             }
         )
         return _to_response(result)
+
+    @app.post("/v1/search", response_model=SearchResponse, tags=["query"])
+    def search(body: SearchRequest) -> SearchResponse:
+        """Return the best-matching chunks, without generating an answer."""
+        mode = body.mode or settings.default_mode
+        retriever = _get_retriever(mode)
+        sw = Stopwatch()
+        try:
+            chunks = retriever.retrieve(body.query, top_k=body.top_k, stopwatch=sw)
+        except ImportError as exc:
+            raise HTTPException(
+                status_code=503, detail=f"Server missing a dependency: {exc}"
+            ) from exc
+        # No trace record: /v1/stats summarizes answered questions.
+        return SearchResponse(
+            query=body.query, mode=mode, hits=[_to_hit(c) for c in chunks], timings_ms=sw.as_dict()
+        )
 
     @app.post("/v1/ingest", response_model=IngestResponse, tags=["index"])
     def ingest(body: IngestRequest) -> IngestResponse:

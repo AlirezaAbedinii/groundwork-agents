@@ -5,7 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from rag.api.main import create_app
-from rag.config import Settings
+from rag.config import ConfigError, Settings
 from rag.generation.citations import Citation
 from rag.generation.prompts import REFUSAL_MESSAGE
 from rag.indexing.vector_store import ScoredChunk
@@ -178,7 +178,7 @@ def test_ask_logs_a_trace_per_request(tmp_path) -> None:
 
 def test_openapi_docs_are_exposed(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
-    for path in ("/v1/ask", "/v1/ingest", "/v1/documents", "/v1/stats"):
+    for path in ("/v1/ask", "/v1/search", "/v1/ingest", "/v1/documents", "/v1/stats"):
         assert path in schema["paths"]
 
 
@@ -255,3 +255,156 @@ def test_ingest_missing_path_is_400(tmp_path) -> None:
     resp = client.post("/v1/ingest", json={"path": "/no/such/dir"})
     assert resp.status_code == 400
     assert "does not exist" in resp.json()["detail"]
+
+
+# --- /v1/search: retrieval only ----------------------------------------------
+class FakeRetriever:
+    """Canned chunks, best first; records every retrieve() call."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int | None]] = []
+
+    def retrieve(self, query: str, top_k=None, stopwatch=None) -> list[ScoredChunk]:
+        self.calls.append((query, top_k))
+        with stopwatch.time("dense"):
+            return [
+                ScoredChunk(
+                    "c1",
+                    "FERRY-429 — Rate Limit Exceeded.",
+                    0.91,
+                    {"source_file": "04-error-codes.md", "section_heading": "Request errors"},
+                ),
+                # The index stores "" for a chunk above the first heading.
+                ScoredChunk(
+                    "c2",
+                    "Every error has a stable FERRY-NNN code.",
+                    0.74,
+                    {"source_file": "04-error-codes.md", "section_heading": ""},
+                ),
+            ]
+
+
+def _no_pipeline(mode: str):
+    raise AssertionError("/v1/search must not build a pipeline: that needs a chat client")
+
+
+def _search_app(tmp_path, retriever_factory, pipeline_factory=_no_pipeline):
+    return create_app(
+        Settings(_env_file=None),
+        pipeline_factory=pipeline_factory,
+        retriever_factory=retriever_factory,
+        trace_store=TraceStore(tmp_path / "traces.sqlite"),
+    )
+
+
+def test_search_returns_ranked_hits_and_logs_no_trace(tmp_path) -> None:
+    app = _search_app(tmp_path, lambda mode: FakeRetriever())
+    resp = TestClient(app).post("/v1/search", json={"query": "FERRY-429"})
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["query"] == "FERRY-429"
+    assert body["mode"] == "hybrid"  # no mode in the request -> settings.default_mode
+    assert body["hits"] == [
+        {
+            "chunk_id": "c1",
+            "text": "FERRY-429 — Rate Limit Exceeded.",
+            "score": 0.91,
+            "source_file": "04-error-codes.md",
+            "section_heading": "Request errors",
+        },
+        {
+            "chunk_id": "c2",
+            "text": "Every error has a stable FERRY-NNN code.",
+            "score": 0.74,
+            "source_file": "04-error-codes.md",
+            "section_heading": None,
+        },
+    ]
+    assert set(body["timings_ms"]) == {"dense", "total_ms"}
+    assert app.state.trace_store.count() == 0  # /v1/stats covers answered questions only
+
+
+def test_search_passes_mode_and_top_k_to_one_retriever_per_mode(tmp_path) -> None:
+    built: dict[str, FakeRetriever] = {}
+
+    def factory(mode: str) -> FakeRetriever:
+        assert mode not in built, "a mode's retriever is built once and reused"
+        built[mode] = FakeRetriever()
+        return built[mode]
+
+    client = TestClient(_search_app(tmp_path, factory))
+    client.post("/v1/search", json={"query": "a", "mode": "dense", "top_k": 7})
+    client.post("/v1/search", json={"query": "b", "mode": "dense"})
+
+    assert list(built) == ["dense"]
+    # No top_k in the request -> None, so the retriever applies its own default.
+    assert built["dense"].calls == [("a", 7), ("b", None)]
+
+
+def test_search_works_where_ask_lacks_a_generation_key(tmp_path) -> None:
+    def keyless_pipeline(mode: str):
+        raise ConfigError("Missing required configuration: OPENAI_API_KEY.")
+
+    client = TestClient(
+        _search_app(tmp_path, lambda mode: FakeRetriever(), pipeline_factory=keyless_pipeline)
+    )
+
+    assert client.post("/v1/search", json={"query": "FERRY-429"}).status_code == 200
+    assert client.post("/v1/ask", json={"question": "What is FERRY-429?"}).status_code == 503
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},  # missing query
+        {"query": ""},  # empty query
+        {"query": "x" * 2001},  # query above the length bound
+        {"query": "ok", "mode": "sparse"},  # invalid mode literal
+        {"query": "ok", "top_k": 0},  # top_k below bound
+        {"query": "ok", "top_k": 51},  # top_k above bound
+    ],
+)
+def test_search_bad_input_is_422(tmp_path, payload: dict) -> None:
+    retriever = FakeRetriever()
+    client = TestClient(_search_app(tmp_path, lambda mode: retriever))
+    assert client.post("/v1/search", json=payload).status_code == 422
+    assert retriever.calls == []
+
+
+@pytest.mark.parametrize(
+    ("error", "status"),
+    [
+        (NotImplementedError("mode not available"), 501),
+        (ConfigError("Missing required configuration: OPENAI_API_KEY."), 503),
+        (FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py"), 503),
+        (ImportError("No module named 'chromadb'"), 503),
+    ],
+)
+def test_search_maps_missing_pieces_exactly_like_ask(tmp_path, error, status) -> None:
+    def broken(mode: str):
+        raise error
+
+    client = TestClient(_search_app(tmp_path, broken, pipeline_factory=broken))
+    ask = client.post("/v1/ask", json={"question": "q"})
+    search = client.post("/v1/search", json={"query": "q"})
+
+    assert search.status_code == ask.status_code == status
+    assert search.json() == ask.json()
+
+
+def test_search_hybrid_before_seeding_is_503_then_works_once_seeded(tmp_path) -> None:
+    seeded = False
+
+    def factory(mode: str) -> FakeRetriever:
+        if mode == "hybrid" and not seeded:
+            raise FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py")
+        return FakeRetriever()
+
+    client = TestClient(_search_app(tmp_path, factory))
+    resp = client.post("/v1/search", json={"query": "q", "mode": "hybrid"})
+    assert resp.status_code == 503
+    assert "seed" in resp.json()["detail"]
+
+    seeded = True  # a failed build isn't cached: the next request builds again
+    assert client.post("/v1/search", json={"query": "q", "mode": "hybrid"}).status_code == 200

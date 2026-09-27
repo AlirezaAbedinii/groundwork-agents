@@ -92,7 +92,8 @@ Then open the UI at <http://localhost:8501> or the OpenAPI docs at
 <http://localhost:8000/docs>. The `/v1/ask` response carries the answer, `[n]`
 citations mapped to source chunks, the ranked retrieved contexts, a confidence
 score, token usage, `cost_usd`, and per-stage `timings_ms`. Other endpoints:
-`POST /v1/ingest`, `GET /v1/documents`, `GET /v1/stats`.
+`POST /v1/search` (retrieval only: ranked chunks with scores, nothing generated,
+so no generation key), `POST /v1/ingest`, `GET /v1/documents`, `GET /v1/stats`.
 
 <details>
 <summary>Local development without Docker</summary>
@@ -255,7 +256,7 @@ src/rag/
 ├── retrieval/           # dense retrieval + dense/hybrid mode switch
 ├── generation/          # grounded prompt, LLM client, citation parsing
 ├── observability/       # per-stage timers, cost accounting, trace store
-├── api/                 # FastAPI: /v1/ask /v1/ingest /v1/documents /v1/stats
+├── api/                 # FastAPI: /v1/ask /v1/search /v1/ingest /v1/documents /v1/stats
 └── pipeline.py          # retrieve → gate → generate → cite
 eval/                    # golden set + LLM-as-judge harness + reports
 ui/app.py                # Streamlit front end

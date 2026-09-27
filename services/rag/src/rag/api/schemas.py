@@ -91,6 +91,48 @@ class AskResponse(BaseModel):
     )
 
 
+class SearchRequest(BaseModel):
+    """Body of ``POST /v1/search``."""
+
+    query: str = Field(min_length=1, max_length=2000, description="What to search for.")
+    mode: Literal["dense", "hybrid"] | None = Field(
+        default=None,
+        description="Retrieval mode. Defaults to the server's configured mode.",
+    )
+    top_k: int | None = Field(
+        default=None, ge=1, le=50, description="Chunks to return (default from config)."
+    )
+
+    model_config = {
+        "json_schema_extra": {"examples": [{"query": "FERRY-429", "mode": "hybrid", "top_k": 5}]}
+    }
+
+
+class SearchHit(BaseModel):
+    """One retrieved chunk."""
+
+    chunk_id: str
+    text: str
+    score: float = Field(
+        description="Higher is more relevant: 1 - cosine distance (dense) or the "
+        "sigmoid-normalized cross-encoder score (hybrid)."
+    )
+    source_file: str
+    section_heading: str | None = None
+
+
+class SearchResponse(BaseModel):
+    """Response of ``POST /v1/search``: retrieval only, nothing generated."""
+
+    query: str
+    mode: str
+    hits: list[SearchHit] = Field(default_factory=list, description="Best match first.")
+    timings_ms: dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-stage latency (embed, dense, sparse, fusion, rerank, total_ms).",
+    )
+
+
 class IngestRequest(BaseModel):
     """Body of ``POST /v1/ingest``."""
 
