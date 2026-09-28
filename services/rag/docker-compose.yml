@@ -1,4 +1,5 @@
-# Full stack: API + persistent Chroma storage + Streamlit UI (+ one-off seeder).
+# Full stack: API + persistent Chroma storage + Streamlit UI + the MCP server
+# (+ one-off seeder).
 #
 # Chroma runs embedded in the API process (file-based, zero infra — the
 # project's fixed storage choice); ./data is bind-mounted so the index survives
@@ -6,7 +7,7 @@
 #
 # Quickstart (zero manual steps beyond an API key in .env):
 #   cp .env.example .env                # set OPENAI_API_KEY
-#   docker compose up -d --build        # API :8000, UI :8501
+#   docker compose up -d --build        # API :8000, UI :8501, MCP :8001/mcp
 #   docker compose run --rm seed        # index the sample corpus
 #   open http://localhost:8501          # or curl the API (see README)
 services:
@@ -40,6 +41,32 @@ services:
     depends_on:
       api:
         condition: service_healthy
+
+  # The retrieval tools (search, ask, list_sources) over MCP, built from ../../mcp.
+  # Agents connect to http://localhost:8001/mcp from the host.
+  mcp:
+    build: ../../mcp
+    environment:
+      RAG_API_URL: http://api:8000
+    ports:
+      - "8001:8001"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      # A TCP connect from inside the container: the host's port mapping accepts
+      # connections before the server is up, this doesn't.
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import socket; socket.create_connection(('127.0.0.1', 8001), timeout=3).close()",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
 
   # One-off: `docker compose run --rm seed` indexes the sample corpus.
   seed:

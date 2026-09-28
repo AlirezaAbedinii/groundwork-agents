@@ -22,6 +22,9 @@ x-app-env: &app-env
   REVIEW_SCORE_THRESHOLD: ${REVIEW_SCORE_THRESHOLD:-3}
   MAX_SPECIALIST_RETRIES: ${MAX_SPECIALIST_RETRIES:-2}
   APPROVAL_WEBHOOK_URL: ${APPROVAL_WEBHOOK_URL:-}
+  # Retrieval tools over MCP; empty disables them. The RAG stack's MCP server
+  # runs in another compose project: http://host.docker.internal:8001/mcp.
+  MCP_RAG_URL: ${MCP_RAG_URL:-}
 
 services:
   postgres:
@@ -97,6 +100,8 @@ services:
       dockerfile: docker/api.Dockerfile
     image: agent-orchestration-api
     environment: *app-env
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach the MCP server on the host
     ports:
       - "8080:8080"
     volumes:
@@ -124,6 +129,8 @@ services:
       <<: *app-env
       CODE_EXEC_BACKEND: docker
       CODE_EXEC_IMAGE: orchestrator-sandbox
+    extra_hosts:
+      - "host.docker.internal:host-gateway"  # reach the MCP server on the host
     volumes:
       # code_exec runs sibling sandbox containers through the host engine
       - /var/run/docker.sock:/var/run/docker.sock
