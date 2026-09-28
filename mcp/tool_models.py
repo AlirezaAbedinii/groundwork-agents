@@ -7,7 +7,9 @@ sends snippets instead of whole chunks and ``ask`` leaves out the contexts its
 answer came from.
 """
 
-from pydantic import BaseModel, Field
+from typing import Annotated
+
+from pydantic import BaseModel, BeforeValidator, Field
 
 # The agent loop cuts every tool result to this many characters of JSON
 # (services/agent/src/orchestrator/agents/specialists/base.py:140).
@@ -19,13 +21,16 @@ SNIPPET_CHARS = 300
 # 5 hits of 150 chars, to re-check with the Phase 3 evals.
 DEFAULT_TOP_K = 3
 
+# The RAG index stores "" for a chunk with no section heading (Chroma rejects None).
+Heading = Annotated[str | None, BeforeValidator(lambda heading: heading or None)]
+
 
 class SearchHit(BaseModel):
     """One retrieved chunk, cut to a snippet."""
 
     chunk_id: str
     source_file: str
-    section_heading: str | None
+    section_heading: Heading
     score: float = Field(description="Retrieval score; higher is more relevant.")
     snippet: str = Field(description=f"The start of the chunk, at most {SNIPPET_CHARS} chars.")
 
@@ -44,7 +49,7 @@ class Citation(BaseModel):
     index: int = Field(description="The n in [n], as written in the answer.")
     chunk_id: str
     source_file: str
-    section_heading: str | None
+    section_heading: Heading
     supported: bool | None = Field(
         description="Whether a verifier judged that the chunk supports the claim; "
         "null when verification did not run."

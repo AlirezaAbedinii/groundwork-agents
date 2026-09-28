@@ -30,6 +30,11 @@ target-version = "py312"
 # Same rule set as services/rag.
 select = ["E", "F", "I", "UP", "B", "W"]
 
+[tool.ruff.lint.isort]
+# This project's own modules, imported by path (it isn't a package). Declared so
+# the import order doesn't depend on whether server.py exists yet.
+known-first-party = ["conftest", "server", "tool_models"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
