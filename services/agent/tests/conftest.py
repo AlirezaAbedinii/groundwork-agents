@@ -7,6 +7,9 @@ os.environ.setdefault("CODE_EXEC_BACKEND", "subprocess")
 # Tests run graphs in-process; a developer .env set to RUN_MODE=celery would
 # otherwise enqueue every test task to whatever worker is listening.
 os.environ["RUN_MODE"] = "inline"
+# Tests opt in to the RAG tools over MCP explicitly; a developer .env pointing at a
+# live MCP server would otherwise add them to every graph run.
+os.environ["MCP_RAG_URL"] = ""
 
 import pytest
 from fastapi.testclient import TestClient

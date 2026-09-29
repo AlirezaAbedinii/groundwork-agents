@@ -145,7 +145,7 @@ async def run_replay(
     from orchestrator.llm.clients import get_llm_client
     from orchestrator.memory.working import WorkingMemory
     from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
-    from orchestrator.tools.defaults import build_default_registry
+    from orchestrator.tools.defaults import build_registry
 
     setup_tracing()
     repo = DBTaskRepo()
@@ -168,7 +168,7 @@ async def run_replay(
         async with open_checkpointer() as checkpointer:
             graph = build_graph(
                 llm=llm,
-                registry=build_default_registry(DBInvocationStore()),
+                registry=await build_registry(DBInvocationStore()),
                 repo=repo,
                 checkpointer=checkpointer,
                 working=WorkingMemory(),

@@ -3,8 +3,9 @@
 The graph runs under ``ainvoke``. Its checkpointer connection is opened per
 run (see graph/checkpointing.py), so the graph is compiled per run too; the two
 cost a few tens of milliseconds against runs that take seconds. The
-loop-independent dependencies (clients, stores, memory) are built once per
-process.
+loop-independent dependencies (clients, stores, memory, the tool registry) are
+built once per process. The RAG tools join the registry over MCP on the first
+run that reaches their server (see tools/defaults.py).
 """
 
 from __future__ import annotations
@@ -25,7 +26,8 @@ from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import WorkingMemory
 from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
-from orchestrator.tools.defaults import build_default_registry
+from orchestrator.tools.defaults import add_rag_tools, build_default_registry
+from orchestrator.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +37,6 @@ def _dependencies() -> dict:
     setup_tracing()
     return dict(
         llm=TracedLLMClient(get_llm_client(), calls=DBLLMCallStore()),
-        registry=build_default_registry(DBInvocationStore()),
         repo=DBTaskRepo(),
         working=WorkingMemory(),
         longterm=LongTermMemory(),
@@ -44,16 +45,29 @@ def _dependencies() -> dict:
     )
 
 
+@lru_cache
+def _registry() -> ToolRegistry:
+    """The process's one tool registry: the local tools, and the RAG tools once discovered."""
+    return build_default_registry(DBInvocationStore())
+
+
 @asynccontextmanager
-async def production_graph() -> AsyncIterator[CompiledStateGraph]:
-    """The production graph, checkpointing to Postgres over a connection that lives for one run."""
+async def production_graph(*, discover: bool = True) -> AsyncIterator[CompiledStateGraph]:
+    """The production graph, checkpointing to Postgres over a connection that lives for one run.
+
+    With ``discover`` (runs), the RAG MCP tools are added to the registry first if
+    they aren't there yet; state reads pass False so they never wait on the server.
+    """
+    registry = _registry()
+    if discover:
+        await add_rag_tools(registry)
     async with open_checkpointer() as checkpointer:
-        yield build_graph(checkpointer=checkpointer, **_dependencies())
+        yield build_graph(checkpointer=checkpointer, registry=registry, **_dependencies())
 
 
 async def task_state(task_id: str) -> StateSnapshot:
     """The task's latest checkpointed graph state."""
-    async with production_graph() as graph:
+    async with production_graph(discover=False) as graph:
         return await graph.aget_state({"configurable": {"thread_id": task_id}})
 
 

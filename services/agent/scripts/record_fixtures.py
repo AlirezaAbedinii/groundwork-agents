@@ -113,7 +113,7 @@ async def main() -> None:
     from orchestrator.graph.builder import build_graph
     from orchestrator.hitl.queue import InMemoryApprovalQueue
     from orchestrator.llm.clients import RealLLMClient
-    from orchestrator.tools.defaults import build_default_registry
+    from orchestrator.tools.defaults import build_registry
 
     args.out.mkdir(parents=True, exist_ok=True)
     recorder = RecordingLLM(RealLLMClient(), args.out)
@@ -122,7 +122,7 @@ async def main() -> None:
     repo = DBTaskRepo()
     graph = build_graph(
         llm=recorder,
-        registry=build_default_registry(DBInvocationStore()),
+        registry=await build_registry(DBInvocationStore()),
         repo=repo,
         checkpointer=MemorySaver(),
         working=working,

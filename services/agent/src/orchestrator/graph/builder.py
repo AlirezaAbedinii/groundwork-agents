@@ -73,7 +73,7 @@ def build_graph(
 ):
     settings = get_settings()
     llm = llm or get_llm_client()
-    if registry is None:
+    if registry is None:  # tests and ad-hoc use; production passes the runner's registry (with MCP tools)
         from orchestrator.db.repo import DBInvocationStore
         from orchestrator.tools.defaults import build_default_registry
 

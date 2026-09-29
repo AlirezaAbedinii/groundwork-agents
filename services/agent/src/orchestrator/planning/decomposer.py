@@ -23,8 +23,9 @@ PLAN_PROMPT = """You are the supervisor of a multi-agent system. {marker} for th
 Task: {request}
 
 Available specialists: {specialists} —
-research (web research, source gathering), analysis (data extraction/computation),
-writing (drafts, summaries, memos), code (writes and runs code).
+research (web research, internal documentation search, source gathering),
+analysis (data extraction/computation), writing (drafts, summaries, memos),
+code (writes and runs code).
 
 Decompose the task into subtasks.
 
