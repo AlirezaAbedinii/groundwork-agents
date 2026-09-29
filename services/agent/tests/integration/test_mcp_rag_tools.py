@@ -173,3 +173,14 @@ def test_with_mcp_on_the_existing_flow_runs_and_every_call_respects_ownership(cl
     # This run discovered the RAG tools for research, though its script never calls them.
     research_tools = {spec.name for spec in runner._registry().tools_for("research")}
     assert {"rag_search", "rag_ask", "rag_list_sources"} <= research_tools
+
+
+def test_the_ferry_plan_still_wins_with_memories_of_earlier_tasks_in_the_prompt(client, mcp_on):
+    # The first task leaves memories about vector databases, which the planner
+    # injects into the next prompt; the Ferry plan must still outrank that one.
+    run(client, VECTOR_REQUEST)
+    task_id = run(client, REQUEST)
+
+    used = {(row["specialist"], row["tool_name"]) for row in invocations(task_id)}
+    assert ("research", "rag_search") in used
+    assert ("research", "web_search") not in used
