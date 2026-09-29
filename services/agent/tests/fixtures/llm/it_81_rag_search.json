@@ -1,0 +1,21 @@
+{
+  "agent": "research",
+  "match": [
+    "Look up FERRY-429"
+  ],
+  "response": {
+    "text": "",
+    "tool_calls": [
+      {
+        "name": "rag_search",
+        "arguments": {
+          "query": "FERRY-429"
+        }
+      },
+      {
+        "name": "rag_list_sources",
+        "arguments": {}
+      }
+    ]
+  }
+}

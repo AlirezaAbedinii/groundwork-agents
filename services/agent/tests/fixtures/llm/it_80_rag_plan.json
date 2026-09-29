@@ -1,0 +1,13 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Create an execution plan",
+    "explain what FERRY-429 means"
+  ],
+  "response": {
+    "text": "{\"task_summary\": \"Look FERRY-429 up in the Ferry docs, then explain it and the retry behaviour\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Look up FERRY-429 in the internal documentation\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"the error's meaning and the retry guidance, with source files\", \"estimated_complexity\": \"low\", \"depends_on\": []}, {\"id\": \"s2\", \"description\": \"Write a short explanation of FERRY-429 and how clients should retry\", \"specialist\": \"writing\", \"required_inputs\": [\"documentation facts\"], \"expected_output_format\": \"two short paragraphs\", \"estimated_complexity\": \"low\", \"depends_on\": [\"s1\"]}], \"confidence\": 0.9}",
+    "model": "mock-gpt-4o",
+    "prompt_tokens": 420,
+    "completion_tokens": 160
+  }
+}

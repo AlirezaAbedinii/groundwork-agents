@@ -1,0 +1,9 @@
+{
+  "agent": "writing",
+  "match": [
+    "short explanation of FERRY-429"
+  ],
+  "response": {
+    "text": "FERRY-429 EXPLAINER: FERRY-429 means the submission quota was exceeded. Wait for the Retry-After interval, then retry with backoff as ferry.retry.* sets it."
+  }
+}

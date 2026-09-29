@@ -1,0 +1,16 @@
+{
+  "agent": "research",
+  "match": [
+    "Keep listing the indexed Ferry documents",
+    "-> rag_list_sources returned:"
+  ],
+  "response": {
+    "text": "",
+    "tool_calls": [
+      {
+        "name": "rag_list_sources",
+        "arguments": {}
+      }
+    ]
+  }
+}

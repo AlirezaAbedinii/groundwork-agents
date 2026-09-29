@@ -1,0 +1,11 @@
+{
+  "agent": "research",
+  "match": [
+    "Keep listing the indexed Ferry documents",
+    "-> rag_list_sources returned:",
+    "-> rag_list_sources failed:"
+  ],
+  "response": {
+    "text": "DOCS-LISTED: the list tool refused a fourth call; the index has 7 documents."
+  }
+}

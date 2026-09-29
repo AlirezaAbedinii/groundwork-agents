@@ -1,0 +1,11 @@
+{
+  "agent": "research",
+  "match": [
+    "Look up FERRY-429",
+    "-> rag_search returned:",
+    "-> rag_list_sources returned:"
+  ],
+  "response": {
+    "text": "FERRY-429-FACTS: FERRY-429 means the client exceeded its submission quota; the response carries Retry-After, and clients retry per ferry.retry.* (source: 04-error-codes.md)."
+  }
+}

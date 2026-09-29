@@ -1,0 +1,13 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Synthesize the final deliverable",
+    "Ferry documentation"
+  ],
+  "response": {
+    "text": "FINAL: FERRY-429 explained from the Ferry documentation.",
+    "model": "mock-gpt-4o",
+    "prompt_tokens": 260,
+    "completion_tokens": 20
+  }
+}

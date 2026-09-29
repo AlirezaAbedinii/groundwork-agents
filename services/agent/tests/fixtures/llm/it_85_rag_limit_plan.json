@@ -1,0 +1,13 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Create an execution plan",
+    "TRIGGER-RAG-LIMIT"
+  ],
+  "response": {
+    "text": "{\"task_summary\": \"List the Ferry docs until the tool refuses\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Keep listing the indexed Ferry documents until the tool refuses\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"the document list\", \"estimated_complexity\": \"low\", \"depends_on\": []}], \"confidence\": 0.9}",
+    "model": "mock-gpt-4o",
+    "prompt_tokens": 300,
+    "completion_tokens": 90
+  }
+}
