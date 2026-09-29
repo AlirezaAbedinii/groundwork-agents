@@ -55,6 +55,10 @@ class Settings(BaseSettings):
     code_exec_image: str = "orchestrator-sandbox"
     code_exec_timeout_s: int = 20
 
+    # MCP: retrieval tools from the RAG stack's MCP server
+    mcp_rag_url: str = ""  # Streamable HTTP URL, e.g. http://localhost:8001/mcp; empty disables the rag_* tools
+    mcp_call_timeout_s: float = 30.0
+
     # Thresholds
     plan_confidence_threshold: float = 0.7
     review_score_threshold: int = 3
