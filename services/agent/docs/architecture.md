@@ -48,6 +48,9 @@ flowchart LR
     API --> CHROMA[("chromadb :8010→8000<br/>episodes · facts · preferences")]
     WORKER --> CHROMA
 
+    API -.->|"rag_* tools over MCP (optional)"| MCPS["retrieval MCP server :8001<br/>in the services/rag stack"]
+    WORKER -.-> MCPS
+
     MIGRATE["migrate (one-shot)<br/>alembic upgrade + demo seed"] --> PG
 ```
 
@@ -152,6 +155,8 @@ approval row → `interrupt()`.
 5. **Execution** — DAG waves fan out; specialists read working memory, call
    owned tools natively, several per turn and in parallel, through the registry
    (permission + rate-limit checks, full I/O logging), and write results back.
+   The retrieval service's tools (`rag_*`) arrive over MCP and go through the
+   same registry.
 6. **Review** — every deliverable is scored by the cross-provider reviewer;
    rejections loop back with feedback.
 7. **Synthesis & delivery** — the supervisor composes the final output from
@@ -307,8 +312,16 @@ doesn't produce false divergences.
    the specialist's loop, with the exact arguments in the approval — humans
    approve actions, not intentions.
 10. **Everything keyless-runnable.** From a clean checkout with no API keys:
-    the full stack, the demo, and all 129 deterministic tests. Reviewability
+    the full stack, the demo, and all the deterministic tests. Reviewability
     of a portfolio system is a feature.
+11. **MCP tools are registry tools.** The retrieval service's tools are
+    discovered over MCP into the same registry as the local ones, under a
+    `rag_` prefix and an agent-side policy table (owners, rate limits,
+    sensitivity; any server tool not in it is denied). Permissions, limits,
+    logging, tracing and approvals apply unchanged, and the server's own
+    annotations decide nothing. Each call opens and closes its own session on
+    a short-lived loop in the tool's worker thread. See
+    [ADR 0004](../../../docs/decisions/0004-mcp-as-the-seam.md).
 
 ## Demo recording shot list
 

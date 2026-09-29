@@ -19,10 +19,12 @@ from two services:
   pauses for human approval when a step calls for it, and records a trace of
   every step with its cost.
 
-Both services run locally today, each with its own tests and measured results
-(see their READMEs). The work in progress connects them: the agents will call
-the retrieval service over MCP, one evaluation suite will measure the whole
-system, and Terraform will deploy it to Azure.
+Both services run locally, each with its own tests and measured results (see
+their READMEs). The agents reach the retrieval service over MCP: its search and
+question answering are tools the research specialist can call, under the same
+permissions, rate limits and tracing as its other tools. Still in progress: one
+evaluation suite that measures the whole system, and Terraform that deploys it
+to Azure.
 
 ## Layout
 
@@ -30,7 +32,7 @@ system, and Terraform will deploy it to Azure.
 |---|---|
 | [`services/rag`](services/rag/README.md) | Retrieval service: ingestion, hybrid search, reranking, API, UI, evaluation harness |
 | [`services/agent`](services/agent/README.md) | Agent service: supervisor and specialist agents, tools, approvals, tracing, API, UIs |
-| [`mcp/`](mcp/README.md) | MCP server and client adapter (planned) |
+| [`mcp/`](mcp/README.md) | MCP server: the retrieval service's search, ask and list_sources as tools |
 | [`eval/`](eval/README.md) | Evaluation across both services (planned) |
 | [`infra/`](infra/README.md) | Terraform for Azure (planned) |
 | [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
@@ -61,8 +63,13 @@ cp .env.example .env
 docker compose up -d --build && make demo
 ```
 
+To let the agents search the documents, start the retrieval stack (it serves
+MCP on port 8001) and set `MCP_RAG_URL` in `services/agent/.env`; its
+`.env.example` shows the values.
+
 The service READMEs cover endpoints, configuration and local development.
-`make test` at the repository root runs both test suites.
+`make test` at the repository root runs all three test suites: both services
+and the MCP server.
 
 ## Roadmap
 
@@ -70,7 +77,7 @@ The service READMEs cover endpoints, configuration and local development.
 |---|---|---|
 | 0 | Two services with tests and CI, brought into one repository | done |
 | 1 | Native tool calling and structured outputs in the agent loop | done |
-| 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | planned |
+| 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | done |
 | 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | planned |
 | 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | planned |
 | 5 | Results, screenshots and a recorded demo | planned |

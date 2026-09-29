@@ -20,7 +20,7 @@ flowchart TD
     W["✍️ Writing"]
     C["💻 Code"]
 
-    TOOLS[("🧰 Tool registry<br/>web search · files · code sandbox · SQL · HTTP")]
+    TOOLS[("🧰 Tool registry<br/>web search · files · code sandbox · SQL · HTTP · team docs over MCP")]
     R & A & W & C -.->|owned tools only, every call logged| TOOLS
 
     R & A & W & C -->|every deliverable| REV
@@ -44,7 +44,7 @@ I built a multi-agent orchestration system where AI agents decompose complex tas
 | Pillar | What's implemented | Where |
 |---|---|---|
 | **Multi-agent orchestration** | Supervisor → 4 specialists → independent reviewer, wired as a LangGraph state machine with parallel DAG-wave dispatch, retry and rework-with-feedback edges, and Postgres checkpointing | [`graph/`](src/orchestrator/graph), [`agents/`](src/orchestrator/agents), [`planning/`](src/orchestrator/planning) |
-| **Tool use** | 5 tools behind a registry enforcing per-specialist permissions, rate limits, and sensitive flags; every invocation logged with arguments, output, latency, status | [`tools/`](src/orchestrator/tools) |
+| **Tool use** | 5 local tools, plus the retrieval service's tools over MCP, behind one registry enforcing per-specialist permissions, rate limits, and sensitive flags; every invocation logged with arguments, output, latency, status | [`tools/`](src/orchestrator/tools) |
 | **Memory** | Task-scoped working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval into planning, importance scoring, consolidation, expiration, and a right-to-forget endpoint | [`memory/`](src/orchestrator/memory) |
 | **Human-in-the-loop** | 5 escalation triggers → 4 approval levels; durable pause via graph interrupts; review UI with full decision context, four resolution actions, and a grounded chat panel | [`hitl/`](src/orchestrator/hitl), [`ui/review_app.py`](ui/review_app.py) |
 | **Observability** | Every decision is an OpenTelemetry span exported to Postgres; trace explorer with expandable prompts; cost tracking per task + aggregates; deterministic replay and fork-at-step-k | [`observability/`](src/orchestrator/observability), [`ui/trace_explorer.py`](ui/trace_explorer.py) |
@@ -192,8 +192,11 @@ Every agent is a typed LangGraph node — Pydantic models in, Pydantic models ou
 | `code_exec` | Run a Python snippet | analysis, code | Sandboxed: no network, capped CPU/memory/pids/time |
 | `db_query` | Read-only SQL | analysis | `SELECT`/`WITH` only, single statement, read-only transaction |
 | `api_call` | Call an allowlisted HTTP API | research | `POST` is flagged sensitive |
+| `rag_search` / `rag_ask` / `rag_list_sources` | Search and question answering over the team's indexed documents | research | From the retrieval service's MCP server when `MCP_RAG_URL` is set; 10 / 5 / 3 calls per task |
 
 Every tool call — successful, rejected, rate-limited, or failed — is logged with its arguments, output, latency, and status. Each tool has a per-task rate limit, and specialists can only invoke tools they're explicitly assigned.
+
+The `rag_*` tools live on the retrieval service's [MCP server](../../mcp/README.md). On the first run that can reach it, the agent lists the server's tools and registers the ones its policy table allows ([`tools/defaults.py`](src/orchestrator/tools/defaults.py); any other server tool is denied) as ordinary registry tools, so every rule above applies to them unchanged. Set `MCP_RAG_URL` to enable them (see [`.env.example`](.env.example)); while the server is unreachable, runs go on with the local tools. See [ADR 0004](../../docs/decisions/0004-mcp-as-the-seam.md).
 
 ## Memory
 
@@ -267,6 +270,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | Short-term memory | Redis — task-scoped working memory | ✅ |
 | Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
 | Tool calling | Native function calling on both providers — tool schemas from the Pydantic inputs, parallel calls, errors returned to the model | ✅ |
+| Tool protocol | MCP (Python SDK 2.x): the retrieval service's tools, discovered into the same registry | ✅ |
 | Structured outputs | Native JSON-schema output for plans, review verdicts and memory extraction (strict on OpenAI) | ✅ |
 | Async execution | Async LLM client and graph (`ainvoke`, async Postgres checkpointer); Celery + Redis workers for runs/resumes/replays, beat for memory maintenance | ✅ |
 | Human-in-the-loop | LangGraph interrupts + approval queue, four resolution actions, review UI (Streamlit) | ✅ |

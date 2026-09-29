@@ -80,7 +80,7 @@ Requires Docker + an OpenAI API key.
 ```bash
 git clone https://github.com/AlirezaAbedinii/groundwork-agents.git && cd groundwork-agents/services/rag
 cp .env.example .env                 # put your OPENAI_API_KEY in .env
-docker compose up -d --build         # API :8000, UI :8501
+docker compose up -d --build         # API :8000, UI :8501, MCP :8001/mcp
 docker compose run --rm seed         # index the sample corpus (idempotent)
 
 curl -X POST http://localhost:8000/v1/ask \
@@ -110,6 +110,19 @@ python scripts/seed.py                   # build the index
 make run-api                             # uvicorn on :8000
 ```
 </details>
+
+## MCP
+
+The stack also runs the MCP server from [`mcp/`](../../mcp/README.md), which
+offers this API to agents as tools; the agents in
+[`services/agent`](../agent/README.md) call it that way. Each tool call is one
+request here:
+
+| MCP tool | Endpoint |
+|---|---|
+| `search` | `POST /v1/search`: ranked chunks, nothing generated, so no generation key |
+| `ask` | `POST /v1/ask` |
+| `list_sources` | `GET /v1/documents` |
 
 ## Evaluation results
 
