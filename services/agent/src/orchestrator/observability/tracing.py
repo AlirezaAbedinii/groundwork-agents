@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 
 from langchain_core.messages import BaseMessage
+from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
@@ -154,7 +155,9 @@ def task_run_span(task_id: str, name: str = "task"):
     """Root span for one graph run (initial run, resume, or replay)."""
     token = _current_task_id.set(task_id)
     try:
-        with _tracer().start_as_current_span(name) as root:
+        # Always a new trace: an inline run executes inside the web request that
+        # started it, and FastAPI (0.142+) opens a span for every request.
+        with _tracer().start_as_current_span(name, context=otel_context.Context()) as root:
             root.set_attribute("orchestrator.task_id", task_id)
             root.set_attribute("orchestrator.kind", "task")
             _task_roots[task_id] = trace.set_span_in_context(root)

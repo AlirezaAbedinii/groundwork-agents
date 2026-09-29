@@ -74,3 +74,22 @@ def test_spans_without_task_id_are_not_exported(capture):
         span.set_attribute("orchestrator.task_id", "t1")
 
     assert [row["name"] for row in rows] == ["task-scoped"]
+
+
+def test_a_task_run_is_its_own_trace_even_inside_a_request_span(capture, monkeypatch):
+    # FastAPI (0.142+) opens a span for every request, and inline runs execute as
+    # background tasks inside it; a run's root span must still be a root.
+    from orchestrator.observability import tracing
+
+    tracer, rows = capture
+    monkeypatch.setattr(tracing, "_tracer", lambda: tracer)
+
+    with tracer.start_as_current_span("POST /approvals/{approval_id}/resolve"):
+        with tracing.task_run_span("t1", "task:resume"):
+            with tracing.child_span("tool:web_search", kind="tool"):
+                pass
+
+    by_name = {row["name"]: row for row in rows}  # the request span has no task id: not exported
+    assert set(by_name) == {"task:resume", "tool:web_search"}
+    assert by_name["task:resume"]["parent_id"] is None
+    assert by_name["tool:web_search"]["parent_id"] == by_name["task:resume"]["id"]
