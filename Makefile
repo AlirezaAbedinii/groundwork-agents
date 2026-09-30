@@ -29,8 +29,8 @@ lint-agent: ## Lint the agent service.
 lint-mcp: ## Lint the MCP server.
 	cd mcp && $(MCP_PYTHON) -m ruff check .
 
-test-rag: ## RAG unit tests + mocked eval smoke (no paid API calls).
-	$(MAKE) -C services/rag $(RAG_PYTHON) test eval-smoke
+test-rag: ## RAG unit tests (no paid API calls).
+	$(MAKE) -C services/rag $(RAG_PYTHON) test
 
 test-agent: ## Agent unit + integration tests (integration skips without postgres).
 	$(MAKE) -C services/agent test

@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "rag-hybrid-search"
 version = "0.0.0"
-description = "Retrieval-Augmented Generation over technical docs: dense + hybrid retrieval, grounded answers with inline citations, an LLM-as-judge eval harness, and per-stage latency/cost instrumentation."
+description = "Retrieval-Augmented Generation over technical docs: dense + hybrid retrieval, grounded answers with inline citations, and per-stage latency/cost instrumentation."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Alireza Abedini", email = "doveisgh@gmail.com" }]
-keywords = ["rag", "retrieval", "hybrid-search", "bm25", "chromadb", "llm-evaluation"]
+keywords = ["rag", "retrieval", "hybrid-search", "bm25", "chromadb"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -53,7 +53,7 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-src = ["src", "tests", "eval", "scripts", "ui"]
+src = ["src", "tests", "scripts", "ui"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "W"]
@@ -62,5 +62,5 @@ ignore = []
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-# "src" for the rag package; "." so the eval harness (eval/) is importable.
-pythonpath = ["src", "."]
+# "src" for the rag package.
+pythonpath = ["src"]

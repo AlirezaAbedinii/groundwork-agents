@@ -130,7 +130,7 @@ Quality is scored by a hand-built **LLM-as-judge** harness over a golden set of
 hand-written Q/A pairs spanning four categories: direct lookups, multi-hop
 questions, questions with **no answer in the corpus** (the system must refuse),
 and ambiguous questions. Ground-truth answers are human-written and verified —
-never LLM-generated. See [`eval/golden/SCHEMA.md`](eval/golden/SCHEMA.md).
+never LLM-generated.
 
 **The judge is not the generator.** Grading uses a separate model
 (`EVAL_JUDGE_MODEL`, default `gpt-4o`) rather than the generation model
@@ -192,12 +192,9 @@ trade-off would sharpen on a larger, messier corpus.
 
 ### Reproducing the numbers
 
-```bash
-python scripts/seed.py             # index the corpus (needs OPENAI_API_KEY)
-python eval/run_eval.py            # full suite -> eval/reports/latest.json + summary
-python eval/compare.py             # both tables above -> eval/reports/comparison.md
-python eval/run_eval.py --smoke    # mocked 3-case run (what CI executes; no API calls)
-```
+The tables above came from this service's own evaluation harness, since retired
+([last version](https://github.com/AlirezaAbedinii/groundwork-agents/tree/940677e9078e4cd4d8a70aecb74f26c8295435d0/services/rag/eval));
+evaluation now lives in [`eval/`](../../eval/README.md) at the repo root.
 
 ## Latency & cost
 
@@ -252,8 +249,7 @@ is verification batching, not retrieval.
   context they were generated from; citations pointing outside the retrieved
   set are flagged, and an LLM-as-judge pass confirms each cited chunk actually
   supports its claim (unsupported ones are surfaced, and lower the composite
-  confidence). That answer-time pass uses the generation model, so the eval
-  harness repeats it with a separate judge model and reports both.
+  confidence). That answer-time pass uses the generation model.
 - **One LLM provider** (OpenAI *or* Anthropic behind one interface) — no
   multi-provider routing. **File-based Chroma** — zero extra infrastructure.
   **Streamlit, not React; no auth; no streaming** — deliberately out of scope to
@@ -271,7 +267,6 @@ src/rag/
 ├── observability/       # per-stage timers, cost accounting, trace store
 ├── api/                 # FastAPI: /v1/ask /v1/search /v1/ingest /v1/documents /v1/stats
 └── pipeline.py          # retrieve → gate → generate → cite
-eval/                    # golden set + LLM-as-judge harness + reports
 ui/app.py                # Streamlit front end
 scripts/                 # ingest.py (CLI) + seed.py (sample corpus)
 tests/                   # deterministic tests (LLM mocked)
@@ -282,23 +277,20 @@ tests/                   # deterministic tests (LLM mocked)
 ```bash
 make test     # pytest — deterministic, no network, LLM mocked
 make lint     # ruff
-make eval     # full eval run (requires API key + seeded index)
 ```
 
-CI (badge above) runs **ruff + pytest + a mocked eval smoke run** on every push —
-no paid API calls in CI. The suite covers loaders/chunkers on real fixtures,
-citation-parser edge cases, retrieval ranking with injected fakes, the refusal
-gate, the API contract (happy path, validation, error surfaces), and the eval
-harness with a scripted judge.
+CI (badge above) runs **ruff + pytest** on every push — no paid API calls in
+CI. The suite covers loaders/chunkers on real fixtures, citation-parser edge
+cases, retrieval ranking with injected fakes, the refusal gate, and the API
+contract (happy path, validation, error surfaces).
 
 ## Status
 
 Feature-complete: ingestion (md/txt/pdf/html, three switchable chunkers, dedup),
 hybrid retrieval (dense + BM25 → RRF → cross-encoder rerank), grounded
-generation with judge-verified citations and composite confidence, the
-four-metric evaluation harness over a 53-question hand-verified golden set,
-comparison experiments, per-stage latency/cost instrumentation, FastAPI +
-Streamlit + Docker. A demo storyboard lives in [`DEMO.md`](DEMO.md).
+generation with judge-verified citations and composite confidence, per-stage
+latency/cost instrumentation, FastAPI + Streamlit + Docker. A demo storyboard
+lives in [`DEMO.md`](DEMO.md).
 
 ## License
 

@@ -14,7 +14,6 @@ __pycache__
 data/chroma
 data/processed
 data/traces.sqlite
-eval/reports
 
 # Local-only notes and reference material (not part of the published project).
 CLAUDE.md

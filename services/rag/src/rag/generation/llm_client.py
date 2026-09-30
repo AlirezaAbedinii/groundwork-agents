@@ -116,8 +116,7 @@ class AnthropicChatClient:
 def get_chat_client(settings: Settings | None = None, *, model: str | None = None) -> ChatClient:
     """Build the configured single-provider chat client, validating its key.
 
-    ``model`` overrides ``settings.generation_model`` on the same provider — used
-    to build the evaluation judge from ``settings.eval_judge_model``.
+    ``model`` overrides ``settings.generation_model`` on the same provider.
     """
     settings = settings or get_settings()
     settings.validate_required_keys()

@@ -6,7 +6,7 @@ PYTHON ?= python
 PIP ?= $(PYTHON) -m pip
 
 .DEFAULT_GOAL := help
-.PHONY: help install test lint eval eval-smoke seed run-api run-ui up down
+.PHONY: help install test lint seed run-api run-ui up down
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -20,12 +20,6 @@ lint: ## Lint with ruff.
 
 test: ## Run the test suite (succeeds even with zero tests).
 	$(PYTHON) -m pytest
-
-eval: ## Run the full evaluation suite -> report (Phase 4).
-	$(PYTHON) eval/run_eval.py
-
-eval-smoke: ## Fast eval against mocks, safe for CI (no paid API calls) (Phase 4).
-	$(PYTHON) eval/run_eval.py --smoke
 
 seed: ## Ingest the sample corpus (Phase 5).
 	$(PYTHON) scripts/seed.py

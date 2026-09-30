@@ -25,8 +25,6 @@ def test_defaults_load_without_any_env() -> None:
     assert s.llm_provider == "openai"
     assert s.embedding_provider == "openai"
     assert s.generation_model == "gpt-4o-mini"
-    assert s.eval_judge_model == "gpt-4o"
-    assert s.eval_judge_model != s.generation_model  # the generator must not grade itself
     assert s.embedding_model == "text-embedding-3-small"
     assert s.default_mode == "hybrid"
     assert s.top_k == 10
@@ -65,7 +63,7 @@ def test_token_prices_and_thresholds_present() -> None:
 def test_paths_resolved_to_absolute_under_repo_root() -> None:
     s = _settings()
     assert s.corpus_dir.is_absolute()
-    assert s.golden_set_path.is_absolute()
+    assert s.trace_store_path.is_absolute()
     assert str(s.corpus_dir).startswith(str(REPO_ROOT))
     assert s.corpus_dir == (REPO_ROOT / "data/raw/ferry_docs").resolve()
 
@@ -112,13 +110,13 @@ def test_get_settings_is_cached() -> None:
     assert isinstance(get_settings().corpus_dir, Path)
 
 
-def test_judge_client_uses_eval_judge_model_on_same_provider() -> None:
-    """The eval judge is built from eval_judge_model, not generation_model."""
+def test_chat_client_model_override_keeps_the_provider() -> None:
+    """``model`` swaps the model id, not the configured provider."""
     from rag.generation.llm_client import OpenAIChatClient, get_chat_client
 
     s = _settings(openai_api_key="sk-test", generation_model="gpt-4o-mini")
-    generator = get_chat_client(s)
-    judge = get_chat_client(s, model=s.eval_judge_model)
-    assert isinstance(generator, OpenAIChatClient) and isinstance(judge, OpenAIChatClient)
-    assert generator.model == "gpt-4o-mini"
-    assert judge.model == "gpt-4o"
+    default = get_chat_client(s)
+    override = get_chat_client(s, model="gpt-4o")
+    assert isinstance(default, OpenAIChatClient) and isinstance(override, OpenAIChatClient)
+    assert default.model == "gpt-4o-mini"
+    assert override.model == "gpt-4o"

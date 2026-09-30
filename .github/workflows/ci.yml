@@ -38,9 +38,6 @@ jobs:
       - name: Test (pytest)
         run: make test
 
-      - name: Eval smoke (mocked, no paid API calls)
-        run: make eval-smoke
-
   mcp:
     runs-on: ubuntu-latest
     defaults:
