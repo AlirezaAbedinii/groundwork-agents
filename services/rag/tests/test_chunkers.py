@@ -55,7 +55,7 @@ def test_chunk_document_tags_metadata() -> None:
     assert all(c.source_file == "doc.md" for c in chunks)
     assert all(len(c.chunk_id) == 16 for c in chunks)
     assert chunks[0].section_heading == "Intro"
-    # Metadata is Chroma-safe: no None values.
+    # Metadata never holds None.
     meta = chunks[1].metadata()
     assert meta["section_heading"] == "Details"
     assert meta["page"] == -1  # None page -> sentinel

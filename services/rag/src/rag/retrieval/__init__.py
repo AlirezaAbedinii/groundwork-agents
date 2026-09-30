@@ -2,7 +2,7 @@
 
 The public entrypoint is :func:`build_retriever`, which routes on ``mode``:
 
-* ``dense``  — embed query -> Chroma top-k (cosine).
+* ``dense``  — embed query -> pgvector top-k (cosine).
 * ``hybrid`` — dense and BM25 candidate lists -> Reciprocal Rank Fusion
   (configurable weights) -> local cross-encoder rerank (top-20 -> top-5 by
   default).

@@ -12,7 +12,8 @@ surfaces as a clear 503 on the endpoints that need it.
 """
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import TypeVar
 
 from fastapi import FastAPI, HTTPException
@@ -64,21 +65,29 @@ def _default_retriever_factory(settings: Settings) -> RetrieverFactory:
 _Built = TypeVar("_Built")
 
 
-def _build_for_mode(factory: Callable[[str], _Built], mode: str) -> _Built:
-    """Build ``mode``'s pipeline or retriever; a missing piece becomes a 501/503."""
+@contextmanager
+def _missing_pieces_as_http() -> Iterator[None]:
+    """A missing piece becomes a 501/503, whether building or serving a request."""
     try:
-        return factory(mode)
+        yield
     except NotImplementedError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
     except ConfigError as exc:
+        # e.g. no API key, or a collection embedded by another model.
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except FileNotFoundError as exc:
-        # e.g. hybrid mode before the BM25 index has been seeded.
+        # e.g. a collection or BM25 index that hasn't been seeded yet.
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ImportError as exc:
         raise HTTPException(
             status_code=503, detail=f"Server missing a dependency: {exc}"
         ) from exc
+
+
+def _build_for_mode(factory: Callable[[str], _Built], mode: str) -> _Built:
+    """Build ``mode``'s pipeline or retriever; a missing piece becomes a 501/503."""
+    with _missing_pieces_as_http():
+        return factory(mode)
 
 
 def _to_hit(chunk: ScoredChunk) -> SearchHit:
@@ -87,7 +96,7 @@ def _to_hit(chunk: ScoredChunk) -> SearchHit:
         text=chunk.text,
         score=chunk.score,
         source_file=str(chunk.metadata.get("source_file", "")),
-        # The index stores "" for "no heading" (Chroma rejects None).
+        # Chunk metadata reports "" for "no heading" (see Chunk.metadata).
         section_heading=chunk.metadata.get("section_heading") or None,
     )
 
@@ -154,6 +163,7 @@ def create_app(
     app.state.retrievers = {}  # mode -> retriever for /v1/search, built on first use
     app.state.indexer = indexer
     app.state.store_factory = store_factory
+    app.state.store = None  # built on first use and reused: it holds a connection pool
 
     def _get_indexer() -> Indexer:
         if app.state.indexer is None:
@@ -163,11 +173,13 @@ def create_app(
         return app.state.indexer
 
     def _get_store():
-        if app.state.store_factory is None:
-            from ..indexing.vector_store import VectorStore
+        if app.state.store is None:
+            if app.state.store_factory is None:
+                from ..indexing.vector_store import VectorStore
 
-            app.state.store_factory = lambda: VectorStore.from_settings(settings)
-        return app.state.store_factory()
+                app.state.store_factory = lambda: VectorStore.from_settings(settings)
+            app.state.store = app.state.store_factory()
+        return app.state.store
 
     def _get_trace_store() -> TraceStore:
         if app.state.trace_store is None:
@@ -194,12 +206,8 @@ def create_app(
         """Answer a question from the indexed docs, with citations + metadata."""
         mode = body.mode or settings.default_mode
         pipeline = _get_pipeline(mode)
-        try:
+        with _missing_pieces_as_http():
             result = pipeline.answer(body.question, top_k=body.top_k)
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"Server missing a dependency: {exc}"
-            ) from exc
 
         # Log the full trace (latency, tokens, cost) for /v1/stats and analysis.
         _get_trace_store().record(
@@ -222,12 +230,8 @@ def create_app(
         mode = body.mode or settings.default_mode
         retriever = _get_retriever(mode)
         sw = Stopwatch()
-        try:
+        with _missing_pieces_as_http():
             chunks = retriever.retrieve(body.query, top_k=body.top_k, stopwatch=sw)
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"Server missing a dependency: {exc}"
-            ) from exc
         # No trace record: /v1/stats summarizes answered questions.
         return SearchResponse(
             query=body.query, mode=mode, hits=[_to_hit(c) for c in chunks], timings_ms=sw.as_dict()
@@ -241,14 +245,8 @@ def create_app(
         target = Path(body.path) if body.path else settings.corpus_dir
         if not target.exists():
             raise HTTPException(status_code=400, detail=f"Path does not exist: {target}")
-        try:
+        with _missing_pieces_as_http():
             summary = _get_indexer()(str(target))
-        except ConfigError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"Server missing a dependency: {exc}"
-            ) from exc
         return IngestResponse(
             files=summary.files,
             chunks_indexed=summary.chunks_indexed,
@@ -262,16 +260,13 @@ def create_app(
     @app.get("/v1/documents", response_model=DocumentsResponse, tags=["index"])
     def documents() -> DocumentsResponse:
         """List indexed source documents and their chunk counts."""
-        try:
+        with _missing_pieces_as_http():
             store = _get_store()
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=503, detail=f"Server missing a dependency: {exc}"
-            ) from exc
-        sources = store.list_sources()
+            sources = store.list_sources()
+            total = store.count()
         return DocumentsResponse(
             documents=[DocumentInfo(source_file=s, chunks=n) for s, n in sources.items()],
-            total_chunks=store.count(),
+            total_chunks=total,
         )
 
     @app.get("/v1/stats", response_model=StatsResponse, tags=["ops"])

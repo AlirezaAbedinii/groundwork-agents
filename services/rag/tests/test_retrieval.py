@@ -1,7 +1,7 @@
 """Phase 2 tests for dense retrieval + the mode switch (deterministic, no network).
 
 Uses in-memory fakes — a bag-of-words embedder and a cosine vector store — so the
-retriever is exercised end-to-end without Chroma or any API call.
+retriever is exercised end-to-end without a database or any API call.
 """
 from __future__ import annotations
 

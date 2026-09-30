@@ -5,7 +5,7 @@ file or a directory of files into metadata-tagged :class:`Chunk` objects:
 
     load_path -> normalize_document -> chunk_document
 
-Embedding + indexing (which need a provider/Chroma) live in ``rag.indexing`` and
+Embedding + indexing (which need a provider/Postgres) live in ``rag.indexing`` and
 are driven by ``scripts/ingest.py``; the helpers here are the testable core.
 """
 from __future__ import annotations

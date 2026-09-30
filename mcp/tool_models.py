@@ -21,7 +21,7 @@ SNIPPET_CHARS = 300
 # 5 hits of 150 chars, to re-check with the Phase 3 evals.
 DEFAULT_TOP_K = 3
 
-# The RAG index stores "" for a chunk with no section heading (Chroma rejects None).
+# RAG chunk metadata reports "" for a chunk with no section heading.
 Heading = Annotated[str | None, BeforeValidator(lambda heading: heading or None)]
 
 

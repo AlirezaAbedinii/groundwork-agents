@@ -21,6 +21,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # Repo root = three parents up from this file (src/rag/config.py -> repo root).
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+# A collection is stored as table ``rag_chunks__<name>`` with index suffixes up to
+# ``_source``; Postgres truncates identifiers past 63 bytes, so names stay short.
+COLLECTION_NAME_MAX_LEN = 44
+COLLECTION_NAME_PATTERN = rf"^[a-z][a-z0-9_]{{0,{COLLECTION_NAME_MAX_LEN - 1}}}$"
+
 
 class ConfigError(RuntimeError):
     """Raised when configuration is invalid (e.g. a required API key is missing)."""
@@ -153,6 +158,17 @@ class Settings(BaseSettings):
         default=0.2, ge=0.0, description="Composite-confidence weight: answer completeness."
     )
 
+    # -- Storage (Postgres + pgvector) --------------------------------------
+    database_url: str = Field(
+        default="postgresql://rag:rag@localhost:5433/rag",
+        description="Postgres (with the pgvector extension) holding the chunk collections.",
+    )
+    collection: str = Field(
+        default="ferry_docs",
+        pattern=COLLECTION_NAME_PATTERN,
+        description="Collection to index into and serve from (one table per collection).",
+    )
+
     # -- Paths (resolved relative to the repo root if not absolute) --------
     data_raw_dir: Path = Field(default=Path("data/raw"), description="Raw documents root.")
     data_processed_dir: Path = Field(
@@ -161,12 +177,6 @@ class Settings(BaseSettings):
     corpus_dir: Path = Field(
         default=Path("data/raw/ferry_docs"),
         description="Sample corpus to seed (provided ferry docs).",
-    )
-    chroma_persist_dir: Path = Field(
-        default=Path("data/chroma"), description="ChromaDB persistent volume."
-    )
-    chroma_collection: str = Field(
-        default="ferry_docs", description="Chroma collection name."
     )
     bm25_index_path: Path = Field(
         default=Path("data/bm25_index.pkl"), description="Persisted BM25 index (V1)."
@@ -183,7 +193,6 @@ class Settings(BaseSettings):
             "data_raw_dir",
             "data_processed_dir",
             "corpus_dir",
-            "chroma_persist_dir",
             "bm25_index_path",
             "trace_store_path",
         ):

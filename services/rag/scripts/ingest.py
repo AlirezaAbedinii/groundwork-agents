@@ -1,14 +1,15 @@
 """CLI: ingest a folder or file into the index.
 
-Runs the ingestion pipeline: load -> normalize -> chunk -> embed -> store in
-Chroma, reporting chunk count, embedding cost, and per-stage latency.
+Runs the ingestion pipeline: load -> normalize -> chunk -> embed -> store in the
+configured collection (Postgres + pgvector), reporting chunk count, embedding
+cost, and per-stage latency.
 
 Examples
 --------
     # Dry run — load + chunk only (no network, no key needed); print counts.
     python scripts/ingest.py --dry-run
 
-    # Full ingest of the sample corpus into Chroma.
+    # Full ingest of the sample corpus into the collection named by COLLECTION.
     python scripts/ingest.py
 
     # Ingest a specific file or folder.
@@ -73,7 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     summary = index_path(target, settings=settings, persist_processed=args.persist)
     print(
         f"Indexed {summary.chunks_indexed} chunks from {summary.files} file(s) "
-        f"into '{settings.chroma_collection}' (total now {summary.total_chunks_in_store}; "
+        f"into collection '{settings.collection}' (total now {summary.total_chunks_in_store}; "
         f"bm25 {summary.bm25_chunks}; skipped {summary.chunks_skipped_duplicates} dupes)."
     )
     print(

@@ -39,7 +39,7 @@ def test_corpus_chunks_have_complete_metadata(settings: Settings) -> None:
         assert c.text.strip()
         # Markdown chunks must carry their section heading.
         assert c.section_heading, f"missing heading in {c.source_file} ordinal {c.ordinal}"
-        # Chroma-safe metadata: never None.
+        # Metadata never holds None ("" for no heading, -1 for no page).
         assert None not in c.metadata().values()
 
 
@@ -49,10 +49,11 @@ def test_corpus_chunking_is_deterministic(settings: Settings) -> None:
     assert [c.chunk_id for c in first] == [c.chunk_id for c in second]
 
 
-# --- index_path: Chroma + BM25 stay in sync (fakes; no Chroma, no network) ----
+# --- index_path: the chunk store + BM25 stay in sync (fakes; no database) -----
 class HashEmbedder:
     """Deterministic per-text vectors; distinct texts are dissimilar."""
 
+    model = "hash-16"
     total_cost_usd = 0.0
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
@@ -66,20 +67,33 @@ class HashEmbedder:
 
 
 class MemoryStore:
-    """Minimal in-memory stand-in for VectorStore (add/count/query)."""
+    """Minimal in-memory stand-in for VectorStore; logs the calls it gets."""
 
     def __init__(self) -> None:
         self._rows: dict[str, tuple[list[float], str, dict]] = {}
+        self.events: list[str] = []
+        self.registered: tuple | None = None
+        self.closed = False
+
+    def ensure_collection(self, embedding_model, dim, chunking) -> None:
+        self.events.append("ensure_collection")
+        self.registered = (embedding_model, dim, chunking)
 
     def add(self, chunks, embeddings) -> int:
+        self.events.append("add")
         for c, v in zip(chunks, embeddings, strict=True):
             self._rows[c.chunk_id] = (v, c.text, c.metadata())
         return len(chunks)
 
     def count(self) -> int:
+        self.events.append("count")
         return len(self._rows)
 
+    def close(self) -> None:
+        self.closed = True
+
     def query(self, query_embedding, top_k):
+        self.events.append("query")
         import math
 
         from rag.indexing.vector_store import ScoredChunk
@@ -98,7 +112,46 @@ class MemoryStore:
         return scored[:top_k]
 
 
-def test_index_path_keeps_chroma_and_bm25_in_sync(settings: Settings, tmp_path) -> None:
+def test_index_path_registers_the_collection_before_comparing_chunks(
+    settings: Settings, tmp_path
+) -> None:
+    pytest.importorskip("rank_bm25")
+    from rag.indexing import index_path
+    from rag.indexing.vector_store import Chunking
+
+    store = MemoryStore()
+    index_path(
+        settings.corpus_dir,
+        settings=settings,
+        embedder=HashEmbedder(),
+        store=store,
+        bm25_path=tmp_path / "bm25.pkl",
+    )
+
+    # The embedder's model and the vectors' dimension, before dedup reads the store.
+    assert store.registered == ("hash-16", 16, Chunking("fixed", 800, 120))
+    assert store.events[0] == "ensure_collection"
+    assert not store.closed  # a store passed in belongs to the caller
+
+
+def test_index_path_closes_a_store_it_opened(
+    settings: Settings, tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("rank_bm25")
+    from rag.indexing import index_path
+    from rag.indexing.vector_store import VectorStore
+
+    opened = MemoryStore()
+    monkeypatch.setattr(VectorStore, "from_settings", classmethod(lambda cls, s=None: opened))
+
+    index_path(
+        settings.corpus_dir, settings=settings, embedder=HashEmbedder(), bm25_path=tmp_path / "b"
+    )
+
+    assert opened.closed  # its connection pool doesn't outlive the call
+
+
+def test_index_path_keeps_the_store_and_bm25_in_sync(settings: Settings, tmp_path) -> None:
     pytest.importorskip("rank_bm25")
     from rag.indexing import index_path
     from rag.indexing.bm25_index import BM25Index

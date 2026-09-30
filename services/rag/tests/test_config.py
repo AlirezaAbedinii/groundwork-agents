@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from pydantic import ValidationError
 
 from rag.config import REPO_ROOT, ConfigError, Settings, get_settings
 
@@ -29,6 +30,8 @@ def test_defaults_load_without_any_env() -> None:
     assert s.default_mode == "hybrid"
     assert s.top_k == 10
     assert s.dedup_cosine_threshold == 0.95
+    assert s.database_url == "postgresql://rag:rag@localhost:5433/rag"
+    assert s.collection == "ferry_docs"
     assert s.openai_api_key == ""  # no secret needed to construct
 
 
@@ -58,6 +61,14 @@ def test_token_prices_and_thresholds_present() -> None:
     assert s.price_embedding_per_1m > 0
     assert 0.0 <= s.retrieval_confidence_threshold <= 1.0
     assert 0.0 <= s.confidence_threshold <= 1.0
+
+
+@pytest.mark.parametrize("name", ["Ferry_Docs", "docs-v2", "9docs", "a" * 45])
+def test_collection_names_must_be_safe_table_names(name: str) -> None:
+    """COLLECTION becomes a table name, so it's checked when settings load."""
+    with pytest.raises(ValidationError):
+        _settings(collection=name)
+    assert _settings(collection="toolchain_docs_minilm").collection == "toolchain_docs_minilm"
 
 
 def test_paths_resolved_to_absolute_under_repo_root() -> None:

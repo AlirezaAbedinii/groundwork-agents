@@ -11,7 +11,7 @@ addition to plain alphanumeric words it emits compound tokens (words joined by
 containing that literal code even when embedding similarity is weak.
 
 Texts and metadata are persisted alongside the token corpus so sparse retrieval
-can return full scored chunks without touching Chroma. ``rank_bm25`` is a tiny
+can return full scored chunks without touching the vector store. ``rank_bm25`` is a tiny
 pure-Python dependency; it is imported lazily all the same.
 """
 from __future__ import annotations

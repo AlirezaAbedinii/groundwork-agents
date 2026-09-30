@@ -1,8 +1,8 @@
-"""Dense retrieval (MVP): embed query -> Chroma top-k (k=10) by cosine.
+"""Dense retrieval (MVP): embed query -> pgvector top-k (k=10) by cosine.
 
 :class:`DenseRetriever` depends only on small protocols — something that can
 ``embed_query`` and something that can ``query`` a vector store — so it is fully
-testable with in-memory fakes (no Chroma, no network). Per-stage latency is
+testable with in-memory fakes (no database, no network). Per-stage latency is
 recorded into an optional :class:`Stopwatch` (``embed`` then ``dense``) to keep
 the latency/cost story instrumented from day one.
 """
@@ -41,9 +41,9 @@ class DenseRetriever:
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> DenseRetriever:
-        """Build a retriever backed by the configured embedder + Chroma store.
+        """Build a retriever backed by the configured embedder + chunk store.
 
-        Constructs the real provider clients (needs the API key + Chroma extra);
+        Constructs the real clients (needs the API key + the indexing extra);
         tests inject fakes via the normal constructor instead.
         """
         settings = settings or get_settings()

@@ -40,7 +40,7 @@ class Chunk:
     page: int | None = None
 
     def metadata(self) -> dict[str, str | int]:
-        """Chroma-safe metadata dict (no ``None`` values; Chroma rejects them)."""
+        """Metadata dict without ``None``: "" for no heading, -1 for no page."""
         return {
             "source_file": self.source_file,
             "section_heading": self.section_heading or "",

@@ -1,10 +1,11 @@
-"""Indexing: embeddings, vector store (Chroma), BM25 index.
+"""Indexing: embeddings, the chunk store (Postgres + pgvector), BM25 index.
 
 :func:`index_path` is the shared "make this path searchable" operation — load,
-normalize, chunk, embed, **dedup**, and upsert into **both** stores (Chroma and
-the BM25 sparse index, kept in sync by the same stable chunk ids) — used by
-``scripts/ingest.py``, ``scripts/seed.py``, and ``POST /v1/ingest``. The
-embedder/store are injectable so it is testable without providers.
+normalize, chunk, embed, **dedup**, and upsert into **both** stores (the
+pgvector collection and the BM25 sparse index, kept in sync by the same stable
+chunk ids) — used by ``scripts/ingest.py``, ``scripts/seed.py``, and
+``POST /v1/ingest``. The embedder/store are injectable so it is testable
+without providers.
 """
 from __future__ import annotations
 
@@ -39,27 +40,43 @@ def index_path(
 ) -> IndexSummary:
     """Load, chunk, embed, dedup, and store every supported file under ``path``.
 
-    Chunks are upserted into Chroma and the persisted BM25 index in the same
-    pass; near-duplicates (cosine > ``settings.dedup_cosine_threshold`` vs
+    Chunks are upserted into the collection and the persisted BM25 index in the
+    same pass; near-duplicates (cosine > ``settings.dedup_cosine_threshold`` vs
     existing or earlier-in-batch content) are skipped from **both**, keeping
-    the two stores at identical counts.
+    the two stores at identical counts. The collection is registered with the
+    embedder's model and dimension before anything is compared or stored.
     """
-    from ..ingestion import build_chunks_for_dir, build_chunks_for_file
-    from ..ingestion.dedup import filter_duplicates
-    from .bm25_index import BM25Index
-
     settings = settings or get_settings()
     if embedder is None:
         from .embeddings import get_embedding_client
 
         embedder = get_embedding_client(settings)
-    if store is None:
-        from .vector_store import VectorStore
-
-        store = VectorStore.from_settings(settings)
     bm25_path = Path(bm25_path) if bm25_path else settings.bm25_index_path
+    if store is not None:
+        return _index(Path(path), settings, embedder, store, bm25_path, persist_processed)
 
-    path = Path(path)
+    from .vector_store import VectorStore
+
+    store = VectorStore.from_settings(settings)
+    try:
+        return _index(Path(path), settings, embedder, store, bm25_path, persist_processed)
+    finally:
+        store.close()  # a store opened here holds a connection pool
+
+
+def _index(
+    path: Path,
+    settings: Settings,
+    embedder,
+    store,
+    bm25_path: Path,
+    persist_processed: bool,
+) -> IndexSummary:
+    from ..ingestion import build_chunks_for_dir, build_chunks_for_file
+    from ..ingestion.dedup import filter_duplicates
+    from .bm25_index import BM25Index
+    from .vector_store import Chunking
+
     sw = Stopwatch()
     with sw.time("load_chunk"):
         if path.is_dir():
@@ -70,6 +87,9 @@ def index_path(
     cost_before = getattr(embedder, "total_cost_usd", 0.0)
     with sw.time("embed"):
         vectors = embedder.embed_texts([c.text for c in chunks])
+
+    if vectors:
+        store.ensure_collection(embedder.model, len(vectors[0]), Chunking.from_settings(settings))
 
     with sw.time("dedup"):
         kept, kept_vectors, skipped = filter_duplicates(

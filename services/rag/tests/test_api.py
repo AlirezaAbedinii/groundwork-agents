@@ -240,6 +240,26 @@ def test_documents_lists_indexed_sources(tmp_path) -> None:
     assert {"source_file": "01-overview.md", "chunks": 5} in body["documents"]
 
 
+def test_documents_builds_one_store_and_reuses_it(tmp_path) -> None:
+    built: list[FakeStore] = []
+
+    def store_factory() -> FakeStore:
+        built.append(FakeStore())
+        return built[-1]
+
+    client = TestClient(
+        create_app(
+            Settings(_env_file=None),
+            trace_store=TraceStore(tmp_path / "traces.sqlite"),
+            store_factory=store_factory,
+        )
+    )
+    for _ in range(3):
+        assert client.get("/v1/documents").status_code == 200
+
+    assert len(built) == 1  # the real store holds a connection pool
+
+
 def test_ingest_defaults_to_sample_corpus(tmp_path) -> None:
     client = TestClient(_v1_app(tmp_path))
     resp = client.post("/v1/ingest", json={})
@@ -378,7 +398,7 @@ def test_search_bad_input_is_422(tmp_path, payload: dict) -> None:
         (NotImplementedError("mode not available"), 501),
         (ConfigError("Missing required configuration: OPENAI_API_KEY."), 503),
         (FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py"), 503),
-        (ImportError("No module named 'chromadb'"), 503),
+        (ImportError("No module named 'psycopg'"), 503),
     ],
 )
 def test_search_maps_missing_pieces_exactly_like_ask(tmp_path, error, status) -> None:
@@ -391,6 +411,36 @@ def test_search_maps_missing_pieces_exactly_like_ask(tmp_path, error, status) ->
 
     assert search.status_code == ask.status_code == status
     assert search.json() == ask.json()
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        FileNotFoundError("Collection 'ferry_docs' is not indexed; seed first."),
+        ConfigError("Collection 'ferry_docs' was embedded with 'a', but EMBEDDING_MODEL is 'b'."),
+    ],
+)
+def test_store_errors_while_serving_are_503_too(tmp_path, error) -> None:
+    """A dense retriever only meets its collection at query time, not when built."""
+
+    class RaisingRetriever:
+        def retrieve(self, query, top_k=None, stopwatch=None):
+            raise error
+
+    class RaisingPipeline:
+        def answer(self, question, top_k=None):
+            raise error
+
+    client = TestClient(
+        _search_app(
+            tmp_path, lambda mode: RaisingRetriever(), pipeline_factory=lambda m: RaisingPipeline()
+        )
+    )
+    search = client.post("/v1/search", json={"query": "q"})
+    ask = client.post("/v1/ask", json={"question": "q"})
+
+    assert search.status_code == ask.status_code == 503
+    assert search.json() == ask.json() == {"detail": str(error)}
 
 
 def test_search_hybrid_before_seeding_is_503_then_works_once_seeded(tmp_path) -> None:

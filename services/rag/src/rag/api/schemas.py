@@ -150,7 +150,7 @@ class IngestResponse(BaseModel):
     total_chunks_in_store: int
     embedding_cost_usd: float
     bm25_chunks: int = Field(
-        default=0, description="Chunks in the BM25 sparse index (kept in sync with Chroma)."
+        default=0, description="Chunks in the BM25 sparse index (kept in sync with the store)."
     )
     chunks_skipped_duplicates: int = Field(
         default=0, description="Near-duplicate chunks skipped by dedup (cosine > threshold)."

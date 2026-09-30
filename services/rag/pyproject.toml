@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
 authors = [{ name = "Alireza Abedini", email = "doveisgh@gmail.com" }]
-keywords = ["rag", "retrieval", "hybrid-search", "bm25", "chromadb"]
+keywords = ["rag", "retrieval", "hybrid-search", "bm25", "pgvector"]
 classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -19,7 +19,7 @@ classifiers = [
 
 # Core dependencies — what config.py needs today. Per-phase libraries live in the
 # optional-dependency groups below so `pip install -e .` and CI stay fast while the
-# heavy ML stack (chroma/torch/etc.) is pulled in only as each phase lands.
+# heavy ML stack (torch etc.) is pulled in only where it's needed.
 dependencies = [
     "pydantic>=2.5",
     "pydantic-settings>=2.1",
@@ -34,7 +34,7 @@ Issues = "https://github.com/AlirezaAbedinii/groundwork-agents/issues"
 [project.optional-dependencies]
 # Phase 1 — ingestion & indexing
 ingestion = ["pypdf>=4.0", "beautifulsoup4>=4.12", "markdown-it-py>=3.0"]
-indexing = ["chromadb>=0.5", "rank-bm25>=0.2.2"]
+indexing = ["psycopg[binary,pool]>=3.2", "pgvector>=0.4", "rank-bm25>=0.2.2"]
 # Embeddings / generation providers (single provider in use; both declared for the swap)
 llm = ["openai>=1.30", "anthropic>=0.34"]
 embeddings-offline = ["sentence-transformers>=2.7"]
@@ -44,7 +44,7 @@ rerank = ["sentence-transformers>=2.7"]
 api = ["fastapi>=0.110", "uvicorn[standard]>=0.29"]
 ui = ["streamlit>=1.33", "requests>=2.31"]
 # Tooling (rank-bm25 is tiny/pure-Python; included so the sparse-index tests
-# run in CI without pulling the heavy chromadb/torch stack)
+# run without the indexing extra)
 dev = ["ruff>=0.4", "pytest>=8.0", "httpx>=0.27", "rank-bm25>=0.2.2"]
 
 [tool.setuptools.packages.find]
@@ -64,3 +64,6 @@ testpaths = ["tests"]
 addopts = "-q"
 # "src" for the rag package.
 pythonpath = ["src"]
+markers = [
+    "pg: needs the RAG Postgres at DATABASE_URL (docker compose up -d --wait db); skipped when unreachable",
+]
