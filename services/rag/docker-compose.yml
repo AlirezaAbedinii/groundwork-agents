@@ -12,7 +12,7 @@
 #   open http://localhost:8501          # or curl the API (see README)
 services:
   db:
-    image: pgvector/pgvector:0.8.1-pg16
+    image: pgvector/pgvector:0.8.1-pg16-trixie
     environment:
       POSTGRES_USER: rag
       POSTGRES_PASSWORD: rag

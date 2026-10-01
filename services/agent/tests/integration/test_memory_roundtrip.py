@@ -1,5 +1,5 @@
 """Memory roundtrip: working memory grows during a run and vanishes after,
-completion extracts memories into every applicable ChromaDB collection, and
+completion extracts memories of every applicable kind (Postgres), and
 memory events are recorded.
 """
 
@@ -86,7 +86,7 @@ def test_dashboard_and_user_data_deletion(client):
     assert deleted["deleted"]["working_memory_tasks"] == 1
     assert deleted["deleted"]["audit_events"] == 1
 
-    # zero ChromaDB entries and zero Redis keys remain for that user
+    # zero long-term memories and zero Redis keys remain for that user
     remaining = longterm.get_all("alice")
     assert sum(len(items) for items in remaining.values()) == 0
     assert not working.exists("task-alice-1")

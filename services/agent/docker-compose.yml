@@ -28,7 +28,8 @@ x-app-env: &app-env
 
 services:
   postgres:
-    image: postgres:16
+    # Postgres 16 with pgvector: long-term memories need the vector extension.
+    image: pgvector/pgvector:0.8.1-pg16-trixie
     environment:
       POSTGRES_USER: orchestrator
       POSTGRES_PASSWORD: orchestrator

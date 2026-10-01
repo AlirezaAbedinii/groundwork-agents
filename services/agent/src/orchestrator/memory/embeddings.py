@@ -3,8 +3,8 @@
 Real mode uses OpenAI (`text-embedding-3-small`). Under MOCK_LLM a
 deterministic token-hash embedding is used instead — similar texts share
 tokens and land close in cosine space, which is exactly what the tests need,
-with no network and no model download. Vectors are passed to Chroma
-explicitly, so no server-side embedding configuration is involved.
+with no network and no model download. Vectors are stored as computed
+(pgvector), so no server-side embedding configuration is involved.
 """
 
 from __future__ import annotations

@@ -21,7 +21,7 @@ jobs:
     services:
       postgres:
         # The chunk store; same image as services/rag/docker-compose.yml.
-        image: pgvector/pgvector:0.8.1-pg16
+        image: pgvector/pgvector:0.8.1-pg16-trixie
         env:
           POSTGRES_USER: rag
           POSTGRES_PASSWORD: rag
@@ -144,7 +144,8 @@ jobs:
         working-directory: services/agent
     services:
       postgres:
-        image: postgres:16
+        # pgvector: migration 0007 creates the vector extension for memories.
+        image: pgvector/pgvector:0.8.1-pg16-trixie
         env:
           POSTGRES_USER: orchestrator
           POSTGRES_PASSWORD: orchestrator
@@ -187,18 +188,17 @@ jobs:
         run: |
           python - <<'PY'
           import sys, time
-          import chromadb, psycopg, redis
+          import psycopg, redis
 
           def probe():
               psycopg.connect("postgresql://orchestrator:orchestrator@localhost:5432/orchestrator").close()
               redis.Redis.from_url("redis://localhost:6379/0").ping()
-              chromadb.HttpClient(host="localhost", port=8010).heartbeat()
 
           deadline = time.monotonic() + 120
           while True:
               try:
                   probe()
-                  print("postgres, redis and chroma are reachable")
+                  print("postgres and redis are reachable")
                   break
               except Exception as exc:
                   if time.monotonic() > deadline:

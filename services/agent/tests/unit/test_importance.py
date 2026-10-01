@@ -1,21 +1,18 @@
-"""Importance scoring, access bumping, and expiration (in-process Chroma)."""
+"""Importance scoring, access bumping, and expiration (in-memory long-term store)."""
 
 import time
 
-import chromadb
 import pytest
 
-from orchestrator.memory.longterm import LongTermMemory
+from orchestrator.memory.longterm import InMemoryLongTermMemory
 from orchestrator.memory.management import compute_importance, expire
 
 DAY = 86_400
 
 
 @pytest.fixture()
-def longterm(tmp_path):
-    # PersistentClient with a per-test directory: EphemeralClient is cached by
-    # settings and would share collections across tests.
-    return LongTermMemory(client=chromadb.PersistentClient(path=str(tmp_path / "chroma")))
+def longterm():
+    return InMemoryLongTermMemory()
 
 
 def test_more_accesses_mean_higher_importance():

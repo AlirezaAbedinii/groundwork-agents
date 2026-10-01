@@ -2,11 +2,10 @@
 
 import json
 
-import chromadb
 import pytest
 
 from orchestrator.llm.mock import MockLLMClient
-from orchestrator.memory.longterm import LongTermMemory
+from orchestrator.memory.longterm import InMemoryLongTermMemory
 from orchestrator.memory.management import consolidate
 
 pytestmark = pytest.mark.anyio
@@ -18,10 +17,8 @@ SUMMARY = "CONSOLIDATED: Chroma is an open-source vector database for embeddings
 
 
 @pytest.fixture()
-def longterm(tmp_path):
-    # PersistentClient with a per-test directory: EphemeralClient is cached by
-    # settings and would share collections across tests.
-    return LongTermMemory(client=chromadb.PersistentClient(path=str(tmp_path / "chroma")))
+def longterm():
+    return InMemoryLongTermMemory()
 
 
 @pytest.fixture()
