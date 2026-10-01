@@ -5,8 +5,8 @@ The one command that makes a fresh checkout queryable:
     python scripts/seed.py            # local (needs OPENAI_API_KEY in .env)
     docker compose run --rm seed      # same, inside the compose stack
 
-Idempotent: chunks upsert by stable content-hash IDs, so re-running never
-duplicates. (The BM25 sparse index joins this step in V1.)
+Idempotent: chunk ids hash their content, so a re-run embeds and stores only
+the chunks the collection doesn't hold yet (an unchanged corpus costs nothing).
 """
 from __future__ import annotations
 
@@ -30,9 +30,10 @@ def main() -> int:
     print(f"Seeding from {corpus} ...")
     summary = index_path(corpus, settings=settings)
     print(
-        f"Seeded {summary.chunks_indexed} chunks from {summary.files} file(s) "
-        f"into collection '{settings.collection}' (total now {summary.total_chunks_in_store}; "
-        f"bm25 {summary.bm25_chunks}; skipped {summary.chunks_skipped_duplicates} dupes)."
+        f"Seeded {summary.chunks_indexed} new chunks from {summary.files} file(s) into "
+        f"collection '{settings.collection}' ({summary.chunks_already_stored} already stored; "
+        f"skipped {summary.chunks_skipped_duplicates} dupes; "
+        f"total now {summary.total_chunks_in_store})."
     )
     print(
         f"embedding_cost_usd={summary.embedding_cost_usd:.6f} timings_ms={summary.timings_ms}"

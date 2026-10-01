@@ -181,3 +181,19 @@ def test_verification_off_renormalizes_and_skips_judge() -> None:
     assert res.confidence_breakdown["citation_coverage"] is None
     assert all(c.supported is None for c in res.citations)
     assert res.confidence > 0  # renormalized, not dragged down by coverage
+
+
+def test_from_settings_checks_the_generation_key_before_building_retrieval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A missing key fails before build_retriever opens a store and its pool."""
+    import rag.retrieval
+    from rag.config import ConfigError
+
+    def build_retriever(*args, **kwargs):
+        raise AssertionError("retrieval was built before the key check")
+
+    monkeypatch.setattr(rag.retrieval, "build_retriever", build_retriever)
+
+    with pytest.raises(ConfigError, match="OPENAI_API_KEY"):
+        RAGPipeline.from_settings(Settings(_env_file=None, openai_api_key=""), mode="hybrid")

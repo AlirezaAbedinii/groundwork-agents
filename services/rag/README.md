@@ -96,7 +96,7 @@ score, token usage, `cost_usd`, and per-stage `timings_ms`. Other endpoints:
 so no generation key), `POST /v1/ingest`, `GET /v1/documents`, `GET /v1/stats`.
 
 <details>
-<summary>Local development without Docker</summary>
+<summary>Local development (only the database in Docker)</summary>
 
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Python 3.11+
@@ -106,6 +106,7 @@ python scripts/ingest.py --dry-run       # chunk the corpus; no key needed
 
 pip install -e ".[ingestion,indexing,llm,api]"      # full local stack
 cp .env.example .env                     # set OPENAI_API_KEY
+docker compose up -d --wait db           # Postgres + pgvector on :5433
 python scripts/seed.py                   # build the index
 make run-api                             # uvicorn on :8000
 ```

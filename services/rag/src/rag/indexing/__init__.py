@@ -1,11 +1,11 @@
 """Indexing: embeddings, the chunk store (Postgres + pgvector), BM25 index.
 
 :func:`index_path` is the shared "make this path searchable" operation — load,
-normalize, chunk, embed, **dedup**, and upsert into **both** stores (the
-pgvector collection and the BM25 sparse index, kept in sync by the same stable
-chunk ids) — used by ``scripts/ingest.py``, ``scripts/seed.py``, and
-``POST /v1/ingest``. The embedder/store are injectable so it is testable
-without providers.
+normalize, chunk, embed what's new, **dedup**, and upsert into the collection —
+used by ``scripts/ingest.py``, ``scripts/seed.py``, and ``POST /v1/ingest``.
+The collection is the only store: sparse retrieval builds its BM25 index from
+the stored chunks. The embedder/store are injectable so it is testable without
+providers.
 """
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ class IndexSummary:
     chunks_indexed: int
     total_chunks_in_store: int
     embedding_cost_usd: float
-    bm25_chunks: int = 0
+    chunks_already_stored: int = 0
     chunks_skipped_duplicates: int = 0
     timings_ms: dict[str, float] = field(default_factory=dict)
 
@@ -35,46 +35,39 @@ def index_path(
     settings: Settings | None = None,
     embedder=None,
     store=None,
-    bm25_path: str | Path | None = None,
     persist_processed: bool = False,
 ) -> IndexSummary:
     """Load, chunk, embed, dedup, and store every supported file under ``path``.
 
-    Chunks are upserted into the collection and the persisted BM25 index in the
-    same pass; near-duplicates (cosine > ``settings.dedup_cosine_threshold`` vs
-    existing or earlier-in-batch content) are skipped from **both**, keeping
-    the two stores at identical counts. The collection is registered with the
-    embedder's model and dimension before anything is compared or stored.
+    Only chunks the collection doesn't hold yet are embedded (chunk ids hash
+    their text and provenance), so re-seeding an unchanged corpus costs nothing.
+    Near-duplicates (cosine > ``settings.dedup_cosine_threshold`` vs stored or
+    earlier-in-batch content) are skipped; as they're never stored, a re-seed
+    embeds them again. An existing collection must match this run's embedding
+    model and chunking; a new one is registered before anything is compared.
     """
     settings = settings or get_settings()
     if embedder is None:
         from .embeddings import get_embedding_client
 
         embedder = get_embedding_client(settings)
-    bm25_path = Path(bm25_path) if bm25_path else settings.bm25_index_path
     if store is not None:
-        return _index(Path(path), settings, embedder, store, bm25_path, persist_processed)
+        return _index(Path(path), settings, embedder, store, persist_processed)
 
     from .vector_store import VectorStore
 
     store = VectorStore.from_settings(settings)
     try:
-        return _index(Path(path), settings, embedder, store, bm25_path, persist_processed)
+        return _index(Path(path), settings, embedder, store, persist_processed)
     finally:
         store.close()  # a store opened here holds a connection pool
 
 
 def _index(
-    path: Path,
-    settings: Settings,
-    embedder,
-    store,
-    bm25_path: Path,
-    persist_processed: bool,
+    path: Path, settings: Settings, embedder, store, persist_processed: bool
 ) -> IndexSummary:
     from ..ingestion import build_chunks_for_dir, build_chunks_for_file
     from ..ingestion.dedup import filter_duplicates
-    from .bm25_index import BM25Index
     from .vector_store import Chunking
 
     sw = Stopwatch()
@@ -84,30 +77,37 @@ def _index(
         else:
             chunks = build_chunks_for_file(path, settings=settings, persist=persist_processed)
 
+    chunking = Chunking.from_settings(settings)
+    info = store.collection_info()
+    if info is None:
+        stored_ids: set[str] = set()
+    else:
+        # Raises ConfigError if this run's model or chunking differs from the collection's.
+        store.ensure_collection(embedder.model, info.dim, chunking)
+        stored_ids = store.existing_ids(c.chunk_id for c in chunks)
+    new = [c for c in chunks if c.chunk_id not in stored_ids]
+
     cost_before = getattr(embedder, "total_cost_usd", 0.0)
     with sw.time("embed"):
-        vectors = embedder.embed_texts([c.text for c in chunks])
+        vectors = embedder.embed_texts([c.text for c in new]) if new else []
 
-    if vectors:
-        store.ensure_collection(embedder.model, len(vectors[0]), Chunking.from_settings(settings))
+    if vectors and info is None:
+        store.ensure_collection(embedder.model, len(vectors[0]), chunking)
 
     with sw.time("dedup"):
         kept, kept_vectors, skipped = filter_duplicates(
-            chunks, vectors, store, settings.dedup_cosine_threshold
+            new, vectors, store, settings.dedup_cosine_threshold
         )
 
     with sw.time("store"):
         stored = store.add(kept, kept_vectors)
-        bm25 = BM25Index.load_or_new(bm25_path)
-        bm25.upsert(kept)
-        bm25.save(bm25_path)
 
     return IndexSummary(
         files=len({c.source_file for c in chunks}),
         chunks_indexed=stored,
         total_chunks_in_store=store.count(),
         embedding_cost_usd=round(getattr(embedder, "total_cost_usd", 0.0) - cost_before, 6),
-        bm25_chunks=bm25.count(),
+        chunks_already_stored=len(chunks) - len(new),
         chunks_skipped_duplicates=len(skipped),
         timings_ms=sw.as_dict(),
     )

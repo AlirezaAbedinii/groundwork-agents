@@ -1,8 +1,8 @@
-"""BM25 sparse index: build/query over the same chunk corpus; persist as pickle.
+"""BM25 sparse index: built in memory from the collection's stored chunks.
 
-Kept in sync with the vector store: :func:`rag.indexing.index_path` upserts the
-same chunks (by the same stable ``chunk_id``) into both, so the two report the
-same count after ingest.
+The sparse retriever builds it from the chunk store (:meth:`BM25Index.from_chunks`
+over ``VectorStore.all_chunks()``), so dense and sparse retrieval rank exactly
+the same chunks and Postgres is the only store.
 
 The tokenizer is the design point. Technical docs win on **exact tokens** —
 error codes (``FERRY-429``), config keys (``ferry.worker.concurrency``) — so in
@@ -10,15 +10,13 @@ addition to plain alphanumeric words it emits compound tokens (words joined by
 ``.``/``-``/``_``) intact. A query for "FERRY-429" therefore matches the chunk
 containing that literal code even when embedding similarity is weak.
 
-Texts and metadata are persisted alongside the token corpus so sparse retrieval
-can return full scored chunks without touching the vector store. ``rank_bm25`` is a tiny
-pure-Python dependency; it is imported lazily all the same.
+Texts and metadata are kept alongside the token corpus so sparse retrieval can
+return full scored chunks without another trip to the store. ``rank_bm25`` is a
+tiny pure-Python dependency; it is imported lazily all the same.
 """
 from __future__ import annotations
 
-import pickle
 import re
-from pathlib import Path
 
 from ..ingestion.chunkers import Chunk
 
@@ -34,7 +32,7 @@ def tokenize(text: str) -> list[str]:
 
 
 class BM25Index:
-    """An upsertable, persistent BM25 index over chunk texts."""
+    """An upsertable, in-memory BM25 index over chunk texts."""
 
     def __init__(self) -> None:
         # chunk_id -> (text, metadata); insertion order is preserved and
@@ -44,6 +42,13 @@ class BM25Index:
         self._ids: list[str] = []
 
     # -- building ----------------------------------------------------------
+    @classmethod
+    def from_chunks(cls, chunks: list[Chunk]) -> BM25Index:
+        """An index over ``chunks``, e.g. every chunk a collection stores."""
+        index = cls()
+        index.upsert(chunks)
+        return index
+
     def upsert(self, chunks: list[Chunk]) -> int:
         """Insert or replace chunks by ``chunk_id``; return how many."""
         for chunk in chunks:
@@ -85,31 +90,3 @@ class BM25Index:
             (cid, float(score), self._entries[cid][0], self._entries[cid][1])
             for cid, score in ranked
         ]
-
-    # -- persistence ---------------------------------------------------------
-    def save(self, path: str | Path) -> None:
-        path = Path(path)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "wb") as fh:
-            pickle.dump(self._entries, fh)
-
-    @classmethod
-    def load(cls, path: str | Path) -> BM25Index:
-        """Load a persisted index; raises FileNotFoundError with a fix hint."""
-        path = Path(path)
-        if not path.exists():
-            raise FileNotFoundError(
-                f"BM25 index not found at {path}. Ingest first: python scripts/seed.py"
-            )
-        index = cls()
-        with open(path, "rb") as fh:
-            index._entries = pickle.load(fh)
-        return index
-
-    @classmethod
-    def load_or_new(cls, path: str | Path) -> BM25Index:
-        """Load if present, else an empty index (ingest-time convenience)."""
-        try:
-            return cls.load(path)
-        except FileNotFoundError:
-            return cls()

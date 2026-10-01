@@ -178,9 +178,6 @@ class Settings(BaseSettings):
         default=Path("data/raw/ferry_docs"),
         description="Sample corpus to seed (provided ferry docs).",
     )
-    bm25_index_path: Path = Field(
-        default=Path("data/bm25_index.pkl"), description="Persisted BM25 index (V1)."
-    )
     trace_store_path: Path = Field(
         default=Path("data/traces.sqlite"), description="Per-request trace store."
     )
@@ -193,7 +190,6 @@ class Settings(BaseSettings):
             "data_raw_dir",
             "data_processed_dir",
             "corpus_dir",
-            "bm25_index_path",
             "trace_store_path",
         ):
             value: Path = getattr(self, name)

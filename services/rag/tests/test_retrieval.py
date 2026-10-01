@@ -221,3 +221,87 @@ def test_reranker_empty_candidates() -> None:
     from rag.retrieval.rerank import Reranker
 
     assert Reranker(scorer=KeywordScorer(), top_k=5).rerank("q", []) == []
+
+
+# --- hybrid over the chunk store: one store, built from its chunks -------------
+class ChunkStore(FakeStore):
+    """FakeStore that also serves all_chunks() and records close()."""
+
+    def __init__(self, docs: dict[str, str], *, fail: Exception | None = None) -> None:
+        super().__init__(docs)
+        self.fail = fail
+        self.closed = False
+
+    def all_chunks(self):
+        from rag.ingestion.chunkers import Chunk
+
+        if self.fail is not None:
+            raise self.fail
+        return [
+            Chunk(chunk_id=cid, text=text, source_file=f"{cid}.md", strategy="fixed", ordinal=0)
+            for cid, text in self._docs.items()
+        ]
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _store_from_settings(monkeypatch: pytest.MonkeyPatch, store: ChunkStore) -> list[ChunkStore]:
+    from rag.indexing.vector_store import VectorStore
+
+    opened: list[ChunkStore] = []
+
+    def from_settings(cls, settings=None):
+        opened.append(store)
+        return store
+
+    monkeypatch.setattr(VectorStore, "from_settings", classmethod(from_settings))
+    return opened
+
+
+def test_hybrid_builds_bm25_from_the_store_dense_searches(monkeypatch) -> None:
+    pytest.importorskip("rank_bm25")
+    store = ChunkStore(HYBRID_CORPUS)
+    opened = _store_from_settings(monkeypatch, store)
+
+    retriever = build_retriever(
+        "hybrid", settings=Settings(_env_file=None), embedder=FakeEmbedder(), scorer=KeywordScorer()
+    )
+
+    assert opened == [store]  # one store for both sides
+    assert retriever.dense.store is store
+    assert retriever.sparse.index.count() == len(HYBRID_CORPUS)
+    assert "exact" in [c.chunk_id for c in retriever.retrieve("XQJ-429", top_k=3)]
+    assert not store.closed
+
+
+def test_a_failed_build_closes_the_store_it_opened(monkeypatch) -> None:
+    pytest.importorskip("rank_bm25")
+    store = ChunkStore(HYBRID_CORPUS, fail=FileNotFoundError("not indexed; seed first"))
+    _store_from_settings(monkeypatch, store)
+
+    with pytest.raises(FileNotFoundError, match="seed first"):
+        build_retriever(
+            "hybrid",
+            settings=Settings(_env_file=None),
+            embedder=FakeEmbedder(),
+            scorer=KeywordScorer(),
+        )
+
+    assert store.closed  # its connection pool doesn't outlive the failed request
+
+
+def test_a_failed_build_leaves_an_injected_store_open() -> None:
+    pytest.importorskip("rank_bm25")
+    store = ChunkStore(HYBRID_CORPUS, fail=FileNotFoundError("not indexed; seed first"))
+
+    with pytest.raises(FileNotFoundError):
+        build_retriever(
+            "hybrid",
+            settings=Settings(_env_file=None),
+            embedder=FakeEmbedder(),
+            store=store,
+            scorer=KeywordScorer(),
+        )
+
+    assert not store.closed  # the caller owns it

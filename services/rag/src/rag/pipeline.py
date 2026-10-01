@@ -83,9 +83,11 @@ class RAGPipeline:
         from .generation.llm_client import get_chat_client
         from .retrieval import build_retriever
 
+        # The chat client first: a missing key then fails before any store opens.
+        chat_client = get_chat_client(settings)
         return cls(
             retriever=build_retriever(mode, settings=settings),
-            chat_client=get_chat_client(settings),
+            chat_client=chat_client,
             settings=settings,
             mode=mode,
         )

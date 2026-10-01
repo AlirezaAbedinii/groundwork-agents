@@ -97,19 +97,42 @@ def build_retriever(
     """Build the retriever for ``mode`` (defaults to ``settings.default_mode``).
 
     Dependencies (``embedder``/``store``/``sparse_index``/``scorer``) may be
-    injected for tests or custom backends; otherwise the real clients are
-    constructed from settings — which for hybrid requires a seeded BM25 index
-    and the ``rerank`` extra.
+    injected for tests or custom backends; whatever isn't is constructed from
+    settings. Dense and sparse share one chunk store, and hybrid builds its BM25
+    index from that store's chunks, so it needs a seeded collection (and the
+    ``rerank`` extra).
     """
     settings = settings or get_settings()
     mode = mode or settings.default_mode
     if mode not in VALID_MODES:
         raise ValueError(f"Unknown retrieval mode {mode!r}; expected one of {VALID_MODES}.")
 
-    if embedder is not None and store is not None:
-        dense = DenseRetriever(embedder=embedder, store=store, default_top_k=settings.top_k)
-    else:
-        dense = DenseRetriever.from_settings(settings)
+    if store is not None:
+        return _build(mode, settings, embedder, store, sparse_index, scorer)
+
+    from ..indexing.vector_store import VectorStore
+
+    store = VectorStore.from_settings(settings)
+    try:
+        return _build(mode, settings, embedder, store, sparse_index, scorer)
+    except BaseException:
+        store.close()  # a failed build would otherwise leave its connection pool open
+        raise
+
+
+def _build(
+    mode: str,
+    settings: Settings,
+    embedder: SupportsEmbedQuery | None,
+    store: SupportsQuery,
+    sparse_index,
+    scorer: SupportsScorePairs | None,
+) -> DenseRetriever | HybridRetriever:
+    if embedder is None:
+        from ..indexing.embeddings import get_embedding_client
+
+        embedder = get_embedding_client(settings)
+    dense = DenseRetriever(embedder=embedder, store=store, default_top_k=settings.top_k)
 
     if mode == "dense":
         return dense
@@ -118,7 +141,7 @@ def build_retriever(
     if sparse_index is not None:
         sparse = SparseRetriever(index=sparse_index, default_top_k=settings.top_k)
     else:
-        sparse = SparseRetriever.from_settings(settings)
+        sparse = SparseRetriever.from_settings(settings, store=store)
 
     if scorer is None:
         from .rerank import CrossEncoderScorer

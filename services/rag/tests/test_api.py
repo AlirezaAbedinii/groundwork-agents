@@ -13,6 +13,12 @@ from rag.observability.metrics import TokenUsage
 from rag.observability.trace_store import TraceStore
 from rag.pipeline import AnswerResult
 
+# What the store says when hybrid builds BM25 over a collection that was never seeded.
+UNSEEDED = (
+    "Collection 'ferry_docs' is not indexed; seed first: "
+    "python scripts/seed.py (or docker compose run --rm seed)."
+)
+
 
 def _answered(question: str) -> AnswerResult:
     ctx = ScoredChunk(
@@ -146,11 +152,11 @@ def test_ask_bad_input_is_422(client: TestClient, payload: dict) -> None:
 
 
 def test_ask_hybrid_before_seeding_is_503(tmp_path) -> None:
-    """A factory failing with FileNotFoundError (unseeded BM25) -> actionable 503."""
+    """A factory failing with FileNotFoundError (an unseeded collection) -> actionable 503."""
 
     def factory(mode: str):
         if mode == "hybrid":
-            raise FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py")
+            raise FileNotFoundError(UNSEEDED)
         return FakePipeline(mode, _answered)
 
     app = create_app(
@@ -196,7 +202,6 @@ class FakeIndexSummary:
     chunks_indexed = 37
     total_chunks_in_store = 37
     embedding_cost_usd = 0.00012
-    bm25_chunks = 37
     chunks_skipped_duplicates = 2
     timings_ms = {"load_chunk": 3.0, "embed": 120.0, "store": 15.0, "total_ms": 138.0}
 
@@ -397,7 +402,7 @@ def test_search_bad_input_is_422(tmp_path, payload: dict) -> None:
     [
         (NotImplementedError("mode not available"), 501),
         (ConfigError("Missing required configuration: OPENAI_API_KEY."), 503),
-        (FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py"), 503),
+        (FileNotFoundError(UNSEEDED), 503),
         (ImportError("No module named 'psycopg'"), 503),
     ],
 )
@@ -448,7 +453,7 @@ def test_search_hybrid_before_seeding_is_503_then_works_once_seeded(tmp_path) ->
 
     def factory(mode: str) -> FakeRetriever:
         if mode == "hybrid" and not seeded:
-            raise FileNotFoundError("BM25 index not found. Ingest first: python scripts/seed.py")
+            raise FileNotFoundError(UNSEEDED)
         return FakeRetriever()
 
     client = TestClient(_search_app(tmp_path, factory))

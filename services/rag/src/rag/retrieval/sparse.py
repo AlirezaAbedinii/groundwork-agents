@@ -1,15 +1,16 @@
-"""Sparse retrieval: BM25 top-k over the chunk corpus.
+"""Sparse retrieval: BM25 top-k over the collection's stored chunks.
 
-Loads the persisted BM25 index built at ingest time (see
-``rag.indexing.index_path``) and returns :class:`ScoredChunk` results — the same
-shape dense retrieval produces, so fusion treats both sources uniformly. BM25
-scores are raw/unbounded; downstream RRF fuses by **rank**, so no normalization
-is needed here.
+The BM25 index is built in memory from the chunk store when the retriever is
+built (see :meth:`SparseRetriever.from_settings`), so it ranks exactly the
+chunks dense retrieval searches; chunks stored later are picked up when the
+retriever is rebuilt. Results are :class:`ScoredChunk` — the same shape dense
+retrieval produces, so fusion treats both sources uniformly. BM25 scores are
+raw/unbounded; downstream RRF fuses by **rank**, so no normalization is needed
+here.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Protocol
 
 from ..config import Settings, get_settings
@@ -25,21 +26,38 @@ class SupportsBM25Query(Protocol):
 
 @dataclass
 class SparseRetriever:
-    """BM25 keyword retrieval over the persisted chunk corpus."""
+    """BM25 keyword retrieval over the collection's chunks."""
 
     index: SupportsBM25Query
     default_top_k: int = 10
 
     @classmethod
-    def from_settings(cls, settings: Settings | None = None) -> SparseRetriever:
-        """Load the BM25 pickle; a missing index names the seed command."""
+    def from_settings(cls, settings: Settings | None = None, *, store=None) -> SparseRetriever:
+        """Build BM25 over the stored chunks; an empty collection names the seed command.
+
+        ``store`` is the dense side's chunk store, which stays open; without one,
+        a store is opened just for this read and closed again.
+        """
         from ..indexing.bm25_index import BM25Index
 
         settings = settings or get_settings()
-        return cls(
-            index=BM25Index.load(Path(settings.bm25_index_path)),
-            default_top_k=settings.top_k,
-        )
+        if store is not None:
+            chunks = store.all_chunks()
+        else:
+            from ..indexing.vector_store import VectorStore
+
+            own = VectorStore.from_settings(settings)
+            try:
+                chunks = own.all_chunks()
+            finally:
+                own.close()
+        if not chunks:
+            collection = getattr(store, "collection", settings.collection)
+            raise FileNotFoundError(
+                f"Collection {collection!r} holds no chunks; seed first: "
+                "python scripts/seed.py (or docker compose run --rm seed)."
+            )
+        return cls(index=BM25Index.from_chunks(chunks), default_top_k=settings.top_k)
 
     def retrieve(
         self,

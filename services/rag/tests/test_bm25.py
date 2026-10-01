@@ -1,8 +1,6 @@
 """Tests for the BM25 sparse index (deterministic, no network)."""
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from rag.indexing.bm25_index import BM25Index, tokenize
@@ -75,18 +73,23 @@ def test_upsert_by_chunk_id_is_idempotent() -> None:
     assert index.count() == len(CORPUS)
 
 
-# --- persistence -----------------------------------------------------------------
-def test_save_load_roundtrip(tmp_path: Path) -> None:
-    index = BM25Index()
-    index.upsert(CORPUS)
-    index.save(tmp_path / "bm25.pkl")
+# --- built from stored chunks ------------------------------------------------
+def test_from_chunks_ranks_exactly_as_upserting_does() -> None:
+    """The store returns rows in its own order; BM25 must rank them the same way."""
+    upserted = BM25Index()
+    upserted.upsert(CORPUS)
+    from_rows = BM25Index.from_chunks(list(reversed(CORPUS)))
 
-    loaded = BM25Index.load(tmp_path / "bm25.pkl")
-    assert loaded.count() == len(CORPUS)
-    assert loaded.query("FERRY-429", top_k=1)[0][0] == "c-limits"
+    for query in ("FERRY-429", "ferry.worker.concurrency default", "queue jobs", "retries"):
+        got, expected = from_rows.query(query, top_k=4), upserted.query(query, top_k=4)
+        assert [hit[0] for hit in got] == [hit[0] for hit in expected]
+        # rank_bm25 averages IDF over a dict in corpus order: the last bit may differ.
+        assert [hit[1] for hit in got] == pytest.approx([hit[1] for hit in expected])
 
 
-def test_load_missing_gives_actionable_error(tmp_path: Path) -> None:
-    with pytest.raises(FileNotFoundError, match="seed"):
-        BM25Index.load(tmp_path / "missing.pkl")
-    assert BM25Index.load_or_new(tmp_path / "missing.pkl").count() == 0
+def test_from_chunks_keeps_text_and_metadata() -> None:
+    index = BM25Index.from_chunks(CORPUS)
+    assert index.count() == len(CORPUS)
+    cid, _, text, metadata = index.query("FERRY-429", top_k=1)[0]
+    assert (cid, text) == ("c-limits", CORPUS[0].text)
+    assert metadata == CORPUS[0].metadata()
