@@ -131,11 +131,21 @@ class Settings(BaseSettings):
     dedup_cosine_threshold: float = Field(
         default=0.95, ge=0.0, le=1.0, description="Skip chunks above this cosine sim (V1)."
     )
-    retrieval_confidence_threshold: float = Field(
+    # The gate compares the top hit's score with its mode's threshold, and the two
+    # scores mean different things: a cosine similarity in dense mode, the
+    # cross-encoder's sigmoid in hybrid mode. Defaults until the evaluation
+    # calibrates them on held-out questions.
+    retrieval_confidence_threshold_dense: float = Field(
         default=0.30,
         ge=0.0,
         le=1.0,
-        description="Below this, return the 'I don't know' response instead of generating.",
+        description="Dense mode: below this top cosine similarity, refuse instead of generating.",
+    )
+    retrieval_confidence_threshold_hybrid: float = Field(
+        default=0.30,
+        ge=0.0,
+        le=1.0,
+        description="Hybrid mode: below this top reranker score, refuse instead of generating.",
     )
     confidence_threshold: float = Field(
         default=0.50,
@@ -196,6 +206,18 @@ class Settings(BaseSettings):
             if not value.is_absolute():
                 object.__setattr__(self, name, (REPO_ROOT / value).resolve())
         return self
+
+    def refusal_threshold(self, mode: str) -> float:
+        """The refusal gate's threshold for retrieval ``mode`` (dense or hybrid)."""
+        thresholds = {
+            "dense": self.retrieval_confidence_threshold_dense,
+            "hybrid": self.retrieval_confidence_threshold_hybrid,
+        }
+        if mode not in thresholds:
+            raise ValueError(
+                f"Unknown retrieval mode {mode!r}; expected one of {tuple(thresholds)}."
+            )
+        return thresholds[mode]
 
     @property
     def active_api_key(self) -> str:

@@ -5,7 +5,7 @@ import pytest
 
 from rag.config import Settings
 from rag.generation.llm_client import ChatResult
-from rag.generation.prompts import REFUSAL_MESSAGE
+from rag.generation.prompts import REFUSAL_MESSAGE, is_model_refusal
 from rag.indexing.vector_store import ScoredChunk
 from rag.observability.metrics import Stopwatch, TokenUsage
 from rag.pipeline import RAGPipeline
@@ -40,7 +40,11 @@ class FakeChat:
 
 def _settings(**kw) -> Settings:
     # Verification off by default here; the dedicated tests below turn it on.
-    base = dict(retrieval_confidence_threshold=0.3, citation_verification=False)
+    base = dict(
+        retrieval_confidence_threshold_dense=0.3,
+        retrieval_confidence_threshold_hybrid=0.3,
+        citation_verification=False,
+    )
     base.update(kw)
     return Settings(_env_file=None, **base)
 
@@ -56,7 +60,7 @@ def test_happy_path_generates_and_resolves_citations() -> None:
 
     res = pipe.answer("How does Ferry handle failures?")
 
-    assert res.refused is False
+    assert (res.refused, res.refused_by) == (False, None)
     assert chat.calls == 1
     assert res.answer.endswith("[1].")
     assert len(res.citations) == 1
@@ -74,7 +78,7 @@ def test_empty_retrieval_triggers_i_dont_know_without_calling_llm() -> None:
 
     res = pipe.answer("What is the meaning of life?")
 
-    assert res.refused is True
+    assert (res.refused, res.refused_by) == (True, "gate")
     assert res.answer == REFUSAL_MESSAGE
     assert chat.calls == 0  # no fabrication, no generation cost
     assert res.citations == []
@@ -89,7 +93,7 @@ def test_low_confidence_retrieval_refuses_without_calling_llm() -> None:
 
     res = pipe.answer("Some off-topic question?")
 
-    assert res.refused is True
+    assert (res.refused, res.refused_by) == (True, "gate")
     assert chat.calls == 0
     assert res.retrieval_confidence == pytest.approx(0.1)
 
@@ -197,3 +201,60 @@ def test_from_settings_checks_the_generation_key_before_building_retrieval(
 
     with pytest.raises(ConfigError, match="OPENAI_API_KEY"):
         RAGPipeline.from_settings(Settings(_env_file=None, openai_api_key=""), mode="hybrid")
+
+
+def test_each_mode_refuses_below_its_own_threshold() -> None:
+    contexts = [_ctx("c1", "Ferry retries failed jobs.", 0.5, "04-error-codes.md")]
+    settings = _settings(
+        retrieval_confidence_threshold_dense=0.6, retrieval_confidence_threshold_hybrid=0.4
+    )
+
+    def answer(mode: str):
+        chat = FakeChat("Ferry retries failed jobs [1].")
+        return RAGPipeline(FakeRetriever(contexts), chat, settings, mode=mode).answer("q")
+
+    dense, hybrid = answer("dense"), answer("hybrid")
+
+    assert (dense.refused, dense.refused_by) == (True, "gate")  # 0.5 < 0.6
+    assert (hybrid.refused, hybrid.refused_by) == (False, None)  # 0.5 >= 0.4
+
+
+def test_a_model_refusal_is_flagged_and_not_verified() -> None:
+    contexts = [_ctx("c1", "Ferry retries failed jobs.", 0.9, "04-error-codes.md")]
+    chat = FakeChat(REFUSAL_MESSAGE)
+    settings = _settings(citation_verification=True)
+    pipe = RAGPipeline(FakeRetriever(contexts), chat, settings, mode="hybrid")
+
+    res = pipe.answer("What does Ferry cost per month?")
+
+    assert (res.refused, res.refused_by) == (True, "model")
+    assert chat.calls == 1  # the generation call only: there is nothing to verify
+    assert res.citations == [] and "verify" not in res.timings_ms
+    assert res.confidence == res.retrieval_confidence == 0.9
+    assert res.cost_usd > 0  # generating the refusal still cost something
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        REFUSAL_MESSAGE,
+        "  " + REFUSAL_MESSAGE.replace("'", "\u2019") + "\n",
+        f'"{REFUSAL_MESSAGE}"',
+        "I don't know based on the provided documentation.",
+        "**I don't know based on the provided documentation.** The context covers other topics.",
+    ],
+)
+def test_the_refusal_sentence_is_recognized(reply: str) -> None:
+    assert is_model_refusal(reply)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Ferry retries failed jobs [1]. I don't know based on the provided documentation why.",
+        "I don't know.",
+        "",
+    ],
+)
+def test_an_answer_is_not_mistaken_for_a_refusal(reply: str) -> None:
+    assert not is_model_refusal(reply)

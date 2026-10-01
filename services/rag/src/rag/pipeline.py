@@ -6,14 +6,16 @@
              -> parse citations -> verify citations (LLM judge)
              -> composite confidence
 
-If retrieval is empty or its confidence is below
-``settings.retrieval_confidence_threshold``, the pipeline **refuses** (returns the
+If retrieval is empty or its confidence is below the mode's threshold
+(``settings.refusal_threshold(mode)``), the pipeline **refuses** (returns the
 structured "I don't know" result) **without calling the LLM** — no fabrication and
 no generation cost. Otherwise it generates a grounded answer, parses ``[n]``
 citations back to the retrieved chunks, verifies each resolved citation with an
 LLM judge (config-gated: ``citation_verification``), computes a composite
 confidence (retrieval + citation coverage + completeness), and records per-stage
-latency + token cost on every request.
+latency + token cost on every request. When the model itself declines (the
+prompt's refusal sentence), the result is a refusal too: ``refused_by`` says
+which of the two refused.
 """
 from __future__ import annotations
 
@@ -33,7 +35,7 @@ from .generation.confidence import (
     retrieval_confidence,
 )
 from .generation.llm_client import ChatClient
-from .generation.prompts import REFUSAL_MESSAGE, build_grounded_prompt
+from .generation.prompts import REFUSAL_MESSAGE, build_grounded_prompt, is_model_refusal
 from .indexing.vector_store import ScoredChunk
 from .observability.metrics import Stopwatch, TokenUsage, generation_cost
 
@@ -55,6 +57,7 @@ class AnswerResult:
     mode: str
     refused: bool
     retrieval_confidence: float
+    refused_by: str | None = None  # "gate" (retrieval too weak) or "model"; None if answered
     confidence: float = 0.0  # composite; equals retrieval_confidence on refusal
     confidence_breakdown: dict = field(default_factory=dict)
     citations: list[Citation] = field(default_factory=list)
@@ -103,13 +106,14 @@ class RAGPipeline:
         embed_cost = getattr(embedder, "total_cost_usd", 0.0) - embed_cost_before
 
         # --- "I don't know" gate: refuse before spending a generation call ---
-        if not contexts or confidence < self.settings.retrieval_confidence_threshold:
+        if not contexts or confidence < self.settings.refusal_threshold(self.mode):
             return AnswerResult(
                 question=question,
                 answer=REFUSAL_MESSAGE,
                 mode=self.mode,
                 refused=True,
                 retrieval_confidence=confidence,
+                refused_by="gate",
                 confidence=confidence,
                 confidence_breakdown={"retrieval": round(confidence, 4)},
                 contexts=contexts,
@@ -121,8 +125,26 @@ class RAGPipeline:
         system, user = build_grounded_prompt(question, contexts)
         with sw.time("generate"):
             result = self.chat_client.complete(system, user)
-        citations = build_citations(result.text, contexts)
         usage = result.usage
+
+        # --- The model declined: a refusal, with nothing to verify ---
+        if is_model_refusal(result.text):
+            return AnswerResult(
+                question=question,
+                answer=result.text,
+                mode=self.mode,
+                refused=True,
+                retrieval_confidence=confidence,
+                refused_by="model",
+                confidence=confidence,
+                confidence_breakdown={"retrieval": round(confidence, 4)},
+                contexts=contexts,
+                usage=usage,
+                cost_usd=embed_cost + self._generation_cost(usage),
+                timings_ms=sw.as_dict(),
+            )
+
+        citations = build_citations(result.text, contexts)
 
         # --- Citation verification (LLM judge; one call per resolved citation) ---
         if self.settings.citation_verification and any(c.resolved for c in citations):
@@ -151,11 +173,6 @@ class RAGPipeline:
             "verified": self.settings.citation_verification,
         }
 
-        gen_cost = generation_cost(
-            usage,
-            self.settings.price_generation_input_per_1m,
-            self.settings.price_generation_output_per_1m,
-        )
         return AnswerResult(
             question=question,
             answer=result.text,
@@ -167,6 +184,13 @@ class RAGPipeline:
             citations=citations,
             contexts=contexts,
             usage=usage,
-            cost_usd=embed_cost + gen_cost,
+            cost_usd=embed_cost + self._generation_cost(usage),
             timings_ms=sw.as_dict(),
+        )
+
+    def _generation_cost(self, usage: TokenUsage) -> float:
+        return generation_cost(
+            usage,
+            self.settings.price_generation_input_per_1m,
+            self.settings.price_generation_output_per_1m,
         )

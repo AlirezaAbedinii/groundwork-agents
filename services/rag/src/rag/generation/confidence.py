@@ -3,8 +3,8 @@
 Two layers:
 
 * :func:`retrieval_confidence` — deterministic proxy from the top retrieval
-  score. Gates the "I don't know" path (below
-  ``settings.retrieval_confidence_threshold`` the pipeline refuses before
+  score. Gates the "I don't know" path (below the mode's
+  ``settings.refusal_threshold(mode)`` the pipeline refuses before
   generating).
 * :func:`composite_confidence` — the score returned with every answer: a
   weighted combination of retrieval confidence, **citation coverage** (share of

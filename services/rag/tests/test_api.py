@@ -8,7 +8,8 @@ from rag.api.main import create_app
 from rag.config import ConfigError, Settings
 from rag.generation.citations import Citation
 from rag.generation.prompts import REFUSAL_MESSAGE
-from rag.indexing.vector_store import ScoredChunk
+from rag.indexing.vector_store import Chunking, CollectionInfo, ScoredChunk
+from rag.ingestion.chunkers import Chunk
 from rag.observability.metrics import TokenUsage
 from rag.observability.trace_store import TraceStore
 from rag.pipeline import AnswerResult
@@ -60,6 +61,7 @@ def _refused(question: str) -> AnswerResult:
         mode="dense",
         refused=True,
         retrieval_confidence=0.05,
+        refused_by="gate",
         timings_ms={"embed": 12.0, "dense": 3.0, "total_ms": 15.0},
     )
 
@@ -97,7 +99,8 @@ def test_ask_happy_path_returns_documented_schema(client: TestClient) -> None:
     body = resp.json()
 
     assert body["answer"].endswith("[1].")
-    assert body["refused"] is False
+    assert (body["refused"], body["refused_by"]) == (False, None)
+    assert body["retrieval_confidence"] == pytest.approx(0.88)
     assert body["mode"] == "hybrid"  # no mode in the request -> settings.default_mode
     assert body["confidence"] == pytest.approx(0.88)
     assert body["confidence_breakdown"]["citation_coverage"] == 1.0
@@ -131,7 +134,8 @@ def test_ask_refusal_shape(tmp_path) -> None:
     resp = TestClient(app).post("/v1/ask", json={"question": "What is the meaning of life?"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["refused"] is True
+    assert (body["refused"], body["refused_by"]) == (True, "gate")
+    assert body["retrieval_confidence"] == pytest.approx(0.05)
     assert body["answer"] == REFUSAL_MESSAGE
     assert body["citations"] == []
     assert body["usage"]["total_tokens"] == 0
@@ -190,11 +194,27 @@ def test_openapi_docs_are_exposed(client: TestClient) -> None:
 
 # --- V1 endpoints -----------------------------------------------------------
 class FakeStore:
+    def __init__(self, info: CollectionInfo | None = None) -> None:
+        self.info = info
+
     def list_sources(self) -> dict[str, int]:
         return {"01-overview.md": 5, "04-error-codes.md": 4}
 
     def count(self) -> int:
         return 9
+
+    def collection_info(self) -> CollectionInfo | None:
+        return self.info
+
+    def chunks_for_source(self, source_file: str) -> list[Chunk]:
+        if source_file != "04-error-codes.md":
+            return []
+        return [
+            Chunk("e0", "Every error has a stable code.", source_file, "fixed", 0, None),
+            Chunk(
+                "e1", "FERRY-429 — Rate Limit Exceeded.", source_file, "fixed", 1, "Request errors"
+            ),
+        ]
 
 
 class FakeIndexSummary:
@@ -243,6 +263,78 @@ def test_documents_lists_indexed_sources(tmp_path) -> None:
     body = client.get("/v1/documents").json()
     assert body["total_chunks"] == 9
     assert {"source_file": "01-overview.md", "chunks": 5} in body["documents"]
+
+
+def test_chunks_lists_one_source_in_document_order(tmp_path) -> None:
+    client = TestClient(_v1_app(tmp_path))
+
+    body = client.get("/v1/chunks", params={"source_file": "04-error-codes.md"}).json()
+
+    assert body == {
+        "source_file": "04-error-codes.md",
+        "chunks": [
+            {"chunk_id": "e0", "ordinal": 0, "section_heading": None,
+             "text": "Every error has a stable code."},
+            {"chunk_id": "e1", "ordinal": 1, "section_heading": "Request errors",
+             "text": "FERRY-429 — Rate Limit Exceeded."},
+        ],
+    }
+
+
+def test_chunks_of_an_unknown_source_is_404(tmp_path) -> None:
+    client = TestClient(_v1_app(tmp_path))
+
+    resp = client.get("/v1/chunks", params={"source_file": "uv/missing.md"})
+
+    assert resp.status_code == 404
+    assert "uv/missing.md" in resp.json()["detail"]
+
+
+def test_config_reports_what_runs_and_no_secrets(tmp_path) -> None:
+    settings = Settings(
+        _env_file=None,
+        openai_api_key="sk-test-secret-0001",
+        anthropic_api_key="sk-ant-secret-0002",
+        database_url="postgresql://rag:db-secret-0003@db:5432/rag",
+        collection="toolchain_docs_minilm",
+        retrieval_confidence_threshold_dense=0.42,
+        retrieval_confidence_threshold_hybrid=0.17,
+    )
+    info = CollectionInfo(
+        "toolchain_docs_minilm", "all-MiniLM-L6-v2", 384, Chunking("fixed", 800, 120)
+    )
+    client = TestClient(
+        create_app(
+            settings,
+            trace_store=TraceStore(tmp_path / "traces.sqlite"),
+            store_factory=lambda: FakeStore(info),
+        )
+    )
+
+    resp = client.get("/v1/config")
+
+    assert resp.status_code == 200
+    assert not any(secret in resp.text for secret in ("secret-0001", "secret-0002", "secret-0003"))
+    body = resp.json()
+    assert body["collection"] == "toolchain_docs_minilm"
+    assert body["thresholds"] == {"dense": 0.42, "hybrid": 0.17}
+    assert body["index"] == {
+        "embedding_model": "all-MiniLM-L6-v2",
+        "dim": 384,
+        "chunk_strategy": "fixed",
+        "chunk_size": 800,
+        "chunk_overlap": 120,
+        "chunks": 9,
+    }
+
+
+def test_config_of_an_unseeded_collection_has_no_index(tmp_path) -> None:
+    client = TestClient(_v1_app(tmp_path))  # FakeStore() has no registry row
+
+    body = client.get("/v1/config").json()
+
+    assert body["index"] is None
+    assert body["embedding_model"] == Settings(_env_file=None).embedding_model
 
 
 def test_documents_builds_one_store_and_reuses_it(tmp_path) -> None:

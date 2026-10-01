@@ -22,6 +22,25 @@ REFUSAL_MESSAGE = (
     "I don't know based on the provided documentation. "
     "The retrieved context did not contain enough information to answer this question."
 )
+_CURLY = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"'})
+
+
+def _refusal_form(text: str) -> str:
+    """Lowercase, straight quotes, single spaces, no wrapping quotes or emphasis."""
+    return " ".join(text.translate(_CURLY).split()).strip("\"'*_` ").lower()
+
+
+_REFUSAL_OPENING = _refusal_form(REFUSAL_MESSAGE.split(". ")[0])
+
+
+def is_model_refusal(text: str) -> bool:
+    """True when a generated reply is the refusal the prompt asks for (rule 3).
+
+    The model is told to reply with :data:`REFUSAL_MESSAGE` exactly; this accepts
+    it with different whitespace, curly quotes, or wrapping quotes, as long as
+    the reply starts with its first sentence.
+    """
+    return _refusal_form(text).startswith(_REFUSAL_OPENING)
 
 GROUNDED_SYSTEM_PROMPT = (
     "You are a precise technical-documentation assistant. Answer the user's "

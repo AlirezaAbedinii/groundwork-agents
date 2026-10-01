@@ -26,10 +26,14 @@ from ..pipeline import AnswerResult, RAGPipeline, SupportsRetrieve
 from .schemas import (
     AskRequest,
     AskResponse,
+    ChunkInfo,
+    ChunksResponse,
     CitationModel,
+    ConfigResponse,
     ContextModel,
     DocumentInfo,
     DocumentsResponse,
+    IndexInfo,
     IngestRequest,
     IngestResponse,
     SearchHit,
@@ -107,6 +111,8 @@ def _to_response(result: AnswerResult) -> AskResponse:
         answer=result.answer,
         mode=result.mode,
         refused=result.refused,
+        refused_by=result.refused_by,
+        retrieval_confidence=result.retrieval_confidence,
         confidence=result.confidence,
         confidence_breakdown=result.confidence_breakdown,
         citations=[
@@ -266,6 +272,59 @@ def create_app(
         return DocumentsResponse(
             documents=[DocumentInfo(source_file=s, chunks=n) for s, n in sources.items()],
             total_chunks=total,
+        )
+
+    @app.get("/v1/chunks", response_model=ChunksResponse, tags=["index"])
+    def chunks(source_file: str) -> ChunksResponse:
+        """One indexed source's chunks in document order (paths as ``/v1/documents`` lists them)."""
+        with _missing_pieces_as_http():
+            stored = _get_store().chunks_for_source(source_file)
+        if not stored:
+            raise HTTPException(status_code=404, detail=f"No indexed source {source_file!r}")
+        return ChunksResponse(
+            source_file=source_file,
+            chunks=[
+                ChunkInfo(
+                    chunk_id=c.chunk_id,
+                    ordinal=c.ordinal,
+                    section_heading=c.section_heading or None,
+                    text=c.text,
+                )
+                for c in stored
+            ],
+        )
+
+    @app.get("/v1/config", response_model=ConfigResponse, tags=["ops"])
+    def config() -> ConfigResponse:
+        """The models, retrieval settings and thresholds this service runs with, and what
+        built the served collection; evaluation reports record it. No keys or URLs."""
+        with _missing_pieces_as_http():
+            store = _get_store()
+            info = store.collection_info()
+            index = None
+            if info is not None:
+                index = IndexInfo(
+                    embedding_model=info.embedding_model,
+                    dim=info.dim,
+                    chunk_strategy=info.chunking.strategy,
+                    chunk_size=info.chunking.size,
+                    chunk_overlap=info.chunking.overlap,
+                    chunks=store.count(),
+                )
+        return ConfigResponse(
+            collection=settings.collection,
+            embedding_provider=settings.embedding_provider,
+            embedding_model=settings.embedding_model,
+            llm_provider=settings.llm_provider,
+            generation_model=settings.generation_model,
+            default_mode=settings.default_mode,
+            top_k=settings.top_k,
+            rerank_top_k=settings.rerank_top_k,
+            thresholds={
+                mode: settings.refusal_threshold(mode) for mode in ("dense", "hybrid")
+            },
+            citation_verification=settings.citation_verification,
+            index=index,
         )
 
     @app.get("/v1/stats", response_model=StatsResponse, tags=["ops"])

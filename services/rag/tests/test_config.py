@@ -59,8 +59,21 @@ def test_token_prices_and_thresholds_present() -> None:
     assert s.price_generation_input_per_1m > 0
     assert s.price_generation_output_per_1m > 0
     assert s.price_embedding_per_1m > 0
-    assert 0.0 <= s.retrieval_confidence_threshold <= 1.0
+    assert 0.0 <= s.refusal_threshold("dense") <= 1.0
+    assert 0.0 <= s.refusal_threshold("hybrid") <= 1.0
     assert 0.0 <= s.confidence_threshold <= 1.0
+
+
+def test_each_mode_has_its_own_refusal_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Dense compares a cosine, hybrid a reranker score: one value can't fit both."""
+    monkeypatch.setenv("RETRIEVAL_CONFIDENCE_THRESHOLD_DENSE", "0.45")
+    monkeypatch.setenv("RETRIEVAL_CONFIDENCE_THRESHOLD_HYBRID", "0.12")
+
+    s = _settings()
+
+    assert (s.refusal_threshold("dense"), s.refusal_threshold("hybrid")) == (0.45, 0.12)
+    with pytest.raises(ValueError, match="sparse"):
+        s.refusal_threshold("sparse")
 
 
 @pytest.mark.parametrize("name", ["Ferry_Docs", "docs-v2", "9docs", "a" * 45])

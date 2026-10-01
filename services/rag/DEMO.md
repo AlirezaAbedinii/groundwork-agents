@@ -64,7 +64,8 @@ and it doesn't pay for a generation call to find out."
 ## Scene 3 — Citation verification catches a fabrication (1:35 – 2:15)
 
 Ask a question where the model over-reaches (rehearse to find one;
-alternatively lower `RETRIEVAL_CONFIDENCE_THRESHOLD` so a weak-context answer
+alternatively lower the mode's `RETRIEVAL_CONFIDENCE_THRESHOLD_DENSE` or `_HYBRID`
+so a weak-context answer
 slips through).
 
 **Show:** the verification pass flagging an unsupported citation — the claim

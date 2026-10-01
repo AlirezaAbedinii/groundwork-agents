@@ -71,6 +71,15 @@ class AskResponse(BaseModel):
     answer: str
     mode: str
     refused: bool = Field(description="True when the system declined to answer.")
+    refused_by: Literal["gate", "model"] | None = Field(
+        default=None,
+        description="Who declined: the retrieval gate (before generating) or the model "
+        "(after reading the context). None for an answer.",
+    )
+    retrieval_confidence: float = Field(
+        description="The top retrieved chunk's score, which the gate compares with the "
+        "mode's threshold (cosine in dense mode, reranker score in hybrid mode)."
+    )
     confidence: float = Field(
         description="Composite confidence in [0,1]: weighted retrieval score + "
         "citation coverage + answer completeness."
@@ -182,4 +191,51 @@ class StatsResponse(BaseModel):
     latency_ms: dict[str, dict[str, float]] = Field(
         default_factory=dict,
         description="Per-stage P50/P95/P99 (+ sample count n), e.g. {'generate': {'p50': ...}}.",
+    )
+
+
+class ChunkInfo(BaseModel):
+    """One stored chunk of a source document."""
+
+    chunk_id: str
+    ordinal: int
+    section_heading: str | None = None
+    text: str
+
+
+class ChunksResponse(BaseModel):
+    """Response of ``GET /v1/chunks``: one source's chunks in document order."""
+
+    source_file: str
+    chunks: list[ChunkInfo] = Field(default_factory=list)
+
+
+class IndexInfo(BaseModel):
+    """What built the served collection, from its registry row."""
+
+    embedding_model: str
+    dim: int
+    chunk_strategy: str
+    chunk_size: int
+    chunk_overlap: int
+    chunks: int
+
+
+class ConfigResponse(BaseModel):
+    """Response of ``GET /v1/config``: what this service runs with. No secrets."""
+
+    collection: str
+    embedding_provider: str
+    embedding_model: str
+    llm_provider: str
+    generation_model: str
+    default_mode: str
+    top_k: int
+    rerank_top_k: int
+    thresholds: dict[str, float] = Field(
+        description="The refusal gate's threshold per retrieval mode (dense, hybrid)."
+    )
+    citation_verification: bool
+    index: IndexInfo | None = Field(
+        default=None, description="The served collection's registry row; null until it's seeded."
     )
