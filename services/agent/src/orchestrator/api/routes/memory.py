@@ -33,13 +33,13 @@ def memory_dashboard(user_id: str) -> dict:
 @router.delete("/users/{user_id}")
 def delete_user_memory(user_id: str) -> dict:
     """Purge everything remembered about a user (long-term, working, audit)."""
-    chroma_deleted = LongTermMemory().delete_user(user_id)
+    long_term_deleted = LongTermMemory().delete_user(user_id)
     working_cleared = WorkingMemory().clear_user(user_id)
     events_purged = MemoryEventStore().purge_user(user_id)
     return {
         "user_id": user_id,
         "deleted": {
-            "long_term": chroma_deleted,
+            "long_term": long_term_deleted,
             "working_memory_tasks": working_cleared,
             "audit_events": events_purged,
         },

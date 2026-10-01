@@ -13,8 +13,8 @@ STREAMLIT ?= $(BIN)streamlit
 # Compose maps service ports to localhost, so host-run processes use localhost URLs.
 LOCAL_DATABASE_URL ?= postgresql+psycopg://orchestrator:orchestrator@localhost:5432/orchestrator
 
-infra:  ## start infra services only (postgres, redis, chromadb)
-	docker compose up -d postgres redis chromadb
+infra:  ## start infra services only (postgres, redis)
+	docker compose up -d postgres redis
 
 dev:  ## run the API locally in inline mode (no worker needed)
 	RUN_MODE=inline $(UVICORN) orchestrator.main:app --reload --port 8080

@@ -1,7 +1,7 @@
 """E2E test setup: requires the compose infra services (make infra).
 
 Same environment contract as the integration suite: migrations applied, demo
-schema seeded, and all state (Postgres, Redis, Chroma) truncated between
+schema seeded, and all state (Postgres, Redis) truncated between
 tests so every scenario starts from a clean world. Skips gracefully when
 Postgres is unreachable.
 """
@@ -43,7 +43,7 @@ def _clean_tables(_database):
     with engine.begin() as connection:
         connection.exec_driver_sql(
             "TRUNCATE approvals, tool_invocations, subtasks, plans, tasks, "
-            "memory_events, spans, llm_calls CASCADE"
+            "memory_events, memories, spans, llm_calls CASCADE"
         )
     for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
         try:
@@ -52,7 +52,6 @@ def _clean_tables(_database):
         except Exception:
             pass  # checkpointer tables appear on first graph build
     _purge_redis()
-    _purge_chroma()
     yield
 
 
@@ -64,14 +63,3 @@ def _purge_redis() -> None:
     client = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
     for key in client.scan_iter(match="task:*"):
         client.delete(key)
-
-
-def _purge_chroma() -> None:
-    """Delete memory items (not collections — live handles cache collection ids)."""
-    from orchestrator.memory.longterm import KINDS, LongTermMemory
-
-    longterm = LongTermMemory()
-    for kind in KINDS:
-        result = longterm.all_items(kind)
-        if result["ids"]:
-            longterm.delete(kind, result["ids"])

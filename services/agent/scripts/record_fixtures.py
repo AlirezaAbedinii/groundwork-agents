@@ -7,8 +7,8 @@ the exact-match form the fixture player checks first (see orchestrator/llm/mock.
 Escalations are auto-approved so recording runs unattended.
 
 Requires real API keys (OPENAI_API_KEY, ANTHROPIC_API_KEY) and the infra
-services from ``make infra`` (Postgres for task rows and tool logging; Redis
-and Chroma are used when reachable, silently downgraded otherwise). Refuses to
+services from ``make infra`` (Postgres for task rows, tool logging and long-term
+memory; Redis is used when reachable, silently downgraded otherwise). Refuses to
 run under MOCK_LLM=1 — recording playback output would be circular.
 
 Usage:
@@ -68,7 +68,7 @@ class RecordingLLM:
 
 
 def _optional_memory_backends():
-    """Real Redis/Chroma when reachable; graceful in-memory/None fallback."""
+    """Real Redis and long-term memory when reachable; graceful in-memory/None fallback."""
     from orchestrator.memory.working import InMemoryWorkingMemory, WorkingMemory
 
     try:
@@ -84,7 +84,7 @@ def _optional_memory_backends():
         longterm = LongTermMemory()
         longterm.all_items("facts")
     except Exception as error:
-        print(f"note: Chroma unreachable ({error}); recording without long-term memory")
+        print(f"note: long-term memory unavailable ({error}); recording without it")
         longterm = None
     return working, longterm
 

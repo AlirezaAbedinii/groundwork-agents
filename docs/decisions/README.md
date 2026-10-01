@@ -10,6 +10,7 @@ supersedes it.
 | [0002](0002-native-tool-calling.md) | Native tool calling, structured outputs, and an async core | accepted |
 | [0003](0003-one-event-loop-per-worker.md) | One event loop per Celery worker thread | accepted |
 | [0004](0004-mcp-as-the-seam.md) | MCP as the seam between the agents and retrieval | accepted |
+| [0005](0005-pgvector-over-chroma.md) | Postgres with pgvector instead of Chroma | accepted |
 
 ## Format
 

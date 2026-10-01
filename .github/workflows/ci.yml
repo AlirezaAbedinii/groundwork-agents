@@ -128,7 +128,7 @@ jobs:
         run: python -m pytest tests/unit -q -m "not live"
 
   agent-integration:
-    # Real postgres/redis/chroma as service containers; the LLM stays mocked.
+    # Real postgres (pgvector) and redis as service containers; the LLM stays mocked.
     # Runs only after lint + unit pass so a red unit run doesn't spend containers.
     needs: agent-unit
     runs-on: ubuntu-latest
@@ -137,8 +137,6 @@ jobs:
       CODE_EXEC_BACKEND: subprocess
       DATABASE_URL: postgresql+psycopg://orchestrator:orchestrator@localhost:5432/orchestrator
       REDIS_URL: redis://localhost:6379/0
-      CHROMA_HOST: localhost
-      CHROMA_PORT: "8010"
     defaults:
       run:
         working-directory: services/agent
@@ -162,13 +160,6 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 5s --health-timeout 3s --health-retries 10
-      chromadb:
-        # Same digest as services/agent/docker-compose.yml (chroma 1.4.4). The
-        # image has no curl, so readiness is checked from the job below rather
-        # than via --health-cmd.
-        image: chromadb/chroma@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
-        ports:
-          - 8010:8000
     steps:
       - uses: actions/checkout@v7
 
@@ -208,5 +199,5 @@ jobs:
 
       - name: Integration and e2e tests (mock LLM against real services)
         # Both suites share the conftest contract (migrate, seed, truncate
-        # between tests) and need only the three service containers.
+        # between tests) and need only the two service containers.
         run: python -m pytest tests/integration tests/e2e -q -m "not live" -rs

@@ -43,10 +43,8 @@ flowchart LR
     WORKER <-->|"broker + working memory"| REDIS[("redis :6379")]
     WORKER -->|"one sibling container per snippet"| SANDBOX
 
-    API --> PG[("postgres :5432<br/>tasks · plans · subtasks · tool calls<br/>approvals · spans · llm calls · checkpoints")]
+    API --> PG[("postgres + pgvector :5432<br/>tasks · plans · subtasks · tool calls<br/>approvals · spans · llm calls · checkpoints<br/>memories: episodes · facts · preferences")]
     WORKER --> PG
-    API --> CHROMA[("chromadb :8010→8000<br/>episodes · facts · preferences")]
-    WORKER --> CHROMA
 
     API -.->|"rag_* tools over MCP (optional)"| MCPS["retrieval MCP server :8001<br/>in the services/rag stack"]
     WORKER -.-> MCPS
@@ -141,8 +139,8 @@ approval row → `interrupt()`.
 
 1. **Intake** — `POST /tasks` writes the task row and dispatches the run
    (Celery task or inline).
-2. **Memory retrieval** — the supervisor queries ChromaDB (episodes, facts,
-   preferences; top-k per collection, filtered by user) and injects the hits
+2. **Memory retrieval** — the supervisor queries long-term memory (episodes,
+   facts, preferences; top-k per kind, filtered by user) and injects the hits
    into the planning prompt in a labeled block; retrieved ids are recorded to
    the audit log and the trace.
 3. **Planning** — decomposition into an `ExecutionPlan` through native
@@ -162,7 +160,7 @@ approval row → `interrupt()`.
 7. **Synthesis & delivery** — the supervisor composes the final output from
    completed subtasks; the optional final gate runs; the task completes.
 8. **Memory write-back** — an extraction pass distills the episode, facts,
-   and preferences into ChromaDB; the task's working memory is cleared.
+   and preferences into long-term memory; the task's working memory is cleared.
 9. **Throughout** — every step emits spans (see
    [Observability pipeline](#observability-pipeline)).
 
@@ -172,7 +170,7 @@ approval row → `interrupt()`.
 |---|---|---|
 | **Redis** | Task-scoped working memory (plan, subtask outputs, intermediates, error log, TTL-guarded); Celery broker/results; tool rate-limit counters | Shared scratch space needs speed and TTLs, not durability |
 | **PostgreSQL** | Tasks, plans, subtasks, tool invocations, approvals, spans, LLM calls (full prompts, responses and tool calls), LangGraph checkpoints, memory audit log, seeded `demo` schema for `db_query` | Everything that must survive a restart or be queried relationally |
-| **ChromaDB** | Long-term semantic memory in three collections with importance/recency/access metadata | Similarity retrieval is the access pattern; metadata drives consolidation and expiration |
+| **pgvector** (in PostgreSQL) | Long-term semantic memory: one `memories` table, three kinds, with importance/recency/access attributes | Similarity retrieval is the access pattern; filtering by user before ranking keeps it exact, and the attributes drive consolidation and expiration |
 
 ## Human-in-the-loop mechanics
 
@@ -256,7 +254,7 @@ doesn't produce false divergences.
   boundary; `db_query` and `code_exec` run for real against the seeded schema
   and the sandbox.
 - Test pyramid: unit (pure logic — triggers, schemas, pricing, importance),
-  integration (API → graph → real Postgres/Redis/Chroma), e2e (the six
+  integration (API → graph → real Postgres/Redis), e2e (the six
   system-level scenarios + full lifecycle). One `-m live` smoke test hits a
   real provider when keys are present.
 - The fixtures ship in the api/worker images, so the *composed* stack runs the

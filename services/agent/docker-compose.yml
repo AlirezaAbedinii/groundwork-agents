@@ -1,18 +1,16 @@
 name: agent-orchestration-system
 
-# Full system: api, worker, redis, postgres, chromadb, review-ui,
+# Full system: api, worker, redis, postgres (with pgvector), review-ui,
 # trace-explorer — plus two one-shot helpers: `migrate` (Alembic upgrade +
 # demo-schema seed, gating api/worker startup) and `sandbox` (builds the
 # code_exec sandbox image before the worker starts).
 #
 # Host ports are remapped where the defaults tend to be taken on dev machines:
-# chroma 8010→8000, review UI 8511→8501, trace explorer 8512→8502.
+# review UI 8511→8501, trace explorer 8512→8502.
 
 x-app-env: &app-env
   DATABASE_URL: postgresql+psycopg://orchestrator:orchestrator@postgres:5432/orchestrator
   REDIS_URL: redis://redis:6379/0
-  CHROMA_HOST: chromadb
-  CHROMA_PORT: 8000
   RUN_MODE: ${RUN_MODE:-celery}
   MOCK_LLM: ${MOCK_LLM:-0}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
@@ -56,23 +54,6 @@ services:
       timeout: 3s
       retries: 10
 
-  chromadb:
-    # chroma 1.4.4 — the project pins by digest because upstream publishes no plain release tags
-    image: chromadb/chroma@sha256:1e0b73a187a28757c572acba508c46f48c9e8b0acaf5c20e6d95cdedce1acdf6
-    ports:
-      # host 8010 → container 8000 (host port 8000 is commonly taken; in-network
-      # clients still reach chromadb:8000)
-      - "8010:8000"
-    volumes:
-      - chromadata:/data
-    healthcheck:
-      # The image is a bare Rust binary with bash but no curl; a TCP connect
-      # to the API port is the available liveness signal.
-      test: ["CMD", "/usr/bin/bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   migrate:
     build:
       context: .
@@ -112,8 +93,6 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
-      chromadb:
-        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=3)"]
       interval: 10s
@@ -142,8 +121,6 @@ services:
       sandbox:
         condition: service_completed_successfully
       redis:
-        condition: service_healthy
-      chromadb:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "celery -A orchestrator.workers.celery_app inspect ping --timeout 10 | grep -q pong"]
@@ -195,5 +172,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  chromadata:
   workspaces:

@@ -23,8 +23,6 @@ class Settings(BaseSettings):
     # Storage
     database_url: str = "postgresql+psycopg://orchestrator:orchestrator@localhost:5432/orchestrator"
     redis_url: str = "redis://localhost:6379/0"
-    chroma_host: str = "localhost"
-    chroma_port: int = 8010  # host mapping of chromadb:8000; the composed stack sets CHROMA_PORT=8000
 
     # Execution
     run_mode: Literal["inline", "celery"] = "inline"

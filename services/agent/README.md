@@ -64,9 +64,8 @@ The stack runs **key-free** under `MOCK_LLM=1`: recorded LLM fixtures ship insid
 |---|---|---|
 | `api` | 8080 | FastAPI orchestration API |
 | `worker` | — | Celery worker + beat (`RUN_MODE=celery`), runs the graphs |
-| `postgres` | 5432 | tasks, plans, approvals, spans, checkpoints |
+| `postgres` | 5432 | tasks, plans, approvals, spans, checkpoints, long-term memory (pgvector) |
 | `redis` | 6379 | working memory + Celery broker |
-| `chromadb` | 8010 → 8000 | long-term semantic memory |
 | `review-ui` | 8511 → 8501 | human approval queue + memory dashboard |
 | `trace-explorer` | 8512 → 8502 | traces, costs, replay |
 
@@ -288,7 +287,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
 | 6 | Portfolio polish — architecture doc ✅, README ✅, screenshots & <5-min recording | 🚧 recording pending |
-| CI | GitHub Actions: ruff + unit suite on every push and PR, then the integration suite against postgres/redis/chroma service containers (mock LLM) | ✅ Done |
+| CI | GitHub Actions: ruff + unit suite on every push and PR, then the integration suite against postgres (pgvector) and redis service containers (mock LLM) | ✅ Done |
 
 ## Local development
 
@@ -298,7 +297,7 @@ Host-run API in inline mode (no worker needed) for fast iteration:
 uv venv --python 3.12 .venv
 uv pip install -e ".[dev]"
 
-make infra                        # postgres, redis, chromadb only
+make infra                        # postgres and redis only
 make migrate && make seed         # schema + demo data
 make sandbox                      # code-exec sandbox image
 
@@ -352,7 +351,7 @@ The e2e suite pins the six system-level behaviors, plus a full lifecycle:
 
 The tool-call loop itself is pinned by `tests/unit/test_specialist_loop.py`: every call answered before the model's next turn, parallel calls in call order, tool errors as results, the approval gate, and the turn budget.
 
-All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration and e2e suites against postgres, redis, and chroma service containers. Locally, `make e2e` runs the e2e suite against the compose services.
+All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration and e2e suites against postgres (pgvector) and redis service containers. Locally, `make e2e` runs the e2e suite against the compose services.
 
 > Note: integration/e2e tests run against the compose services and truncate state between tests — re-run `make demo` afterwards if you want showcase data back in the UIs.
 
