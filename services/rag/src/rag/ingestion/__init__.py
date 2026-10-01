@@ -32,11 +32,16 @@ def build_chunks_for_file(
     settings: Settings | None = None,
     chunker: Chunker | None = None,
     persist: bool = False,
+    source_name: str | None = None,
 ) -> list[Chunk]:
-    """Load, normalize, and chunk a single file into metadata-tagged chunks."""
+    """Load, normalize, and chunk a single file into metadata-tagged chunks.
+
+    ``source_name`` is recorded as each chunk's ``source_file`` (default: the
+    file's name).
+    """
     settings = settings or get_settings()
     chunker = chunker or get_chunker(settings)
-    doc: RawDocument = normalize_document(load_path(path))
+    doc: RawDocument = normalize_document(load_path(path, source_name))
     if persist:
         persist_processed(doc, settings.data_processed_dir)
     return chunk_document(doc, chunker)
@@ -50,8 +55,10 @@ def build_chunks_for_dir(
 ) -> list[Chunk]:
     """Recursively load every supported file in ``directory`` into chunks.
 
-    Files are processed in sorted path order so the output is deterministic.
-    Unsupported files (e.g. HTML until the V1 loader) are skipped.
+    Files are processed in sorted path order so the output is deterministic,
+    and each chunk's ``source_file`` is the file's path relative to
+    ``directory`` (``uv/concepts/cache.md``; just the name in a flat folder).
+    Unsupported files are skipped.
     """
     settings = settings or get_settings()
     chunker = get_chunker(settings)
@@ -60,6 +67,12 @@ def build_chunks_for_dir(
     for path in sorted(directory.rglob("*")):
         if path.is_file() and is_supported(path):
             chunks.extend(
-                build_chunks_for_file(path, settings=settings, chunker=chunker, persist=persist)
+                build_chunks_for_file(
+                    path,
+                    settings=settings,
+                    chunker=chunker,
+                    persist=persist,
+                    source_name=path.relative_to(directory).as_posix(),
+                )
             )
     return chunks

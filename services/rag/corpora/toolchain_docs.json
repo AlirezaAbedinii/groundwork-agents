@@ -1,0 +1,52 @@
+{
+  "name": "toolchain_docs",
+  "labels_assume": {
+    "chunk_strategy": "fixed",
+    "chunk_size": 800,
+    "chunk_overlap": 120
+  },
+  "sources": [
+    {
+      "dest": "uv",
+      "repo": "astral-sh/uv",
+      "tag": "0.12.21",
+      "commit": "7af826859382eb191e47467540850caa8f493e5b",
+      "license": "MIT OR Apache-2.0",
+      "subdir": "docs",
+      "include": [
+        "**/*.md"
+      ],
+      "exclude": []
+    },
+    {
+      "dest": "pydantic",
+      "repo": "pydantic/pydantic",
+      "tag": "v2.13.5",
+      "commit": "001dea020e0809844e5b17666432c9135a976f46",
+      "license": "MIT",
+      "subdir": "docs",
+      "include": [
+        "**/*.md"
+      ],
+      "exclude": []
+    },
+    {
+      "dest": "fastapi",
+      "repo": "fastapi/fastapi",
+      "tag": "0.142.2",
+      "commit": "78c4324f0c56bc5282a459978779a9e532d19709",
+      "license": "MIT",
+      "subdir": "docs/en/docs",
+      "include": [
+        "**/*.md"
+      ],
+      "exclude": [
+        "release-notes.md"
+      ],
+      "drop_lines": [
+        "^\\{\\* .* \\*\\}$"
+      ]
+    }
+  ],
+  "files_sha256": "241d59ab0ea5127807c183e6a2c1fd0f26ecfdcf28606d9eabf2e89f03b84063"
+}

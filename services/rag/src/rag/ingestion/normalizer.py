@@ -45,9 +45,15 @@ def normalize_document(doc: RawDocument) -> RawDocument:
 
 
 def persist_processed(doc: RawDocument, processed_dir: str | Path) -> Path:
-    """Write a normalized document to ``processed_dir`` as JSON; return its path."""
+    """Write a normalized document to ``processed_dir`` as JSON; return its path.
+
+    The name follows the relative source path with ``/`` as ``__``
+    (``uv/concepts/cache.md`` -> ``uv__concepts__cache.json``), so pages with the
+    same name in different folders don't overwrite each other.
+    """
     processed_dir = Path(processed_dir)
     processed_dir.mkdir(parents=True, exist_ok=True)
-    out_path = processed_dir / f"{Path(doc.source_file).stem}.json"
+    stem = Path(doc.source_file).with_suffix("").as_posix().replace("/", "__")
+    out_path = processed_dir / f"{stem}.json"
     out_path.write_text(json.dumps(asdict(doc), ensure_ascii=False, indent=2), encoding="utf-8")
     return out_path

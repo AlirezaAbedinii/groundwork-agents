@@ -13,6 +13,10 @@ at load time:
 Loaders are deterministic and do no network I/O. Heavy/optional parsers
 (``pypdf``, ``bs4``) are imported lazily inside their loader so importing this
 module stays cheap and dependency-free for the Markdown/text paths.
+
+``source_file`` defaults to the file's name; a directory ingest passes the
+path relative to the corpus root instead, so two ``index.md`` pages in
+different folders stay distinct.
 """
 from __future__ import annotations
 
@@ -48,18 +52,18 @@ class RawDocument:
     blocks: list[RawBlock] = field(default_factory=list)
 
 
-def load_text(path: Path) -> RawDocument:
+def load_text(path: Path, source_name: str | None = None) -> RawDocument:
     """Load a plain-text file as a single block."""
     path = Path(path)
     text = path.read_text(encoding="utf-8")
     return RawDocument(
-        source_file=path.name,
+        source_file=source_name or path.name,
         doc_type="text",
         blocks=[RawBlock(text=text)],
     )
 
 
-def load_markdown(path: Path) -> RawDocument:
+def load_markdown(path: Path, source_name: str | None = None) -> RawDocument:
     """Load Markdown, splitting into one block per heading section.
 
     Uses a simple, deterministic ATX-heading (``#``) parser — no external
@@ -97,10 +101,10 @@ def load_markdown(path: Path) -> RawDocument:
 
     if not blocks:  # document had a heading but no body text
         blocks.append(RawBlock(text="", section_heading=current_heading))
-    return RawDocument(source_file=path.name, doc_type="markdown", blocks=blocks)
+    return RawDocument(source_file=source_name or path.name, doc_type="markdown", blocks=blocks)
 
 
-def load_pdf(path: Path) -> RawDocument:
+def load_pdf(path: Path, source_name: str | None = None) -> RawDocument:
     """Load a PDF as one block per page (``page`` 1-indexed).
 
     ``pypdf`` is imported lazily; install the ``ingestion`` extra to use this.
@@ -118,10 +122,10 @@ def load_pdf(path: Path) -> RawDocument:
     blocks: list[RawBlock] = []
     for i, page in enumerate(reader.pages, start=1):
         blocks.append(RawBlock(text=page.extract_text() or "", page=i))
-    return RawDocument(source_file=path.name, doc_type="pdf", blocks=blocks)
+    return RawDocument(source_file=source_name or path.name, doc_type="pdf", blocks=blocks)
 
 
-def load_html(path: Path) -> RawDocument:
+def load_html(path: Path, source_name: str | None = None) -> RawDocument:
     """Load HTML as one block per ``<h1>``-``<h6>`` section.
 
     Mirrors the markdown loader: each block's ``section_heading`` is the nearest
@@ -168,7 +172,7 @@ def load_html(path: Path) -> RawDocument:
 
     if not blocks:  # no recognizable content elements — fall back to full text
         blocks.append(RawBlock(text=body.get_text(" ", strip=True), section_heading=title))
-    return RawDocument(source_file=path.name, doc_type="html", blocks=blocks)
+    return RawDocument(source_file=source_name or path.name, doc_type="html", blocks=blocks)
 
 
 # Dispatch table: suffix set -> loader.
@@ -180,17 +184,17 @@ _LOADERS = [
 ]
 
 
-def load_path(path: str | Path) -> RawDocument:
+def load_path(path: str | Path, source_name: str | None = None) -> RawDocument:
     """Load a single file, dispatching on its extension.
 
-    Raises :class:`UnsupportedFormatError` for unhandled extensions (e.g. HTML
-    until the V1 loader lands).
+    ``source_name`` overrides the recorded ``source_file`` (default: the file's
+    name). Raises :class:`UnsupportedFormatError` for unhandled extensions.
     """
     path = Path(path)
     suffix = path.suffix.lower()
     for suffixes, loader in _LOADERS:
         if suffix in suffixes:
-            return loader(path)
+            return loader(path, source_name)
     raise UnsupportedFormatError(
         f"No loader for '{suffix or path.name}'. Supported: markdown, text, pdf, html."
     )
