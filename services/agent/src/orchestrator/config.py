@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     model_supervisor: str = "openai:gpt-4o"
     model_specialist: str = "openai:gpt-4o-mini"
     model_reviewer: str = "anthropic:claude-sonnet-5"
+    # "cross" moves the reviewer off the producer's provider; "same" keeps it there
+    # (the evaluation compares the two; see llm/router.py)
+    reviewer_provider: Literal["cross", "same"] = "cross"
     model_memory: str = "openai:gpt-4o-mini"  # extraction + consolidation summaries
 
     # Memory

@@ -157,6 +157,13 @@ def test_the_rate_limit_applies_to_an_mcp_tool_and_the_model_sees_the_refusal(cl
     listed = [row for row in invocations(task_id) if row["tool_name"] == "rag_list_sources"]
     assert [row["status"] for row in listed] == ["success", "success", "success", "rate_limited"]
     assert "Rate limit of 3 calls per task exceeded" in listed[-1]["error"]
+    # The read endpoint returns the same log, the refused call included.
+    calls = client.get(f"/traces/{task_id}/tools").json()["calls"]
+    assert [(c["tool_name"], c["status"]) for c in calls] == [
+        (row["tool_name"], row["status"]) for row in invocations(task_id)
+    ]
+    refused = [c for c in calls if c["status"] == "rate_limited"]
+    assert [(c["tool_name"], c["error"]) for c in refused] == [("rag_list_sources", listed[-1]["error"])]
 
     llm_calls = client.get(f"/traces/{task_id}").json()["llm_calls"]
     last_research_prompt = [call["prompt"] for call in llm_calls if call["agent"] == "research"][-1]

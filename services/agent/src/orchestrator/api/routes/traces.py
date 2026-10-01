@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlalchemy as sa
 from fastapi import APIRouter, HTTPException
 
-from orchestrator.db.models import LLMCallRow, SpanRow, Task
+from orchestrator.db.models import LLMCallRow, SpanRow, Task, ToolInvocation
 from orchestrator.db.repo import DBLLMCallStore
 from orchestrator.db.session import get_sessionmaker
 from orchestrator.observability.cost import aggregate_costs, task_costs
@@ -82,3 +82,35 @@ def get_task_costs(task_id: str) -> dict:
     if costs is None:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
     return costs
+
+
+@router.get("/{task_id}/tools")
+def get_tool_calls(task_id: str) -> dict:
+    """Every tool call the task attempted, in time order: the invocation log, with
+    each call's status (success, failure, rejected or rate_limited)."""
+    with get_sessionmaker()() as session:
+        rows = session.scalars(
+            sa.select(ToolInvocation)
+            .where(ToolInvocation.task_id == task_id)
+            .order_by(ToolInvocation.created_at, ToolInvocation.id)
+        ).all()
+        if not rows and session.get(Task, task_id) is None:
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+        return {
+            "task_id": task_id,
+            "calls": [
+                {
+                    "created_at": row.created_at.isoformat(),
+                    "subtask_sid": row.subtask_sid,
+                    "specialist": row.specialist,
+                    "tool_name": row.tool_name,
+                    "status": row.status,
+                    "arguments": row.arguments,
+                    "output": row.output,
+                    "error": row.error,
+                    "latency_ms": row.latency_ms,
+                    "sensitive": row.sensitive,
+                }
+                for row in rows
+            ],
+        }
