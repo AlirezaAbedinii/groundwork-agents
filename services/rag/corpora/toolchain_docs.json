@@ -16,7 +16,9 @@
       "include": [
         "**/*.md"
       ],
-      "exclude": []
+      "exclude": [
+        "reference/contributing.md"
+      ]
     },
     {
       "dest": "pydantic",
@@ -28,7 +30,31 @@
       "include": [
         "**/*.md"
       ],
-      "exclude": []
+      "exclude": [
+        "contributing.md",
+        "pydantic_people.md",
+        "api/aliases.md",
+        "api/annotated_handlers.md",
+        "api/base_model.md",
+        "api/config.md",
+        "api/dataclasses.md",
+        "api/errors.md",
+        "api/experimental.md",
+        "api/fields.md",
+        "api/functional_serializers.md",
+        "api/functional_validators.md",
+        "api/json_schema.md",
+        "api/networks.md",
+        "api/pydantic_core.md",
+        "api/pydantic_core_schema.md",
+        "api/pydantic_extra_types_*.md",
+        "api/pydantic_settings.md",
+        "api/root_model.md",
+        "api/type_adapter.md",
+        "api/types.md",
+        "api/validate_call.md",
+        "api/version.md"
+      ]
     },
     {
       "dest": "fastapi",
@@ -41,12 +67,22 @@
         "**/*.md"
       ],
       "exclude": [
-        "release-notes.md"
+        "release-notes.md",
+        "_llm-test.md",
+        "contributing.md",
+        "external-links.md",
+        "fastapi-people.md",
+        "help-fastapi.md",
+        "management.md",
+        "newsletter.md",
+        "translation-banner.md",
+        "translations.md",
+        "reference/**"
       ],
       "drop_lines": [
         "^\\{\\* .* \\*\\}$"
       ]
     }
   ],
-  "files_sha256": "241d59ab0ea5127807c183e6a2c1fd0f26ecfdcf28606d9eabf2e89f03b84063"
+  "files_sha256": "b6fcaf11a815a5d6ab1160fa416b286d73a8afaba59b9b818e4c226e61832b2d"
 }
