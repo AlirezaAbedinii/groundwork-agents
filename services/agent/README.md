@@ -11,7 +11,7 @@ flowchart TD
     USER([complex request]) --> SUP
 
     SUP["🧭 Supervisor<br/>plans · delegates · synthesizes"]
-    MEM[("🧠 Long-term memory — ChromaDB<br/>episodes · facts · preferences")]
+    MEM[("🧠 Long-term memory — Postgres + pgvector<br/>episodes · facts · preferences")]
     SUP <-.->|retrieve before planning · extract after delivery| MEM
 
     SUP -->|parallel dispatch in DAG waves| R & A & W & C
@@ -45,7 +45,7 @@ I built a multi-agent orchestration system where AI agents decompose complex tas
 |---|---|---|
 | **Multi-agent orchestration** | Supervisor → 4 specialists → independent reviewer, wired as a LangGraph state machine with parallel DAG-wave dispatch, retry and rework-with-feedback edges, and Postgres checkpointing | [`graph/`](src/orchestrator/graph), [`agents/`](src/orchestrator/agents), [`planning/`](src/orchestrator/planning) |
 | **Tool use** | 5 local tools, plus the retrieval service's tools over MCP, behind one registry enforcing per-specialist permissions, rate limits, and sensitive flags; every invocation logged with arguments, output, latency, status | [`tools/`](src/orchestrator/tools) |
-| **Memory** | Task-scoped working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval into planning, importance scoring, consolidation, expiration, and a right-to-forget endpoint | [`memory/`](src/orchestrator/memory) |
+| **Memory** | Task-scoped working memory (Redis) + long-term semantic memory (Postgres with pgvector) with retrieval into planning, importance scoring, consolidation, expiration, and a right-to-forget endpoint | [`memory/`](src/orchestrator/memory) |
 | **Human-in-the-loop** | 5 escalation triggers → 4 approval levels; durable pause via graph interrupts; review UI with full decision context, four resolution actions, and a grounded chat panel | [`hitl/`](src/orchestrator/hitl), [`ui/review_app.py`](ui/review_app.py) |
 | **Observability** | Every decision is an OpenTelemetry span exported to Postgres; trace explorer with expandable prompts; cost tracking per task + aggregates; deterministic replay and fork-at-step-k | [`observability/`](src/orchestrator/observability), [`ui/trace_explorer.py`](ui/trace_explorer.py) |
 
@@ -153,9 +153,9 @@ flowchart LR
     Runner --> Graph
     Research & Analysis & Writing & Code -.->|permitted tools only| Tools[(Tool registry)]
     Graph <-.->|working memory| Redis[(Redis)]
-    Plan <-.->|retrieve| Chroma[(ChromaDB)]
-    Synthesize -.->|extract memories| Chroma
-    Runner --> Postgres[(PostgreSQL)]
+    Plan <-.->|retrieve memories| Postgres[(PostgreSQL + pgvector)]
+    Synthesize -.->|extract memories| Postgres
+    Runner --> Postgres
 
     Escalate -.->|full context| Queue[(Approval queue)]
     Queue <--> Human[👤 Review UI]
@@ -201,7 +201,7 @@ The `rag_*` tools live on the retrieval service's [MCP server](../../mcp/README.
 
 **Working memory (Redis)** is scoped to a single task: the current plan, each completed subtask's output, intermediate results, and an error log, shared by every agent working the task. It's cleared on completion and TTL-guarded against crashed runs.
 
-**Long-term memory (ChromaDB)** persists across tasks in three collections — *episodes* (what was asked and which approach worked), *facts* (domain knowledge discovered), and *preferences* (what this user likes). After every completed task an extraction pass writes new memories; before every plan, the top matches are retrieved and injected into the supervisor's prompt, with each retrieved id recorded to an audit log.
+**Long-term memory (Postgres with pgvector)** persists across tasks in three kinds — *episodes* (what was asked and which approach worked), *facts* (domain knowledge discovered), and *preferences* (what this user likes). A lookup filters one user's memories of a kind, then ranks them by exact cosine distance. After every completed task an extraction pass writes new memories; before every plan, the top matches are retrieved and injected into the supervisor's prompt, with each retrieved id recorded to an audit log.
 
 Memories carry an importance score — `(1 + access_count) × exponential recency decay` — so what gets used stays relevant:
 
@@ -267,7 +267,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | API | FastAPI | ✅ |
 | Persistent state | PostgreSQL — tasks, plans, subtasks, tool invocations, memory audit | ✅ |
 | Short-term memory | Redis — task-scoped working memory | ✅ |
-| Long-term memory | ChromaDB — episodes/facts/preferences with importance scoring | ✅ |
+| Long-term memory | Postgres + pgvector — episodes/facts/preferences with importance scoring | ✅ |
 | Tool calling | Native function calling on both providers — tool schemas from the Pydantic inputs, parallel calls, errors returned to the model | ✅ |
 | Tool protocol | MCP (Python SDK 2.x): the retrieval service's tools, discovered into the same registry | ✅ |
 | Structured outputs | Native JSON-schema output for plans, review verdicts and memory extraction (strict on OpenAI) | ✅ |
@@ -282,7 +282,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 |---|---|---|
 | 0 | Project scaffolding, config, infra containers | ✅ Done |
 | 1 | Agent hierarchy, task decomposition, tool registry, LangGraph state machine | ✅ Done |
-| 2 | Working memory (Redis) + long-term semantic memory (ChromaDB) with retrieval, consolidation, expiration | ✅ Done |
+| 2 | Working memory (Redis) + long-term semantic memory (ChromaDB, since moved to Postgres with pgvector) with retrieval, consolidation, expiration | ✅ Done |
 | 3 | Human-in-the-loop: escalation triggers, approval queue on graph interrupts, review UI | ✅ Done |
 | 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
@@ -367,7 +367,7 @@ src/orchestrator/
 ├── planning/                # ExecutionPlan/Subtask schemas + decomposition
 ├── graph/                  # LangGraph state, nodes, conditional edges, checkpointing
 ├── tools/                  # tool registry + the 5 built-in tools
-├── memory/                 # working (Redis), long-term (ChromaDB), extraction, retrieval, management
+├── memory/                 # working (Redis), long-term (pgvector), extraction, retrieval, management
 ├── hitl/                   # escalation triggers, approval levels, queue, notifications
 ├── observability/          # tracing (OTel → Postgres exporter), cost tracking, replay
 ├── db/                     # SQLAlchemy models, Alembic migrations, repositories
@@ -392,7 +392,7 @@ scripts/
 
 tests/
 ├── unit/                   # schemas, registry, tools, graph routing, memory, triggers, spans, pricing
-├── integration/            # API → graph → Postgres/Redis/ChromaDB, pause/resume, traces, replay
+├── integration/            # API → graph → Postgres/Redis, pause/resume, traces, replay
 ├── e2e/                    # the six system-level scenarios + the full-lifecycle test
 └── fixtures/llm/           # recorded LLM responses for deterministic runs
 ```
@@ -408,7 +408,7 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 - **A mock LLM client, not mocked tests.** `MOCK_LLM=1` swaps in a fixture-playback client used by the *same* code path as production, so integration tests exercise real orchestration logic deterministically, without API cost.
 - **Memory never blocks a task.** Retrieval and extraction failures degrade to "plan without memories" / "skip the write" with a warning — a flaky memory store must not fail a task that otherwise succeeded.
 - **Retrieval is access.** Injecting a memory into a plan bumps its access count and importance, so the memories that actually influence work are the ones that survive consolidation and expiration.
-- **Client-side embeddings.** Vectors are computed in the app (OpenAI in real mode, a deterministic token-hash under `MOCK_LLM`) and handed to Chroma explicitly — retrieval stays testable offline and independent of server-side embedding config.
+- **Client-side embeddings.** Vectors are computed in the app (OpenAI in real mode, a deterministic token-hash under `MOCK_LLM`) and stored as pgvector vectors — retrieval stays testable offline and independent of any server-side embedding config.
 - **Escalation enqueues idempotently.** An interrupted LangGraph node re-executes its pre-interrupt code when it resumes, so approval creation is keyed by (task, gate) — the resume pass finds the existing row instead of enqueueing and notifying twice.
 - **Humans get context, not a yes/no button.** Every approval carries the request, plan, completed steps, the exact step in question, the agent's proposed action with reasoning, and relevant memories — plus a chat panel over the checkpointed state — because a reviewer who can't see why will rubber-stamp.
 - **Spans land in Postgres, not a collector.** A custom OpenTelemetry exporter writes spans to the same database everything else lives in — one query joins a decision to its tool calls, its cost, and its approval, and the deployment stays at zero extra observability services.

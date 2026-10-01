@@ -7,8 +7,8 @@ before recording.
 
 ## Prep checklist (before recording)
 
-- [ ] `.env` contains a working `OPENAI_API_KEY`; fresh `data/` (delete
-      `data/chroma` for a clean first-ingest shot).
+- [ ] `.env` contains a working `OPENAI_API_KEY`; for a clean first-ingest
+      shot, seed into an unused `COLLECTION`.
 - [ ] `docker compose up -d --build` done **before** recording (skip build wait);
       stack healthy: `curl localhost:8000/health` → `{"status":"ok"}`.
 - [ ] Screen layout: terminal on the left, browser on the right with two tabs —
@@ -37,7 +37,7 @@ curl -s localhost:8000/v1/documents | jq
 ```
 
 **Say:** "One command indexes the sample corpus — seven markdown docs become ~37
-chunks in a persistent Chroma index. Note we already know what ingestion *cost*:
+chunks in Postgres with pgvector. Note we already know what ingestion *cost*:
 every stage of this system is metered from day one."
 
 ## Scene 2 — Three kinds of questions (0:30 – 1:35)

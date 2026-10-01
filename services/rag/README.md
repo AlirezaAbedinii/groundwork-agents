@@ -34,8 +34,8 @@ flowchart LR
     A[Docs: md/txt/pdf/html] --> B[Loader + Normalizer]
     B --> C[Chunker]
     C --> D[Dedup]
-    D --> E[(Chroma: dense)]
-    D --> F[(BM25: sparse)]
+    D --> E[(Postgres + pgvector)]
+    E --> F[BM25, built from the stored chunks]
     Q[Question] --> G[Dense retrieve]
     Q --> H[Sparse retrieve]
     E --> G
@@ -51,7 +51,8 @@ flowchart LR
 
 Every stage shown is implemented and tested: multi-format ingestion (Markdown,
 text, PDF, HTML) with three switchable chunkers and near-duplicate dedup; dense
-(Chroma) and sparse (BM25) indexes kept in sync; RRF fusion and local
+(Postgres with pgvector, HNSW) and sparse (BM25, built from the same stored
+chunks) retrieval; RRF fusion and local
 cross-encoder reranking on the hybrid path; grounded generation with parsed,
 **LLM-judge-verified** citations and a composite confidence score; and a
 per-request latency/cost trace — served by FastAPI + Streamlit in Docker.
@@ -235,7 +236,7 @@ is verification batching, not retrieval.
   measured baseline, plus structure-aware recursive and semantic chunkers —
   switchable via config, each indexed in isolation, so the comparison above is
   apples-to-apples.
-- **Retrieval:** dense top-k over ChromaDB (cosine) fused with BM25 via **RRF**
+- **Retrieval:** dense top-k over pgvector (cosine, HNSW) fused with BM25 via **RRF**
   at 0.7 dense / 0.3 sparse (configurable, k=60), then a local cross-encoder
   (`ms-marco-MiniLM-L-6-v2`) reranks top-20 → top-5 — precision without extra
   LLM spend. The BM25 tokenizer keeps compound tokens (`FERRY-429`,
@@ -252,7 +253,8 @@ is verification batching, not retrieval.
   supports its claim (unsupported ones are surfaced, and lower the composite
   confidence). That answer-time pass uses the generation model.
 - **One LLM provider** (OpenAI *or* Anthropic behind one interface) — no
-  multi-provider routing. **File-based Chroma** — zero extra infrastructure.
+  multi-provider routing. **Postgres with pgvector** as the only store
+  ([ADR 0005](../../docs/decisions/0005-pgvector-over-chroma.md)).
   **Streamlit, not React; no auth; no streaming** — deliberately out of scope to
   keep the project focused and finishable.
 
@@ -262,7 +264,7 @@ is verification batching, not retrieval.
 src/rag/
 ├── config.py            # settings, model IDs, token prices, thresholds (env)
 ├── ingestion/           # loaders, normalizer, chunkers
-├── indexing/            # embeddings client, Chroma wrapper, index_path()
+├── indexing/            # embeddings client, pgvector store, BM25, index_path()
 ├── retrieval/           # dense retrieval + dense/hybrid mode switch
 ├── generation/          # grounded prompt, LLM client, citation parsing
 ├── observability/       # per-stage timers, cost accounting, trace store
