@@ -9,3 +9,7 @@ __pycache__/
 # local working notes, not published
 /CLAUDE.md
 /docs/plans/
+# eval: raw run records, the judge cache, unreviewed synthetic drafts
+eval/runs/
+eval/.cache/
+eval/golden/candidates_unverified.jsonl
