@@ -86,7 +86,9 @@ def with_quote(text: str, source: str = "tool/cache.md") -> list[dict]:
 def test_the_fixture_passes_with_the_corpus_and_rag(capsys):
     code, out = run(capsys, GOLDEN, "--corpus", CORPUS, "--rag", "http://rag.test", rag=fake_rag())
     assert code == 0, out
-    assert "3 rows · human 3 / synthetic 0 · lookup 1, multi_hop 1, no_answer 1, ambiguous 0" in out
+    assert (
+        "3 rows · targeted 3 / synthetic 0 · lookup 1, multi_hop 1, no_answer 1, ambiguous 0" in out
+    )
     assert "corpus: 3 quotes in 2 files, all found" in out
     assert "rag: 3 quotes checked against docs_test (fake-embedder; fixed 800/120; 5 chunks)" in out
     assert out.rstrip().endswith("0 errors, 1 warning")  # the composition warning only
@@ -133,7 +135,7 @@ def test_an_empty_file_is_valid(tmp_path, capsys):
     path.write_text("")
     code, out = run(capsys, path)
     assert code == 0
-    assert "0 rows · human 0 / synthetic 0" in out
+    assert "0 rows · targeted 0 / synthetic 0" in out
 
 
 def test_split_imbalance_is_a_warning(tmp_path, capsys):
@@ -265,7 +267,7 @@ def test_assign_splits_fills_toward_40_60_per_category(tmp_path, capsys):
 def test_assign_splits_never_moves_a_row_and_leaves_other_lines_alone(tmp_path, capsys):
     kept = (
         '{"id": "q001",   "question": "kept verbatim", "reference_answer": "a", '
-        '"category": "no_answer", "evidence": [], "origin": "human", "split": "test", '
+        '"category": "no_answer", "evidence": [], "origin": "targeted", "split": "test", '
         '"verified": true}'
     )
     path = write_rows(tmp_path / "g.jsonl", [kept, *unsplit(4, start=2)])

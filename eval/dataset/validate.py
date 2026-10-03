@@ -45,10 +45,10 @@ from textnorm import normalize_ws
 CATEGORIES: tuple[str, ...] = get_args(Category)
 ORIGINS: tuple[str, ...] = get_args(Origin)
 
-# The golden set's target composition: 50 hand-written rows (12 lookup, 14 multi_hop,
+# The golden set's target composition: 50 targeted rows (12 lookup, 14 multi_hop,
 # 18 no_answer, 6 ambiguous) and 25 synthetic lookups.
 TARGET_CATEGORIES = {"lookup": 37, "multi_hop": 14, "no_answer": 18, "ambiguous": 6}
-TARGET_ORIGINS = {"human": 50, "synthetic": 25}
+TARGET_ORIGINS = {"targeted": 50, "synthetic": 25}
 DEV_SHARE = 0.4
 MAX_CHUNKS_PER_QUOTE = 2
 

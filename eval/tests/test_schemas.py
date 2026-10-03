@@ -30,7 +30,7 @@ def row(**overrides) -> dict:
         "reference_answer": "In the cache directory, which UV_CACHE_DIR moves.",
         "category": "lookup",
         "evidence": [item("UV_CACHE_DIR moves the cache")],
-        "origin": "human",
+        "origin": "targeted",
         "split": "dev",
         "verified": True,
     }
@@ -99,7 +99,7 @@ def test_id_pattern(rid):
         GoldenQuestion.model_validate(row(id=rid))
 
 
-@pytest.mark.parametrize(("rid", "origin"), [("s001", "human"), ("q001", "synthetic")])
+@pytest.mark.parametrize(("rid", "origin"), [("s001", "targeted"), ("q001", "synthetic")])
 def test_id_prefix_matches_origin(rid, origin):
     with pytest.raises(ValidationError, match="ids start with"):
         GoldenQuestion.model_validate(row(id=rid, origin=origin))

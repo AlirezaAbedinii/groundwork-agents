@@ -10,12 +10,12 @@ checks every rule below that a program can check.
 
 | Field | Type | Description |
 |---|---|---|
-| `id` | string | `q001`… for hand-written rows, `s001`… for synthetic ones. Never reused. |
+| `id` | string | `q001`… for targeted rows, `s001`… for synthetic ones. Never reused. |
 | `question` | string | The question as a user would ask it. |
 | `reference_answer` | string | The answer, 1–3 sentences, using only facts in the evidence quotes. |
 | `category` | string | `lookup`, `multi_hop`, `no_answer` or `ambiguous` (below). |
 | `evidence` | list of items | The facts the answer needs; each item is `{"quotes": [...]}`. `[]` for `no_answer`. |
-| `origin` | string | `human` or `synthetic`. |
+| `origin` | string | `targeted` or `synthetic` (below). |
 | `split` | string | `dev` or `test`; filled in by `--assign-splits`. |
 | `verified` | bool | `true` on every row in the set. |
 | `notes` | string | What the row tests and, for `no_answer`, how the absence was checked. |
@@ -67,7 +67,10 @@ the readings.
 
 ## Origin, split and verification
 
-- **`human`** rows are written by a person reading the docs.
+- **`targeted`** rows are written from the docs to a coverage spec with an LLM's
+  help: exact tokens and paraphrases, questions that need two pages or two sections
+  of one page, refusals and ambiguity. A person verifies each one against its quotes
+  and their pages before it enters the set.
 - **`synthetic`** rows are drafted by an LLM from a single chunk. A person checks
   each draft against that chunk and its page, rewrites what needs it, and accepts or
   rejects it. Drafts wait in `candidates_unverified.jsonl`, which isn't committed.
@@ -81,18 +84,18 @@ Target composition (75 rows; the validator reports the gaps as warnings):
 
 | | lookup | multi_hop | no_answer | ambiguous | total |
 |---|---|---|---|---|---|
-| human | 12 | 14 | 18 | 6 | 50 |
+| targeted | 12 | 14 | 18 | 6 | 50 |
 | synthetic | 25 | | | | 25 |
 | total | 37 | 14 | 18 | 6 | 75 |
 
 ## Rules
 
-1. **Reference answers are human ground truth.** Hand-written rows are written by a
-   person from the docs, never generated. Synthetic rows are drafted by an LLM and
-   kept only after a person has checked the question, the answer and the quote
-   against the source chunk and its page and corrected them; they're marked
-   `origin: synthetic` so that every metric is also reported per origin (drafted
-   questions tend to borrow their chunk's words, which flatters retrieval).
+1. **Every row is verified by hand.** A person checks the question, the reference
+   answer and every quote against the source pages and corrects them before the row
+   enters the set: the question reads like a user's, the quotes answer it, and the
+   reference answer is correct and complete. The two origins are kept apart so that
+   every metric is also reported per origin: questions drafted from one chunk tend
+   to borrow its words, which flatters retrieval.
 2. **A reference answer uses only facts in its quotes.**
 3. **`no_answer` rows stay absent from the pinned docs.** Check each one by grepping
    the corpus for its key terms and reading the top search hits in both retrieval
@@ -123,7 +126,7 @@ flags quotes that aren't specific. The corpus comes from
 Leave out `split`; `--assign-splits` adds it.
 
 ```json
-{"id": "qNNN", "question": "", "reference_answer": "", "category": "lookup", "evidence": [{"quotes": [{"source": "", "text": ""}]}], "origin": "human", "verified": true, "notes": ""}
+{"id": "qNNN", "question": "", "reference_answer": "", "category": "lookup", "evidence": [{"quotes": [{"source": "", "text": ""}]}], "origin": "targeted", "verified": true, "notes": ""}
 ```
 
 An item with two alternative quotes: `{"quotes": [{"source": "a/x.md", "text": "..."}, {"source": "b/y.md", "text": "..."}]}`.

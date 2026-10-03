@@ -17,12 +17,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from textnorm import normalize_ws
 
 Category = Literal["lookup", "multi_hop", "no_answer", "ambiguous"]
-Origin = Literal["human", "synthetic"]
+Origin = Literal["targeted", "synthetic"]
 Split = Literal["dev", "test"]
 ToolStatus = Literal["success", "failure", "rejected", "rate_limited"]
 
-# Each origin's id prefix: q001… hand-written, s001… synthetic. Ids are never reused.
-ID_PREFIX: dict[str, str] = {"human": "q", "synthetic": "s"}
+# Each origin's id prefix: q001… written to the coverage spec, s001… drafted from one
+# chunk. Ids are never reused.
+ID_PREFIX: dict[str, str] = {"targeted": "q", "synthetic": "s"}
 
 
 class _Strict(BaseModel):
