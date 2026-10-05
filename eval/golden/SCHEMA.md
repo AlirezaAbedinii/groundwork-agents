@@ -64,7 +64,7 @@ Quote rules:
 | `lookup` | One fact. | Answer it, with citations. | ≥ 1 item |
 | `multi_hop` | Facts from different pages, or from different sections of one page. | Combine them in one answer. | ≥ 2 items |
 | `no_answer` | Plausible for these tools, but the pinned docs don't say. | Refuse: say the docs don't cover it, and invent nothing. | `[]` |
-| `ambiguous` | At least two readings that the docs answer differently ("dependencies" in uv vs FastAPI). | Name the readings instead of silently picking one. | ≥ 2 items, one per reading |
+| `ambiguous` | At least two readings that the docs answer differently ("dependencies" in uv vs FastAPI). | Name the readings instead of silently picking one. | ≥ 2 items, at least one per reading |
 
 Rows with evidence feed the retrieval metrics (Recall@k, MRR@10, nDCG@10). A
 question should be refused if and only if it is `no_answer`; that defines refusal
@@ -104,7 +104,9 @@ Target composition (75 rows; the validator reports the gaps as warnings):
    reference answer is correct and complete. The two origins are kept apart so that
    every metric is also reported per origin: questions drafted from one chunk tend
    to borrow its words, which flatters retrieval.
-2. **A reference answer uses only facts in its quotes.**
+2. **A reference answer uses only facts in its quotes.** A `no_answer` row has none:
+   its answer says what the pinned docs don't cover and may name the nearest feature
+   they do cover, with that page recorded in `notes`.
 3. **`no_answer` rows stay absent from the pinned docs.** Check each one by grepping
    the corpus for its key terms and reading the top search hits in both retrieval
    modes, and write down what was checked in `notes`. When the corpus pin changes,
