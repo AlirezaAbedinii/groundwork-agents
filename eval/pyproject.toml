@@ -36,7 +36,7 @@ select = ["E", "F", "I", "UP", "B", "W"]
 [tool.ruff.lint.isort]
 # This project's own modules, imported by path (it isn't a package). Declared so
 # the import order doesn't depend on which of them exist yet.
-known-first-party = ["dataset", "judge_prompts", "metrics", "schemas", "textnorm"]
+known-first-party = ["budget", "dataset", "judge_prompts", "llm", "metrics", "schemas", "textnorm"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

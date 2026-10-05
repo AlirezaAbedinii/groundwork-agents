@@ -192,6 +192,16 @@ def assign_splits(rows: list[Row]) -> list[Row]:
     return assigned
 
 
+def write_splits(path: Path, lines: list[str], rows: list[Row]) -> list[Row]:
+    """``assign_splits``, then rewrite only the lines of the rows that got a split."""
+    assigned = assign_splits(rows)
+    if assigned:
+        for row in assigned:
+            lines[row.line - 1] = json.dumps(row.data, ensure_ascii=False)
+        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return assigned
+
+
 # --- the corpus on disk -------------------------------------------------------------
 
 
@@ -433,11 +443,8 @@ def main(argv: Sequence[str] | None = None, *, rag_client: httpx.Client | None =
         return 1 if findings.errors else 0
 
     if args.assign_splits:
-        assigned = assign_splits(rows)
+        assigned = write_splits(args.file, lines, rows)
         if assigned:
-            for row in assigned:
-                lines[row.line - 1] = json.dumps(row.data, ensure_ascii=False)
-            args.file.write_text("\n".join(lines) + "\n", encoding="utf-8")
             ids = ", ".join(sorted(f"{r.data['id']} {r.data['split']}" for r in assigned))
             print(f"assigned splits to {len(assigned)} rows: {ids}")
 

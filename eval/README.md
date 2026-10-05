@@ -19,6 +19,9 @@ both services over HTTP only, so it measures what actually runs.
 | `textnorm.py` | How a quote is matched against chunk text, for labels and scoring alike |
 | `golden/` | The golden set and its [schema and rules](golden/SCHEMA.md) |
 | `dataset/validate.py` | Checks the golden set against the schema, the corpus files and the served chunks |
+| `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
+| `dataset/synthesize.py` | Drafts synthetic golden candidates, one chunk each (paid; `--max-cost-usd` required) |
+| `dataset/review.py` | Accepts, edits or rejects those drafts by hand |
 | `tasks/` | Agent evaluation tasks |
 
 ```bash
