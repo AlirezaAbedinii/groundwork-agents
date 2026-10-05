@@ -31,6 +31,14 @@ answer needs, and every item is needed. It holds one or more quotes, any one of
 which suffices: when the same fact is stated on two pages, both quotes go in one
 item as alternatives rather than in two items.
 
+A missing alternative makes a correct hit count as irrelevant. So when a row is
+written, the top 10 hits of both retrieval modes are read, and every chunk that
+states one of the row's facts gets its own quote added to that item (pooling, as in
+TREC). What counts is the chunk a quote marks, not the quote alone, and a chunk that
+only shows an example of the fact without stating it doesn't qualify. A page that no
+search surfaced can still be missed, so the labels lean toward the retrievers used
+for pooling.
+
 At scoring time a retrieved chunk is relevant if it contains a quote of some item
 (`textnorm.covered_items`: whitespace-insensitive, case-sensitive). An item covered
 by several chunks counts once, at its first rank, so overlapping chunk windows don't
