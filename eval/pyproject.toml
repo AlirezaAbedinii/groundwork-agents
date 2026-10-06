@@ -36,11 +36,17 @@ select = ["E", "F", "I", "UP", "B", "W"]
 [tool.ruff.lint.isort]
 # This project's own modules, imported by path (it isn't a package). Declared so
 # the import order doesn't depend on which of them exist yet.
-known-first-party = ["budget", "dataset", "judge_prompts", "llm", "metrics", "schemas", "textnorm"]
+known-first-party = [
+    "budget", "dataset", "judge", "judge_fake", "judge_prompts", "llm", "metrics", "schemas",
+    "textnorm",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+# Paid tests never run by accident: a plain `pytest` deselects them, and `-m live` on
+# the command line (which overrides this) selects them deliberately.
+addopts = "-m 'not live'"
 markers = [
     "live: tests that call real provider APIs (deselected in CI; each run needs an explicit OK)",
 ]

@@ -87,7 +87,16 @@ class GoldenQuestion(_Strict):
         return self
 
 
-# --- answer judge verdicts ----------------------------------------------------------
+# --- answer judge inputs and verdicts -----------------------------------------------
+
+
+class Context(BaseModel):
+    """A chunk the generator was given, as ``POST /v1/ask`` returns it in ``contexts``."""
+
+    chunk_id: str
+    text: str
+    score: float
+    metadata: dict = {}  # source_file, section_heading, ... (whatever the service stored)
 
 
 class CorrectnessVerdict(_Strict):

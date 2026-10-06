@@ -22,12 +22,15 @@ both services over HTTP only, so it measures what actually runs.
 | `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
 | `dataset/synthesize.py` | Drafts synthetic golden candidates, one chunk each (paid; `--max-cost-usd` required) |
 | `dataset/review.py` | Accepts, edits or rejects those drafts by hand |
+| `metrics.py` | Retrieval, refusal, answer and agreement metrics: pure functions over recorded runs |
+| `judge.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
+| `judge_fake.py` | A scripted judge for tests and keyless runs |
 | `tasks/` | Agent evaluation tasks |
 
 ```bash
 uv venv .venv -p 3.12
 uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
-.venv/bin/python -m pytest -q -m "not live"
+.venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
 .venv/bin/python -m dataset.validate golden/golden_set.jsonl \
   --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
 ```
