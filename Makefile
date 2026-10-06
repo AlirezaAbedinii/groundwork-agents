@@ -13,7 +13,7 @@ EVAL_PYTHON := $(if $(wildcard eval/.venv/bin/),.venv/bin/python,python)
 
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
-	test-eval e2e-agent
+	test-eval e2e-agent eval-score
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -49,3 +49,8 @@ test-eval: ## Evaluation suite tests (services faked; no keys, no paid calls).
 
 e2e-agent: ## Agent end-to-end tests (needs the compose services up).
 	$(MAKE) -C services/agent e2e
+
+eval-score: ## Re-score the published evaluation from its committed records ($0, no services).
+	@cd eval && if [ -f reports/rag-records.jsonl ]; then \
+		$(EVAL_PYTHON) -m rag_eval score --records reports/rag-records.jsonl; \
+	else echo "no published RAG records yet (eval/reports/rag-records.jsonl)"; fi

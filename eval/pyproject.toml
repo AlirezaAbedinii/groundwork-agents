@@ -37,8 +37,8 @@ select = ["E", "F", "I", "UP", "B", "W"]
 # This project's own modules, imported by path (it isn't a package). Declared so
 # the import order doesn't depend on which of them exist yet.
 known-first-party = [
-    "budget", "dataset", "judge", "judge_fake", "judge_prompts", "llm", "metrics", "schemas",
-    "textnorm",
+    "budget", "dataset", "judge", "judge_fake", "judge_prompts", "llm", "metrics", "rag_eval",
+    "report", "schemas", "svg", "textnorm",
 ]
 
 [tool.pytest.ini_options]

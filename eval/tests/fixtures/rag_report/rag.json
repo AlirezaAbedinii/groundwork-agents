@@ -1,0 +1,449 @@
+{
+  "run": {
+    "collected": "2026-10-06",
+    "config": {
+      "citation_verification": false,
+      "collection": "fixture",
+      "default_mode": "hybrid",
+      "embedding_model": "fake-embedder",
+      "embedding_provider": "sentence_transformers",
+      "generation_model": "gpt-4o-mini",
+      "index": {
+        "chunk_overlap": 120,
+        "chunk_size": 800,
+        "chunk_strategy": "fixed",
+        "chunks": 5,
+        "dim": 8,
+        "embedding_model": "fake-embedder"
+      },
+      "llm_provider": "openai",
+      "rerank_top_k": 5,
+      "thresholds": {
+        "dense": 0.3,
+        "hybrid": 0.3
+      },
+      "top_k": 10
+    },
+    "golden": {
+      "categories": {
+        "lookup": 3,
+        "multi_hop": 1,
+        "no_answer": 2
+      },
+      "origins": {
+        "synthetic": 2,
+        "targeted": 4
+      },
+      "rows": 6,
+      "sha256": "8695db3b3e25360f2f0e43453aa06605f1f7b02a2a4dac2de5934a45f9de5b81"
+    },
+    "missing": 0,
+    "modes": [
+      "dense",
+      "hybrid"
+    ],
+    "record": "run",
+    "run_id": "run1",
+    "top_k": 10
+  },
+  "scores": {
+    "dense": {
+      "refusal": {
+        "chosen": {
+          "dev": {
+            "f1": 1.0,
+            "fn": 0,
+            "fp": 0,
+            "precision": 1.0,
+            "precision_ci": [
+              0.206543,
+              1.0
+            ],
+            "recall": 1.0,
+            "recall_ci": [
+              0.206543,
+              1.0
+            ],
+            "tn": 2,
+            "tp": 1
+          },
+          "test": {
+            "f1": 0.0,
+            "fn": 1,
+            "fp": 0,
+            "precision": null,
+            "precision_ci": [
+              0.0,
+              1.0
+            ],
+            "recall": 0.0,
+            "recall_ci": [
+              0.0,
+              0.793457
+            ],
+            "tn": 2,
+            "tp": 0
+          }
+        },
+        "chosen_threshold": 0.55,
+        "configured": {
+          "f1": 0.0,
+          "fn": 1,
+          "fp": 0,
+          "precision": null,
+          "precision_ci": [
+            0.0,
+            1.0
+          ],
+          "recall": 0.0,
+          "recall_ci": [
+            0.0,
+            0.793457
+          ],
+          "tn": 2,
+          "tp": 0
+        },
+        "configured_threshold": 0.3,
+        "dev": {
+          "n": 3,
+          "should_refuse": 1
+        },
+        "sweeps": {
+          "dev": [
+            {
+              "f1": 0.0,
+              "precision": null,
+              "recall": 0.0,
+              "threshold": 0.5
+            },
+            {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "threshold": 0.55
+            },
+            {
+              "f1": 0.666667,
+              "precision": 0.5,
+              "recall": 1.0,
+              "threshold": 0.7
+            },
+            {
+              "f1": 0.5,
+              "precision": 0.333333,
+              "recall": 1.0,
+              "threshold": null
+            }
+          ],
+          "test": [
+            {
+              "f1": 0.0,
+              "precision": null,
+              "recall": 0.0,
+              "threshold": 0.58
+            },
+            {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "threshold": 0.62
+            },
+            {
+              "f1": 0.666667,
+              "precision": 0.5,
+              "recall": 1.0,
+              "threshold": 0.66
+            },
+            {
+              "f1": 0.5,
+              "precision": 0.333333,
+              "recall": 1.0,
+              "threshold": null
+            }
+          ]
+        },
+        "test": {
+          "n": 3,
+          "should_refuse": 1
+        }
+      },
+      "retrieval": {
+        "all": {
+          "MRR@10": 0.875,
+          "R@1": 0.625,
+          "R@10": 1.0,
+          "R@3": 1.0,
+          "R@5": 1.0,
+          "n": 4,
+          "nDCG@10": 0.887663
+        },
+        "by_category": {
+          "lookup": {
+            "MRR@10": 0.833333,
+            "R@1": 0.666667,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 3,
+            "nDCG@10": 0.876977
+          },
+          "multi_hop": {
+            "MRR@10": 1.0,
+            "R@1": 0.5,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 1,
+            "nDCG@10": 0.919721
+          }
+        },
+        "by_origin": {
+          "synthetic": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 1.0
+          },
+          "targeted": {
+            "MRR@10": 0.75,
+            "R@1": 0.25,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 0.775325
+          }
+        },
+        "by_split": {
+          "dev": {
+            "MRR@10": 1.0,
+            "R@1": 0.75,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 0.95986
+          },
+          "test": {
+            "MRR@10": 0.75,
+            "R@1": 0.5,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 0.815465
+          }
+        }
+      },
+      "snippets": {
+        "R@3 300 chars": 1.0,
+        "R@3 full": 1.0,
+        "R@5 150 chars": 0.5,
+        "R@5 full": 1.0,
+        "n": 2
+      }
+    },
+    "hybrid": {
+      "refusal": {
+        "chosen": {
+          "dev": {
+            "f1": 1.0,
+            "fn": 0,
+            "fp": 0,
+            "precision": 1.0,
+            "precision_ci": [
+              0.206543,
+              1.0
+            ],
+            "recall": 1.0,
+            "recall_ci": [
+              0.206543,
+              1.0
+            ],
+            "tn": 2,
+            "tp": 1
+          },
+          "test": {
+            "f1": 1.0,
+            "fn": 0,
+            "fp": 0,
+            "precision": 1.0,
+            "precision_ci": [
+              0.206543,
+              1.0
+            ],
+            "recall": 1.0,
+            "recall_ci": [
+              0.206543,
+              1.0
+            ],
+            "tn": 2,
+            "tp": 1
+          }
+        },
+        "chosen_threshold": 0.9,
+        "configured": {
+          "f1": 1.0,
+          "fn": 0,
+          "fp": 0,
+          "precision": 1.0,
+          "precision_ci": [
+            0.206543,
+            1.0
+          ],
+          "recall": 1.0,
+          "recall_ci": [
+            0.206543,
+            1.0
+          ],
+          "tn": 2,
+          "tp": 1
+        },
+        "configured_threshold": 0.3,
+        "dev": {
+          "n": 3,
+          "should_refuse": 1
+        },
+        "sweeps": {
+          "dev": [
+            {
+              "f1": 0.0,
+              "precision": null,
+              "recall": 0.0,
+              "threshold": 0.05
+            },
+            {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "threshold": 0.9
+            },
+            {
+              "f1": 0.666667,
+              "precision": 0.5,
+              "recall": 1.0,
+              "threshold": 0.97
+            },
+            {
+              "f1": 0.5,
+              "precision": 0.333333,
+              "recall": 1.0,
+              "threshold": null
+            }
+          ],
+          "test": [
+            {
+              "f1": 0.0,
+              "precision": null,
+              "recall": 0.0,
+              "threshold": 0.1
+            },
+            {
+              "f1": 1.0,
+              "precision": 1.0,
+              "recall": 1.0,
+              "threshold": 0.9
+            },
+            {
+              "f1": 0.666667,
+              "precision": 0.5,
+              "recall": 1.0,
+              "threshold": 0.95
+            },
+            {
+              "f1": 0.5,
+              "precision": 0.333333,
+              "recall": 1.0,
+              "threshold": null
+            }
+          ]
+        },
+        "test": {
+          "n": 3,
+          "should_refuse": 1
+        }
+      },
+      "retrieval": {
+        "all": {
+          "MRR@10": 1.0,
+          "R@1": 1.0,
+          "R@10": 1.0,
+          "R@3": 1.0,
+          "R@5": 1.0,
+          "n": 4,
+          "nDCG@10": 1.0
+        },
+        "by_category": {
+          "lookup": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 3,
+            "nDCG@10": 1.0
+          },
+          "multi_hop": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 1,
+            "nDCG@10": 1.0
+          }
+        },
+        "by_origin": {
+          "synthetic": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 1.0
+          },
+          "targeted": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 1.0
+          }
+        },
+        "by_split": {
+          "dev": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 1.0
+          },
+          "test": {
+            "MRR@10": 1.0,
+            "R@1": 1.0,
+            "R@10": 1.0,
+            "R@3": 1.0,
+            "R@5": 1.0,
+            "n": 2,
+            "nDCG@10": 1.0
+          }
+        }
+      },
+      "snippets": {
+        "R@3 300 chars": 1.0,
+        "R@3 full": 1.0,
+        "R@5 150 chars": 0.5,
+        "R@5 full": 1.0,
+        "n": 2
+      }
+    }
+  }
+}

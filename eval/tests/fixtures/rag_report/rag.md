@@ -1,0 +1,68 @@
+# RAG evaluation
+
+Run `run1`, collected 2026-10-06. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
+
+Golden set: 6 questions (sha256 `8695db3b3e25`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
+
+## Retrieval
+
+The 4 answerable questions (every category but no_answer), top 10 hits from `/v1/search`. A hit is relevant to an evidence item if it contains one of the item's quotes; an item found by several hits counts once, at its first rank, so recall and nDCG measure the facts found, not the chunks.
+
+| mode | n | R@1 | R@3 | R@5 | R@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|---|---|
+| dense | 4 | 0.625 | 1.000 | 1.000 | 1.000 | 0.875 | 0.888 |
+| hybrid | 4 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+### By category
+
+| mode | category | n | R@1 | R@3 | R@5 | R@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|---|---|---|
+| dense | lookup | 3 | 0.667 | 1.000 | 1.000 | 1.000 | 0.833 | 0.877 |
+| dense | multi_hop | 1 | 0.500 | 1.000 | 1.000 | 1.000 | 1.000 | 0.920 |
+| hybrid | lookup | 3 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| hybrid | multi_hop | 1 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+### By origin
+
+Synthetic questions were drafted from one chunk and share its wording, which flatters retrieval: read them against the targeted ones.
+
+| mode | origin | n | R@1 | R@3 | R@5 | R@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|---|---|---|
+| dense | synthetic | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| dense | targeted | 2 | 0.250 | 1.000 | 1.000 | 1.000 | 0.750 | 0.775 |
+| hybrid | synthetic | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| hybrid | targeted | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+### By split
+
+| mode | split | n | R@1 | R@3 | R@5 | R@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|---|---|---|
+| dense | dev | 2 | 0.750 | 1.000 | 1.000 | 1.000 | 1.000 | 0.960 |
+| dense | test | 2 | 0.500 | 1.000 | 1.000 | 1.000 | 0.750 | 0.815 |
+| hybrid | dev | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| hybrid | test | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+## Snippet size for MCP search
+
+MCP `search` gives an agent each hit cut to its first characters. Evidence recall on the test split (2 answerable questions) with whole chunks and with the snippets an agent sees:
+
+| mode | n | R@3 full | R@3 300 chars | R@5 full | R@5 150 chars |
+|---|---|---|---|---|---|
+| dense | 2 | 1.000 | 1.000 | 1.000 | 0.500 |
+| hybrid | 2 | 1.000 | 1.000 | 1.000 | 0.500 |
+
+Rule: switch MCP from 3 hits of 300 characters to 5 of 150 only if that raises hybrid recall by at least 5 points. Here 5 × 150 is -50.0 points: **keep 3 × 300**.
+
+## Refusal gate
+
+The gate refuses before generating when the top hit's score is below the mode's threshold; a question should be refused if and only if it is no_answer. Each mode's threshold is chosen on the dev split (the highest F1, ties to the lower threshold) and measured on the test split (3 questions, 1 to refuse), with 95 % Wilson intervals; the configured threshold is shown for comparison. Gate only: refusals by the model itself come from the answer run.
+
+| mode | threshold | TP | FP | FN | TN | precision | recall | F1 |
+|---|---|---|---|---|---|---|---|---|
+| dense | 0.550 (chosen on dev) | 0 | 0 | 1 | 2 | n/a | 0.000 [0.00, 0.79] | 0.000 |
+| dense | 0.300 (configured) | 0 | 0 | 1 | 2 | n/a | 0.000 [0.00, 0.79] | 0.000 |
+| hybrid | 0.900 (chosen on dev) | 1 | 0 | 0 | 2 | 1.000 [0.21, 1.00] | 1.000 [0.21, 1.00] | 1.000 |
+| hybrid | 0.300 (configured) | 1 | 0 | 0 | 2 | 1.000 [0.21, 1.00] | 1.000 [0.21, 1.00] | 1.000 |
+
+![Refusal gate, dense: precision and recall against the threshold](refusal_dense.svg)
+![Refusal gate, hybrid: precision and recall against the threshold](refusal_hybrid.svg)

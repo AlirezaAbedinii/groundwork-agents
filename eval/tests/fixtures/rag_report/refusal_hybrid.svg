@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 300" width="680" height="300" role="img" aria-label="Refusal gate, hybrid: precision and recall against the threshold"><style>
+.surface{fill:#fcfcfb}.ink{fill:#0b0b0b}.ink2{fill:#52514e}.muted{fill:#898781}
+.grid{stroke:#e1e0d9}.axis{stroke:#c3c2b7}.rule{stroke:#52514e}
+.p{stroke:#2a78d6}.r{stroke:#eb6834}.line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.halo{paint-order:stroke;stroke:#fcfcfb;stroke-width:4px}
+@media (prefers-color-scheme:dark){.surface{fill:#1a1a19}.ink{fill:#fff}.ink2{fill:#c3c2b7}
+.grid{stroke:#2c2c2a}.axis{stroke:#383835}.rule{stroke:#c3c2b7}.p{stroke:#3987e5}.r{stroke:#d95926}
+.halo{stroke:#1a1a19}}
+text{font:12px system-ui,-apple-system,"Segoe UI",sans-serif}
+</style>
+<rect class="surface" width="680" height="300" rx="8"/>
+<text class="ink" x="48" y="24" font-weight="600">Refusal gate, hybrid: precision and recall against the threshold</text>
+<path class="line p" d="M48,44H68"/>
+<text class="ink2" x="74" y="48">precision</text>
+<path class="line r" d="M158,44H178"/>
+<text class="ink2" x="184" y="48">recall</text>
+<text class="ink2" x="48" y="64">dev: 3 questions, 1 to refuse</text>
+<path class="axis" d="M48,252.0H328"/>
+<text class="muted" x="40" y="256.0" text-anchor="end">0</text>
+<path class="grid" d="M48,162.0H328"/>
+<text class="muted" x="40" y="166.0" text-anchor="end">0.5</text>
+<path class="grid" d="M48,72.0H328"/>
+<text class="muted" x="40" y="76.0" text-anchor="end">1</text>
+<text class="muted" x="48.0" y="270" text-anchor="middle">0</text>
+<text class="muted" x="188.0" y="270" text-anchor="middle">0.5</text>
+<text class="muted" x="328.0" y="270" text-anchor="middle">1</text>
+<path class="line p" d="M62.0,72.0H300.0L300.0,162.0H319.6L319.6,192.0H328.0"/>
+<path class="line r" d="M48.0,252.0H62.0L62.0,72.0H300.0L300.0,72.0H319.6L319.6,72.0H328.0"/>
+<path class="rule" d="M300.0,72V252"/>
+<text class="ink2 halo" x="296.0" y="90" text-anchor="end">t = 0.900</text>
+<text class="ink2" x="368" y="64">test: 3 questions, 1 to refuse</text>
+<path class="axis" d="M368,252.0H648"/>
+<path class="grid" d="M368,162.0H648"/>
+<path class="grid" d="M368,72.0H648"/>
+<text class="muted" x="368.0" y="270" text-anchor="middle">0</text>
+<text class="muted" x="508.0" y="270" text-anchor="middle">0.5</text>
+<text class="muted" x="648.0" y="270" text-anchor="middle">1</text>
+<path class="line p" d="M396.0,72.0H620.0L620.0,162.0H634.0L634.0,192.0H648.0"/>
+<path class="line r" d="M368.0,252.0H396.0L396.0,72.0H620.0L620.0,72.0H634.0L634.0,72.0H648.0"/>
+<path class="rule" d="M620.0,72V252"/>
+<text class="ink2 halo" x="616.0" y="90" text-anchor="end">t = 0.900</text>
+<text class="muted" x="348" y="288" text-anchor="middle">threshold: refuse when the top hit's score is below it</text></svg>

@@ -25,6 +25,8 @@ both services over HTTP only, so it measures what actually runs.
 | `metrics.py` | Retrieval, refusal, answer and agreement metrics: pure functions over recorded runs |
 | `judge.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
 | `judge_fake.py` | A scripted judge for tests and keyless runs |
+| `rag_eval.py` | Collects searches from the RAG API into `runs/` and scores them: retrieval, snippet size, the refusal gate |
+| `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
 | `tasks/` | Agent evaluation tasks |
 
 ```bash
@@ -33,4 +35,7 @@ uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
 .venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
 .venv/bin/python -m dataset.validate golden/golden_set.jsonl \
   --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
+# Retrieval: collect once (free on a local embedding model), then score as often as needed
+.venv/bin/python -m rag_eval collect --stage retrieval --rag http://localhost:8000 --run-id my-run
+.venv/bin/python -m rag_eval score --run-id my-run              # -> runs/my-run/report/
 ```
