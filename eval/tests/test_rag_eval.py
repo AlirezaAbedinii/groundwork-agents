@@ -1,21 +1,33 @@
-"""The retrieval stage of the RAG evaluation, end to end against a fake RAG service.
+"""The RAG evaluation end to end, against a fake RAG service and a scripted judge.
 
-The fake answers ``/v1/config`` and ``/v1/search`` over ``httpx.MockTransport`` with
-canned hits for a 6-question golden set, so every number below can be worked out by
-hand. The committed fixture under ``tests/fixtures/rag_report/`` is that run's records
-file and the report scored from it; ``python -m rag_eval score --records
-tests/fixtures/rag_report/rag-records.jsonl`` rewrites the report files in place.
+The fake answers ``/v1/config``, ``/v1/search`` and ``/v1/ask`` over
+``httpx.MockTransport`` with canned hits and answers for a 6-question golden set, and
+the judge's verdicts are scripted by answer text, so every number below can be worked
+out by hand. The committed fixture under ``tests/fixtures/rag_report/`` is that run's
+records file (both stages, two human grades) and the report scored from it;
+``python -m rag_eval score --records tests/fixtures/rag_report/rag-records.jsonl``
+rewrites the report files in place.
 """
 
 import json
 import xml.etree.ElementTree as ET
+from collections import Counter
 from pathlib import Path
 
 import httpx
 import pytest
 
 import rag_eval
-from schemas import EvidenceItem, GoldenQuestion, Quote
+from judge_fake import FakeJudge
+from llm import LLMError
+from schemas import (
+    ClaimVerdict,
+    CorrectnessVerdict,
+    EvidenceItem,
+    FaithfulnessVerdict,
+    GoldenQuestion,
+    Quote,
+)
 
 FIXTURE = Path(__file__).parent / "fixtures" / "rag_report"
 CONFIG = {
@@ -107,14 +119,101 @@ HITS = {
 }
 
 
+def context(key: str) -> dict:
+    return {
+        "chunk_id": f"c-{key}",
+        "text": TEXT[key],
+        "score": 0.9,
+        "metadata": {"source_file": "tool/x.md"},
+    }
+
+
+def answer(text, *, refused_by=None, cost=0.0004, ms=900.0, keys=("A",), supported=()):
+    """A /v1/ask response: an answer, or a refusal by the gate (no contexts) or the model."""
+    refusal = "I don't know based on the provided documentation."
+    return {
+        "answer": refusal if refused_by else text,
+        "refused": refused_by is not None,
+        "refused_by": refused_by,
+        "retrieval_confidence": 0.5,
+        "contexts": [] if refused_by == "gate" else [context(k) for k in keys],
+        "citations": [
+            {"index": i + 1, "resolved": True, "supported": v} for i, v in enumerate(supported)
+        ],
+        "cost_usd": cost,
+        "timings_ms": {"total_ms": ms},
+    }
+
+
+# (question, mode) -> the /v1/ask response. Dense answers q003 (no_answer) and refuses
+# s002 at the gate and q002 itself; hybrid refuses only q003 and q004, both at the gate.
+ASKS = {
+    ("Where is the cache?", "dense"): answer("Set TOOL_CACHE_DIR [1]."),
+    ("Where is the cache?", "hybrid"): answer(
+        "TOOL_CACHE_DIR moves it [1].", supported=(True, False)
+    ),
+    ("How do I clear it, and what does a bad body get?", "dense"): answer(
+        "", refused_by="model", cost=0.0003
+    ),
+    ("How do I clear it, and what does a bad body get?", "hybrid"): answer(
+        "Clean it; 422 [1].", keys=("BC",)
+    ),
+    ("How much does hosting cost?", "dense"): answer("It costs $5 a month.", keys=("X",)),
+    ("How much does hosting cost?", "hybrid"): answer("", refused_by="gate", cost=0.00001, ms=40.0),
+    ("Is there a GUI?", "dense"): answer("", refused_by="gate", cost=0.00001, ms=40.0),
+    ("Is there a GUI?", "hybrid"): answer("", refused_by="gate", cost=0.00001, ms=40.0),
+    ("What is the default port?", "dense"): answer("Port 80 [1].", keys=("D",)),
+    ("What is the default port?", "hybrid"): answer("Port 8080 [1].", keys=("D",)),
+    ("Which file holds the lock?", "dense"): answer("", refused_by="gate", cost=0.00001, ms=40.0),
+    ("Which file holds the lock?", "hybrid"): answer("A lockfile [1].", keys=("E",)),
+}
+# The scripted judge, by answer text: correctness ratings and per-claim support.
+RATINGS = {
+    "Set TOOL_CACHE_DIR [1].": 5,
+    "TOOL_CACHE_DIR moves it [1].": 5,
+    "Clean it; 422 [1].": 4,
+    "Port 80 [1].": 3,
+    "Port 8080 [1].": 5,
+    "A lockfile [1].": 2,
+}
+SUPPORT = {
+    "Set TOOL_CACHE_DIR [1].": [True, True],
+    "TOOL_CACHE_DIR moves it [1].": [True],
+    "Clean it; 422 [1].": [True, True],
+    "It costs $5 a month.": [False],
+    "Port 80 [1].": [True, False],
+    "Port 8080 [1].": [True],
+    "A lockfile [1].": [True, False],
+}
+
+
+def scripted_judge(**overrides) -> FakeJudge:
+    def correctness(question, reference, answer):
+        return CorrectnessVerdict(reasoning="scripted", rating=RATINGS[answer])
+
+    def faithfulness(contexts, answer):
+        claims = [
+            ClaimVerdict(claim=f"c{i}", reasoning="r", supported=v)
+            for i, v in enumerate(SUPPORT[answer])
+        ]
+        return FaithfulnessVerdict(claims=claims)
+
+    return FakeJudge(**({"correctness": correctness, "faithfulness": faithfulness} | overrides))
+
+
 class FakeRag:
     def __init__(self, config=CONFIG, fail=()):
-        self.config, self.fail, self.searches = config, set(fail), []
+        self.config, self.fail, self.searches, self.asks = config, set(fail), [], []
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         if request.url.path == "/v1/config":
             return httpx.Response(200, json=self.config)
         body = json.loads(request.content)
+        if request.url.path == "/v1/ask":
+            self.asks.append(body)
+            if (body["question"], body["mode"]) in self.fail:
+                return httpx.Response(503, json={"detail": "no generation key"})
+            return httpx.Response(200, json=ASKS[(body["question"], body["mode"])])
         self.searches.append(body)
         if (body["query"], body["mode"]) in self.fail:
             return httpx.Response(503, json={"detail": "busy"})
@@ -165,18 +264,18 @@ def collect(tmp_path, golden, fake, run_id="run1") -> int:
     return rag_eval.main(args, rag_client=client(fake))
 
 
-def score_run(tmp_path, golden, out, run_id="run1") -> None:
-    args = [
-        "score",
-        "--run-id",
-        run_id,
-        "--golden",
-        str(golden),
-        "--runs",
-        str(tmp_path / "runs"),
-        "--out",
-        str(out),
-    ]
+def collect_answers(tmp_path, golden, fake, *extra, judge=None, cap="1.00") -> int:
+    args = ["collect", "--stage", "answers", "--run-id", "run1", "--golden", str(golden)]
+    args += ["--runs", str(tmp_path / "runs"), "--max-cost-usd", cap, *extra]
+    judge = judge if judge is not None else scripted_judge()
+    return rag_eval.main(args, rag_client=client(fake), judge=judge)
+
+
+def score_run(tmp_path, golden, out, run_id="run1", grades=None) -> None:
+    # An explicit --grades path, so a real golden/human_grades.jsonl never leaks in.
+    grades = grades or tmp_path / "no-grades.jsonl"
+    args = ["score", "--run-id", run_id, "--golden", str(golden), "--grades", str(grades)]
+    args += ["--runs", str(tmp_path / "runs"), "--out", str(out)]
     assert rag_eval.main(args) == 0
 
 
@@ -225,7 +324,8 @@ def scored(tmp_path, golden):
 def test_records_say_which_items_each_hit_covers_in_full_and_as_snippets(tmp_path, golden):
     records, _ = scored(tmp_path, golden)
     header, rows = records[0], records[1:]
-    assert header["golden"]["rows"] == 6 and header["missing"] == 0
+    assert header["golden"]["rows"] == 6 and header["retrieval"]["missing"] == 0
+    assert header["answers"] is None  # no answer stage in this run
     s002 = next(r for r in rows if r["id"] == "s002" and r["mode"] == "dense")
     assert s002["hits"][0]["covered"] == [0]
     assert s002["hits"][0]["covered_300"] == [0]
@@ -236,7 +336,10 @@ def test_records_say_which_items_each_hit_covers_in_full_and_as_snippets(tmp_pat
 
 def test_retrieval_scores_by_mode(tmp_path, golden):
     _, scores = scored(tmp_path, golden)
-    dense, hybrid = scores["dense"]["retrieval"], scores["hybrid"]["retrieval"]
+    dense, hybrid = (
+        scores["retrieval"]["dense"]["retrieval"],
+        scores["retrieval"]["hybrid"]["retrieval"],
+    )
     # Dense, the 4 answerable questions: q001 finds its item at rank 2, q002 its two at
     # ranks 1 and 3, s001 and s002 theirs at rank 1.
     # MRR = (1/2 + 1 + 1 + 1) / 4 = 0.875 · R@1 = (0 + 1/2 + 1 + 1) / 4 = 0.625
@@ -253,7 +356,7 @@ def test_retrieval_scores_by_mode(tmp_path, golden):
 
 def test_the_snippet_check_cuts_hits_like_mcp(tmp_path, golden):
     _, scores = scored(tmp_path, golden)
-    snippets = scores["dense"]["snippets"]  # test split: q001 and s002
+    snippets = scores["retrieval"]["dense"]["snippets"]  # test split: q001 and s002
     assert snippets["n"] == 2
     assert snippets["R@3 full"] == snippets["R@3 300 chars"] == pytest.approx(1.0)
     assert snippets["R@5 150 chars"] == pytest.approx(0.5)  # s002's quote is cut off
@@ -261,7 +364,7 @@ def test_the_snippet_check_cuts_hits_like_mcp(tmp_path, golden):
 
 def test_refusal_thresholds_are_chosen_on_dev_and_measured_on_test(tmp_path, golden):
     _, scores = scored(tmp_path, golden)
-    dense, hybrid = scores["dense"]["refusal"], scores["hybrid"]["refusal"]
+    dense, hybrid = (scores["retrieval"][m]["refusal"] for m in ("dense", "hybrid"))
     # Dense dev scores: q002 0.55, q004 (no_answer) 0.50, s001 0.70. At 0.55 only q004 is
     # refused: F1 = 1, the lowest threshold that gets it.
     assert dense["chosen_threshold"] == 0.55
@@ -301,6 +404,7 @@ def test_missing_searches_are_reported_not_scored(tmp_path, golden):
 
 def test_score_from_records_reproduces_score_from_the_run(tmp_path, golden):
     collect(tmp_path, golden, FakeRag())
+    collect_answers(tmp_path, golden, FakeRag())
     first, second = tmp_path / "first", tmp_path / "second"
     score_run(tmp_path, golden, first)
     assert (
@@ -329,3 +433,179 @@ def test_the_committed_fixture_rescores_byte_for_byte(tmp_path):
     assert rag_eval.main(["score", "--records", str(records), "--out", str(tmp_path)]) == 0
     for name in ["rag.md", "rag.json", "refusal_dense.svg", "refusal_hybrid.svg"]:
         assert (tmp_path / name).read_bytes() == (FIXTURE / name).read_bytes(), name
+
+
+# --- the answer stage ---------------------------------------------------------------
+
+
+def answers_scored(tmp_path, golden, grades=None):
+    collect_answers(tmp_path, golden, FakeRag())
+    records = rag_eval.build_records(tmp_path / "runs" / "run1", golden, grades)
+    return records, rag_eval.score_records(records)
+
+
+def test_answers_go_to_ask_with_five_contexts_in_both_modes(tmp_path, golden):
+    fake = FakeRag()
+    assert collect_answers(tmp_path, golden, fake) == 0
+    assert len(fake.asks) == 12
+    assert {(a["mode"], a["top_k"]) for a in fake.asks} == {("dense", 5), ("hybrid", 5)}
+
+
+def test_decided_outcomes_make_no_judge_call(tmp_path, golden):
+    judge = scripted_judge()
+    collect_answers(tmp_path, golden, FakeRag(), judge=judge)
+    asked = Counter(kind for kind, _ in judge.requests)
+    # Correctness only for answered, answerable questions: dense q001 and s001; hybrid
+    # q001, q002, s001 and s002. Faithfulness for every answer: those 6 plus dense q003.
+    assert asked == {"correctness": 6, "faithfulness": 7}
+    judged = [args[2] for kind, args in judge.requests if kind == "correctness"]
+    assert "It costs $5 a month." not in judged  # a no_answer question is never graded
+
+
+def test_answer_scores(tmp_path, golden):
+    _, scores = answers_scored(tmp_path, golden)
+    dense, hybrid = scores["answers"]["modes"]["dense"], scores["answers"]["modes"]["hybrid"]
+    # Dense: q001 passes (5), q002 refused by the model (fail), q003 answered a no_answer
+    # question (fail), q004 refused it (correct), s001 rated 3 (fail), s002 refused (fail).
+    assert (dense["correct"]["k"], dense["correct"]["n"]) == (2, 6)
+    # Hybrid: every one correct except s002, rated 2.
+    assert (hybrid["correct"]["k"], hybrid["correct"]["n"]) == (5, 6)
+    assert dense["mean_rating"] == pytest.approx(4.0)  # (5 + 3) / 2
+    # Faithfulness: dense q001 2/2, q003 0/1, s001 1/2 -> mean 0.5; fully supported 1 of 3.
+    assert dense["faithfulness"] == pytest.approx(0.5)
+    assert dense["fully_supported"]["k"] == 1 and dense["fully_supported"]["n"] == 3
+    # Hybrid: 1, 1, 1 and 1/2 -> 0.875.
+    assert hybrid["faithfulness"] == pytest.approx(0.875)
+    # Only hybrid q001 was verified by the pipeline: 1 of its 2 citations held.
+    assert hybrid["citation_accuracy_self"] == 0.5 and dense["citation_accuracy_self"] is None
+    # Dense cost: 2 answers at $0.0004, the model refusal $0.0003, 2 gate refusals at
+    # $0.00001 and q003 at $0.0004 -> $0.00152 over 6.
+    assert dense["cost_per_query"] == pytest.approx(0.00152 / 6)
+    assert (dense["p50_ms"], dense["p95_ms"]) == (900.0, 900.0)
+    assert scores["answers"]["modes"]["dense"]["by_category"]["no_answer"]["correct"]["k"] == 1
+
+
+def test_refusals_end_to_end_count_the_gate_and_the_model(tmp_path, golden):
+    _, scores = answers_scored(tmp_path, golden)
+    dense = scores["answers"]["modes"]["dense"]["refusal"]
+    hybrid = scores["answers"]["modes"]["hybrid"]["refusal"]
+    # Test split: q001, q003 (no_answer) and s002. Dense answers q003 and refuses s002.
+    assert (dense["tp"], dense["fp"], dense["fn"], dense["tn"]) == (0, 1, 1, 1)
+    assert (dense["by_gate"], dense["by_model"]) == (1, 0)
+    # Hybrid refuses q003 at the gate and answers the other two.
+    assert (hybrid["tp"], hybrid["fp"], hybrid["fn"], hybrid["tn"]) == (1, 0, 0, 2)
+
+
+def test_the_cap_covers_asks_and_stops_before_one_could_pass_it(tmp_path, golden):
+    # gpt-4o-mini reserves 3000 x $0.15/M + 1000 x $0.60/M = $0.00105 per ask. With a
+    # $0.0015 cap: ask 1 (spent $0.0004), ask 2 ($0.0008), then $0.0008 + $0.00105 > cap.
+    fake = FakeRag()
+    assert collect_answers(tmp_path, golden, fake, cap="0.0015") == 1
+    assert len(fake.asks) == 2
+    resumed = FakeRag()
+    assert collect_answers(tmp_path, golden, resumed) == 0
+    assert len(resumed.asks) == 10  # the 2 already paid for aren't asked again
+
+
+def test_the_worst_case_counts_the_citation_checks():
+    one = rag_eval.ask_worst_case_usd(CONFIG)
+    assert one == pytest.approx(3000 * 0.15e-6 + 1000 * 0.60e-6)
+    assert rag_eval.ask_worst_case_usd({**CONFIG, "citation_verification": True}) == pytest.approx(
+        6 * one
+    )
+
+
+def test_an_answer_missing_a_verdict_is_judged_again_without_asking_again(tmp_path, golden):
+    def flaky(contexts, answer):
+        raise LLMError("the reply hit max_tokens")
+
+    fake = FakeRag()
+    assert collect_answers(tmp_path, golden, fake, judge=scripted_judge(faithfulness=flaky)) == 1
+    records = rag_eval.build_records(tmp_path / "runs" / "run1", golden)
+    assert records[0]["answers"]["unjudged"] == 7
+    again, judge = FakeRag(), scripted_judge()
+    assert collect_answers(tmp_path, golden, again, judge=judge) == 0
+    assert again.asks == []
+    assert {kind for kind, _ in judge.requests} == {"faithfulness"}
+
+
+def test_a_judge_from_the_generators_provider_needs_a_flag(tmp_path, golden):
+    same = scripted_judge()
+    same.provider = "openai"  # the fake service's generator is OpenAI's
+    with pytest.raises(SystemExit, match="allow-same-provider-judge"):
+        collect_answers(tmp_path, golden, FakeRag(), judge=same)
+    assert (
+        collect_answers(tmp_path, golden, FakeRag(), "--allow-same-provider-judge", judge=same) == 0
+    )
+    score_run(tmp_path, golden, tmp_path / "out")
+    assert (
+        "**The judge comes from the generator's provider.**"
+        in (tmp_path / "out" / "rag.md").read_text()
+    )
+
+
+def test_the_answer_stage_needs_a_cap(tmp_path, golden):
+    args = ["collect", "--stage", "answers", "--run-id", "r", "--golden", str(golden)]
+    with pytest.raises(SystemExit):
+        rag_eval.main(args, rag_client=client(FakeRag()), judge=scripted_judge())
+
+
+def test_failed_asks_are_errors_not_scores(tmp_path, golden):
+    fake = FakeRag(fail={("Where is the cache?", "dense"), ("Is there a GUI?", "hybrid")})
+    assert collect_answers(tmp_path, golden, fake) == 1
+    records, scores = answers_scored(tmp_path, golden)  # resumes: retries both, which pass now
+    assert records[0]["answers"]["missing"] == 0
+    fresh = tmp_path / "fresh"
+    fresh.mkdir()
+    collect_answers(fresh, golden, FakeRag(fail={("Where is the cache?", "dense")}))
+    score_run(fresh, golden, fresh / "out")
+    report = (fresh / "out" / "rag.md").read_text()
+    assert "**1 question-mode pairs have no successful answer**" in report
+    assert "| dense | 5 |" in report
+
+
+def test_kappa_against_human_grades_of_the_same_answers(tmp_path, golden):
+    run = tmp_path / "runs" / "run1" / "answers.jsonl"
+    collect_answers(tmp_path, golden, FakeRag())
+    texts = {
+        (r["id"], r["mode"]): r["answer"] for r in map(json.loads, run.read_text().splitlines())
+    }
+    # The judge passes dense q001, fails dense s001 (3), passes hybrid q001, q002 and s001,
+    # fails hybrid s002 (2). The human disagrees on dense s001 and hybrid q002:
+    # p_o = 4/6; both pass 4 of 6, so p_e = (4/6)^2 + (2/6)^2 = 5/9;
+    # kappa = (2/3 - 5/9) / (1 - 5/9) = (1/9) / (4/9) = 0.25.
+    human = {
+        ("q001", "dense"): True,
+        ("s001", "dense"): True,
+        ("q001", "hybrid"): True,
+        ("q002", "hybrid"): False,
+        ("s001", "hybrid"): True,
+        ("s002", "hybrid"): False,
+    }
+    grades = tmp_path / "grades.jsonl"
+    rows = [
+        {
+            "id": i,
+            "mode": m,
+            "answer_sha": rag_eval.answer_sha(texts[(i, m)]),
+            "pass": v,
+            "note": "",
+        }
+        for (i, m), v in human.items()
+    ]
+    # A grade of a different answer to the same question doesn't count.
+    rows.append(
+        {
+            "id": "q001",
+            "mode": "dense",
+            "answer_sha": rag_eval.answer_sha("old"),
+            "pass": False,
+            "note": "",
+        }
+    )
+    grades.write_text("".join(json.dumps(r) + "\n" for r in rows))
+    _, scores = answers_scored(tmp_path, golden, grades)
+    agreement = scores["answers"]["agreement"]
+    assert agreement["n"] == 6
+    assert agreement["raw"] == pytest.approx(4 / 6)
+    assert agreement["kappa"] == pytest.approx(0.25)

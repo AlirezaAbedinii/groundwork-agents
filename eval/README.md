@@ -27,6 +27,7 @@ both services over HTTP only, so it measures what actually runs.
 | `judge_fake.py` | A scripted judge for tests and keyless runs |
 | `rag_eval.py` | Collects searches from the RAG API into `runs/` and scores them: retrieval, snippet size, the refusal gate |
 | `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
+| `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
 | `tasks/` | Agent evaluation tasks |
 
 ```bash
@@ -35,7 +36,9 @@ uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
 .venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
 .venv/bin/python -m dataset.validate golden/golden_set.jsonl \
   --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
-# Retrieval: collect once (free on a local embedding model), then score as often as needed
+# Collect once (retrieval is free on a local embedding model), then score as often as needed
 .venv/bin/python -m rag_eval collect --stage retrieval --rag http://localhost:8000 --run-id my-run
+.venv/bin/python -m rag_eval collect --stage answers --rag http://localhost:8000 --run-id my-run \
+  --max-cost-usd 1.00                                          # paid: generation + judge
 .venv/bin/python -m rag_eval score --run-id my-run              # -> runs/my-run/report/
 ```
