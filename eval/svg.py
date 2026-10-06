@@ -90,11 +90,12 @@ def refusal_chart(title: str, panels: list[tuple[str, list[Point]]], chosen: flo
             out.append(f'<path class="rule" d="M{x(chosen):.1f},{TOP}V{TOP + PANEL_H}"/>')
             # Below the y = 1 gridline (the halo would cut a line drawn there), and on the
             # rule's left when the label wouldn't fit inside the panel on its right.
-            right = x(chosen) + 64 <= x0 + PANEL_W
+            right = x(chosen) + 84 <= x0 + PANEL_W
             lx, anchor = (x(chosen) + 4, "start") if right else (x(chosen) - 4, "end")
+            value = f"{chosen:.12f}".rstrip("0").rstrip(".")  # every decimal it has
             out.append(
                 f'<text class="ink2 halo" x="{lx:.1f}" y="{TOP + 18}" text-anchor="{anchor}">'
-                f"t = {chosen:.3f}</text>"
+                f"t = {value}</text>"
             )
     out.append(
         f'<text class="muted" x="{LEFT + PANEL_W + GAP // 2}" y="{H - 12}" text-anchor="middle">'

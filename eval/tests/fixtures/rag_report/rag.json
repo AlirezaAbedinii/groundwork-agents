@@ -396,6 +396,7 @@
             }
           },
           "chosen_threshold": 0.55,
+          "chosen_threshold_config": 0.55,
           "configured": {
             "f1": 0.0,
             "fn": 1,
@@ -595,6 +596,7 @@
             }
           },
           "chosen_threshold": 0.9,
+          "chosen_threshold_config": 0.9,
           "configured": {
             "f1": 1.0,
             "fn": 0,

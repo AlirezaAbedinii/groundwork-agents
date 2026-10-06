@@ -57,14 +57,14 @@ Rule: switch MCP from 3 hits of 300 characters to 5 of 150 only if that raises h
 
 ## Refusal gate
 
-The gate refuses before generating when the top hit's score is below the mode's threshold; a question should be refused if and only if it is no_answer. Each mode's threshold is chosen on the dev split (the highest F1, ties to the lower threshold) and measured on the test split (45 questions, 11 to refuse), with 95 % Wilson intervals; the configured threshold is shown for comparison. Gate only: refusals by the model itself come from the answer run.
+The gate refuses before generating when the top hit's score is below the mode's threshold; a question should be refused if and only if it is no_answer. Each mode's threshold is chosen on the dev split (the highest F1, ties to the lower threshold) and measured on the test split (45 questions, 11 to refuse), with 95 % Wilson intervals; the configured threshold is shown for comparison. A chosen threshold is printed as the value to configure: the dev score it was chosen at, truncated so that every decision stays the same (the gate refuses strictly below it, so rounding up would refuse that question). Gate only: refusals by the model itself come from the answer run.
 
 | mode | threshold | TP | FP | FN | TN | precision | recall | F1 |
 |---|---|---|---|---|---|---|---|---|
-| dense | 0.617 (chosen on dev) | 8 | 5 | 3 | 29 | 0.615 [0.36, 0.82] | 0.727 [0.43, 0.90] | 0.667 |
-| dense | 0.300 (configured) | 0 | 0 | 11 | 34 | n/a | 0.000 [0.00, 0.26] | 0.000 |
-| hybrid | 0.964 (chosen on dev) | 6 | 6 | 5 | 28 | 0.500 [0.25, 0.75] | 0.545 [0.28, 0.79] | 0.522 |
-| hybrid | 0.300 (configured) | 4 | 0 | 7 | 34 | 1.000 [0.51, 1.00] | 0.364 [0.15, 0.65] | 0.533 |
+| dense | 0.617442 (chosen on dev) | 8 | 5 | 3 | 29 | 0.615 [0.36, 0.82] | 0.727 [0.43, 0.90] | 0.667 |
+| dense | 0.3 (configured) | 0 | 0 | 11 | 34 | n/a | 0.000 [0.00, 0.26] | 0.000 |
+| hybrid | 0.963599 (chosen on dev) | 6 | 6 | 5 | 28 | 0.500 [0.25, 0.75] | 0.545 [0.28, 0.79] | 0.522 |
+| hybrid | 0.3 (configured) | 4 | 0 | 7 | 34 | 1.000 [0.51, 1.00] | 0.364 [0.15, 0.65] | 0.533 |
 
 ![Refusal gate, dense: precision and recall against the threshold](refusal_dense.svg)
 ![Refusal gate, hybrid: precision and recall against the threshold](refusal_hybrid.svg)

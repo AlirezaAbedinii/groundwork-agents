@@ -27,7 +27,7 @@ text{font:12px system-ui,-apple-system,"Segoe UI",sans-serif}
 <path class="line p" d="M48.0,72.0H76.0L76.0,162.0H160.0L160.0,192.0H328.0"/>
 <path class="line r" d="M48.0,252.0H48.0L48.0,72.0H76.0L76.0,72.0H160.0L160.0,72.0H328.0"/>
 <path class="rule" d="M76.0,72V252"/>
-<text class="ink2 halo" x="80.0" y="90" text-anchor="start">t = 0.550</text>
+<text class="ink2 halo" x="80.0" y="90" text-anchor="start">t = 0.55</text>
 <text class="ink2" x="368" y="64">test: 3 questions, 1 to refuse</text>
 <path class="axis" d="M368,252.0H648"/>
 <path class="grid" d="M368,162.0H648"/>
@@ -38,5 +38,5 @@ text{font:12px system-ui,-apple-system,"Segoe UI",sans-serif}
 <path class="line p" d="M412.8,72.0H435.2L435.2,162.0H457.6L457.6,192.0H648.0"/>
 <path class="line r" d="M368.0,252.0H412.8L412.8,72.0H435.2L435.2,72.0H457.6L457.6,72.0H648.0"/>
 <path class="rule" d="M396.0,72V252"/>
-<text class="ink2 halo" x="400.0" y="90" text-anchor="start">t = 0.550</text>
+<text class="ink2 halo" x="400.0" y="90" text-anchor="start">t = 0.55</text>
 <text class="muted" x="348" y="288" text-anchor="middle">threshold: refuse when the top hit's score is below it</text></svg>

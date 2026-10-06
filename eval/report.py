@@ -31,15 +31,22 @@ def _table(header: list[str], rows: list[list[str]]) -> list[str]:
     ]
 
 
-def _rounded(value):
-    """Floats to 6 decimals, so the JSON stays stable and readable."""
+def _rounded(value, key: str = ""):
+    """Floats to 6 decimals, so the JSON stays stable and readable; thresholds keep full
+    precision, since the gate refuses strictly below them and a rounded value can flip
+    the question a threshold sits on."""
     if isinstance(value, float):
-        return round(value, 6)
+        return value if "threshold" in key else round(value, 6)
     if isinstance(value, dict):
-        return {k: _rounded(v) for k, v in value.items()}
+        return {k: _rounded(v, k) for k, v in value.items()}
     if isinstance(value, list | tuple):
-        return [_rounded(v) for v in value]
+        return [_rounded(v, key) for v in value]
     return value
+
+
+def threshold_text(t: float) -> str:
+    """A threshold as it goes into the service's settings: every decimal it has."""
+    return f"{t:.12f}".rstrip("0").rstrip(".")
 
 
 def _counts(counts: dict[str, int]) -> str:
@@ -161,7 +168,7 @@ def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
     for m in modes:
         r = scores[m]["refusal"]
         for label, threshold, result in (
-            ("chosen on dev", r["chosen_threshold"], r["chosen"] and r["chosen"]["test"]),
+            ("chosen on dev", r["chosen_threshold_config"], r["chosen"] and r["chosen"]["test"]),
             ("configured", r["configured_threshold"], r["configured"]),
         ):
             if threshold is None or result is None:
@@ -170,7 +177,7 @@ def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
             rows.append(
                 [
                     m,
-                    f"{threshold:.3f} ({label})",
+                    f"{threshold_text(threshold)} ({label})",
                     *(str(result[k]) for k in ("tp", "fp", "fn", "tn")),
                     _ci(result["precision"], result["precision_ci"]),
                     _ci(result["recall"], result["recall_ci"]),
@@ -187,8 +194,10 @@ def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
         "mode's threshold is chosen on the dev split (the highest F1, ties to the lower "
         f"threshold) and measured on the test split ({test['n']} questions, "
         f"{test['should_refuse']} to refuse), with 95 % Wilson intervals; the configured "
-        "threshold is shown for comparison. Gate only: refusals by the model itself come "
-        "from the answer run.",
+        "threshold is shown for comparison. A chosen threshold is printed as the value to "
+        "configure: the dev score it was chosen at, truncated so that every decision stays "
+        "the same (the gate refuses strictly below it, so rounding up would refuse that "
+        "question). Gate only: refusals by the model itself come from the answer run.",
         "",
         *_table(["mode", "threshold", "TP", "FP", "FN", "TN", "precision", "recall", "F1"], rows),
         "",
@@ -370,7 +379,7 @@ def write_rag(records: list[dict], scores: dict, out: Path, *, with_records: boo
         files[f"refusal_{mode}.svg"] = svg.refusal_chart(
             f"Refusal gate, {mode}: precision and recall against the threshold",
             panels,
-            r["chosen_threshold"],
+            r["chosen_threshold_config"],
         )
     if with_records:
         files["rag-records.jsonl"] = "".join(

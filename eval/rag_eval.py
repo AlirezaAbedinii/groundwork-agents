@@ -458,6 +458,18 @@ def _sweep_dict(points: list[SweepPoint]) -> list[dict]:
     ]
 
 
+def config_value(threshold: float, scores: Sequence[float]) -> float:
+    """The threshold to put in the service's settings: ``threshold`` truncated to six
+    decimals, or to more if that would move a recorded score across it, so it refuses
+    exactly what ``threshold`` refuses. (Rounding up could refuse the question the
+    threshold was chosen at, which sits exactly on it.)"""
+    for digits in (6, 9, 12):
+        value = math.floor(threshold * 10**digits) / 10**digits
+        if not any(value <= s < threshold for s in scores):
+            return value
+    return threshold
+
+
 def refusal_scores(records: list[dict], configured: float | None) -> dict:
     """Gate-only refusals: the threshold is chosen on dev and measured on test."""
 
@@ -483,6 +495,9 @@ def refusal_scores(records: list[dict], configured: float | None) -> dict:
     except ValueError:
         chosen = None
     out["chosen_threshold"] = chosen
+    out["chosen_threshold_config"] = (
+        None if chosen is None else config_value(chosen, [r["top_score"] for r in records])
+    )
     out["chosen"] = None
     if chosen is not None:
         out["chosen"] = {

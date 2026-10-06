@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 import rag_eval
+import report
 from judge_fake import FakeJudge
 from llm import LLMError
 from schemas import (
@@ -609,3 +610,31 @@ def test_kappa_against_human_grades_of_the_same_answers(tmp_path, golden):
     assert agreement["n"] == 6
     assert agreement["raw"] == pytest.approx(4 / 6)
     assert agreement["kappa"] == pytest.approx(0.25)
+
+
+# --- the threshold to configure -----------------------------------------------------
+
+
+def test_the_configured_value_truncates_without_moving_a_decision():
+    # The hybrid threshold chosen on the published run sits on q017's score: rounding it
+    # to 0.9636 would refuse q017; truncating to 0.963599 keeps every decision.
+    chosen, scores = 0.9635999851538614, [0.9635999851538614, 0.98, 0.5]
+    assert rag_eval.config_value(chosen, scores) == 0.963599
+    assert [s < 0.9636 for s in scores] != [s < chosen for s in scores]
+
+
+def test_the_configured_value_takes_more_digits_when_a_score_sits_in_between():
+    chosen, scores = 0.5000005, [0.5000005, 0.5000002, 0.4]
+    value = rag_eval.config_value(chosen, scores)
+    assert value != 0.5  # truncating to 6 decimals would keep 0.5000002 too
+    assert [s < value for s in scores] == [s < chosen for s in scores]
+    assert value <= chosen
+
+
+def test_reports_print_the_value_to_configure_and_keep_thresholds_exact(tmp_path):
+    assert report._rounded({"chosen_threshold": 0.9635999851538614, "f1": 0.12345678}) == {
+        "chosen_threshold": 0.9635999851538614,
+        "f1": 0.123457,
+    }
+    assert report.threshold_text(0.963599) == "0.963599"
+    assert report.threshold_text(0.3) == "0.3"
