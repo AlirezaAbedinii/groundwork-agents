@@ -67,6 +67,7 @@ def rag_markdown(header: dict, scores: dict) -> str:
         "",
         f"Golden set: {golden['rows']} questions (sha256 `{golden['sha256'][:12]}`): "
         f"{_counts(golden['categories'])}; {_counts(golden['origins'])}.",
+        *_provenance(header),
     ]
     for stage, what in (("retrieval", "search"), ("answers", "answer")):
         if header[stage] and header[stage]["missing"]:
@@ -257,6 +258,43 @@ def _kinds_section(scores: dict, modes: list[str]) -> list[str]:
     ]
 
 
+def _stage_config(header: dict, stage: str) -> dict:
+    # Records written before per-stage snapshots carry one config for the whole run.
+    return header[stage].get("config", header["config"])
+
+
+def _provenance(header: dict) -> list[str]:
+    stages = [s for s in ("retrieval", "answers") if header[s]]
+    if not stages:
+        return []
+    configs = {s: _stage_config(header, s) for s in stages}
+
+    def thresholds(cfg: dict) -> str:
+        t = cfg.get("thresholds", {})
+        return " / ".join(threshold_text(t[m]) if m in t else "n/a" for m in ("dense", "hybrid"))
+
+    rows = [
+        ["collected", *(header[s].get("collected", header["collected"]) for s in stages)],
+        ["`top_k` asked for", *(str(header[s]["top_k"]) for s in stages)],
+        ["refusal thresholds (dense / hybrid)", *(thresholds(configs[s]) for s in stages)],
+        [
+            "generator",
+            *(f"`{configs[s]['generation_model']}` ({configs[s]['llm_provider']})" for s in stages),
+        ],
+        [
+            "citation verification",
+            *("on" if configs[s].get("citation_verification") else "off" for s in stages),
+        ],
+    ]
+    return [
+        "",
+        "Each stage records the service's settings when it starts, and every stage of a run "
+        "serves the same collection:",
+        "",
+        *_table(["", *stages], rows),
+    ]
+
+
 def _answer_kinds(per_mode: dict, modes: list[str]) -> list[str]:
     rows = [
         [m, kind, split, str(c["n"]), str(c["gate"]), str(c["model"]), str(c["answered"])]
@@ -290,7 +328,7 @@ def _ms(x: float | None) -> str:
 
 
 def _answers_section(header: dict, scores: dict) -> list[str]:
-    cfg, info = header["config"], header["answers"]
+    cfg, info = _stage_config(header, "answers"), header["answers"]
     modes, judges = info["modes"], info["judges"]
     same = any(j.split(":")[0] == cfg["llm_provider"] for j in judges)
     intro = (

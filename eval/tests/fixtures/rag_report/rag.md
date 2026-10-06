@@ -4,6 +4,16 @@ Run `run1`, collected 2026-10-06. Collection `fixture`: 5 chunks (fixed, 800 cha
 
 Golden set: 6 questions (sha256 `e7cebdd625e7`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
 
+Each stage records the service's settings when it starts, and every stage of a run serves the same collection:
+
+|  | retrieval | answers |
+|---|---|---|
+| collected | 2026-10-06 | 2026-10-06 |
+| `top_k` asked for | 10 | 5 |
+| refusal thresholds (dense / hybrid) | 0.3 / 0.3 | 0.3 / 0.3 |
+| generator | `gpt-4o-mini` (openai) | `gpt-4o-mini` (openai) |
+| citation verification | off | off |
+
 ## Retrieval
 
 The 4 answerable questions (every category but no_answer), top 10 hits from `/v1/search`. A hit is relevant to an evidence item if it contains one of the item's quotes; an item found by several hits counts once, at its first rank, so recall and nDCG measure the facts found, not the chunks.

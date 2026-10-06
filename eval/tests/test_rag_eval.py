@@ -294,7 +294,7 @@ def test_collect_records_the_config_and_every_search(tmp_path, golden):
     fake = FakeRag()
     assert collect(tmp_path, golden, fake) == 0
     run_dir = tmp_path / "runs" / "run1"
-    assert json.loads((run_dir / "run.json").read_text())["config"] == CONFIG
+    assert json.loads((run_dir / "run.json").read_text())["stages"]["retrieval"]["config"] == CONFIG
     records = [json.loads(line) for line in (run_dir / "retrieval.jsonl").read_text().splitlines()]
     assert len(records) == len(fake.searches) == 12  # 6 questions x 2 modes
     assert {s["top_k"] for s in fake.searches} == {10}
@@ -681,3 +681,85 @@ def test_who_declined_each_no_answer_question(tmp_path, golden):
     assert dense["out-of-scope"]["test"] == {"n": 1, "gate": 0, "model": 0, "answered": 1}
     assert dense["near-miss"]["dev"] == {"n": 1, "gate": 1, "model": 0, "answered": 0}
     assert dense["near-miss"]["test"]["n"] == 0
+
+
+# --- one config snapshot per stage --------------------------------------------------
+
+CALIBRATED = {**CONFIG, "thresholds": {"dense": 0.55, "hybrid": 0.9}, "citation_verification": True}
+
+
+def run_json(tmp_path) -> dict:
+    return json.loads((tmp_path / "runs" / "run1" / "run.json").read_text())
+
+
+def test_each_stage_keeps_its_own_snapshot(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    retrieval_before = run_json(tmp_path)["stages"]["retrieval"]
+    # The answer stage runs with calibrated thresholds and citation checks on.
+    assert collect_answers(tmp_path, golden, FakeRag(config=CALIBRATED)) == 0
+    stages = run_json(tmp_path)["stages"]
+    assert stages["retrieval"] == retrieval_before  # untouched
+    assert stages["answers"]["config"] == CALIBRATED
+    records = rag_eval.build_records(tmp_path / "runs" / "run1", golden)
+    assert records[0]["retrieval"]["config"]["thresholds"] == {"dense": 0.3, "hybrid": 0.3}
+    assert records[0]["answers"]["config"]["thresholds"] == {"dense": 0.55, "hybrid": 0.9}
+    # The gate section compares with the threshold the retrieval stage ran with.
+    scores = rag_eval.score_records(records)
+    assert scores["retrieval"]["hybrid"]["refusal"]["configured_threshold"] == 0.3
+    score_run(tmp_path, golden, tmp_path / "out")
+    report_md = (tmp_path / "out" / "rag.md").read_text()
+    assert "| refusal thresholds (dense / hybrid) | 0.3 / 0.3 | 0.55 / 0.9 |" in report_md
+    assert "| citation verification | off | on |" in report_md
+
+
+def test_a_stage_resumes_only_against_its_own_snapshot(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    collect_answers(tmp_path, golden, FakeRag(config=CALIBRATED))
+    with pytest.raises(SystemExit, match="answers stage"):
+        collect_answers(tmp_path, golden, FakeRag(config=CONFIG))
+    again = FakeRag(config=CONFIG)
+    assert collect(tmp_path, golden, again) == 0  # retrieval still matches its own
+    assert again.searches == []
+
+
+def test_every_stage_measures_the_same_collection(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    for change in (
+        {"collection": "other"},
+        {"embedding_model": "other-model"},
+        {"index": {**CONFIG["index"], "chunk_size": 400}},
+    ):
+        with pytest.raises(SystemExit, match="start a new run"):
+            collect_answers(tmp_path, golden, FakeRag(config={**CONFIG, **change}))
+    assert "answers" not in run_json(tmp_path)["stages"]
+
+
+def test_runs_recorded_before_per_stage_snapshots_still_work(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    path = tmp_path / "runs" / "run1" / "run.json"
+    legacy = {"run_id": "run1", "started_at": "2026-10-01T10:00:00+00:00", "config": CONFIG}
+    path.write_text(json.dumps(legacy, indent=2) + "\n")
+    before = path.read_bytes()
+    assert collect(tmp_path, golden, FakeRag()) == 0  # resuming retrieval rewrites nothing
+    assert path.read_bytes() == before
+    assert collect_answers(tmp_path, golden, FakeRag(config=CALIBRATED)) == 0
+    stages = run_json(tmp_path)["stages"]
+    assert stages["retrieval"] == {"started_at": legacy["started_at"], "config": CONFIG}
+    assert stages["answers"]["config"] == CALIBRATED
+    # A records file written before per-stage snapshots still scores and renders.
+    records = rag_eval.build_records(tmp_path / "runs" / "run1", golden)
+    for stage in ("retrieval", "answers"):
+        del records[0][stage]["config"]
+    report.rag_markdown(records[0], rag_eval.score_records(records))
+
+
+def test_ids_pick_the_questions_for_a_pilot(tmp_path, golden):
+    fake = FakeRag()
+    assert collect_answers(tmp_path, golden, fake, "--ids", "q001,q003") == 0
+    assert sorted({a["question"] for a in fake.asks}) == [
+        "How much does hosting cost?",
+        "Where is the cache?",
+    ]
+    assert len(fake.asks) == 4
+    with pytest.raises(SystemExit):
+        collect_answers(tmp_path, golden, FakeRag(), "--ids", "q001,q999")

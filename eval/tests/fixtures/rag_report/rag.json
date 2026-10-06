@@ -1,6 +1,30 @@
 {
   "run": {
     "answers": {
+      "collected": "2026-10-06",
+      "config": {
+        "citation_verification": false,
+        "collection": "fixture",
+        "default_mode": "hybrid",
+        "embedding_model": "fake-embedder",
+        "embedding_provider": "sentence_transformers",
+        "generation_model": "gpt-4o-mini",
+        "index": {
+          "chunk_overlap": 120,
+          "chunk_size": 800,
+          "chunk_strategy": "fixed",
+          "chunks": 5,
+          "dim": 8,
+          "embedding_model": "fake-embedder"
+        },
+        "llm_provider": "openai",
+        "rerank_top_k": 5,
+        "thresholds": {
+          "dense": 0.3,
+          "hybrid": 0.3
+        },
+        "top_k": 10
+      },
       "judges": [
         "fake:scripted prompts fake"
       ],
@@ -51,6 +75,30 @@
     },
     "record": "run",
     "retrieval": {
+      "collected": "2026-10-06",
+      "config": {
+        "citation_verification": false,
+        "collection": "fixture",
+        "default_mode": "hybrid",
+        "embedding_model": "fake-embedder",
+        "embedding_provider": "sentence_transformers",
+        "generation_model": "gpt-4o-mini",
+        "index": {
+          "chunk_overlap": 120,
+          "chunk_size": 800,
+          "chunk_strategy": "fixed",
+          "chunks": 5,
+          "dim": 8,
+          "embedding_model": "fake-embedder"
+        },
+        "llm_provider": "openai",
+        "rerank_top_k": 5,
+        "thresholds": {
+          "dense": 0.3,
+          "hybrid": 0.3
+        },
+        "top_k": 10
+      },
       "missing": 0,
       "modes": [
         "dense",

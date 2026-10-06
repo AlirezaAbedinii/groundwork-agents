@@ -41,6 +41,30 @@
     },
     "record": "run",
     "retrieval": {
+      "collected": "2026-10-06",
+      "config": {
+        "citation_verification": false,
+        "collection": "toolchain_docs",
+        "default_mode": "hybrid",
+        "embedding_model": "text-embedding-3-small",
+        "embedding_provider": "openai",
+        "generation_model": "gpt-4o-mini",
+        "index": {
+          "chunk_overlap": 120,
+          "chunk_size": 800,
+          "chunk_strategy": "fixed",
+          "chunks": 3571,
+          "dim": 1536,
+          "embedding_model": "text-embedding-3-small"
+        },
+        "llm_provider": "openai",
+        "rerank_top_k": 5,
+        "thresholds": {
+          "dense": 0.3,
+          "hybrid": 0.3
+        },
+        "top_k": 10
+      },
       "missing": 0,
       "modes": [
         "dense",

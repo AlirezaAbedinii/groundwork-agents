@@ -111,20 +111,52 @@ def answer_sha(answer: str) -> str:
     return hashlib.sha256(answer.encode("utf-8")).hexdigest()[:16]
 
 
-def _open_run(rag: httpx.Client, run_dir: Path) -> dict:
-    """The service's config, recorded on the run's first collect and checked on every later one."""
+STAGES = ("retrieval", "answers")
+# What every stage of one run must share: they measure the same collection. Thresholds,
+# the generator and citation checks may differ between stages (that's the point of
+# calibrating on the retrieval stage and answering with the result).
+SHARED_CONFIG = ("collection", "embedding_provider", "embedding_model", "index")
+
+
+def read_run(run_dir: Path) -> dict:
+    """``run.json`` with one config snapshot per stage. A run recorded before snapshots
+    were per stage has a single ``config``: it stands for every stage the run holds."""
+    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    if "stages" not in run:
+        legacy = {"started_at": run["started_at"], "config": run["config"]}
+        held = [s for s in STAGES if (run_dir / f"{s}.jsonl").is_file()]
+        run = {"run_id": run["run_id"], "started_at": run["started_at"]}
+        run["stages"] = {s: dict(legacy) for s in held}
+    return run
+
+
+def open_stage(rag: httpx.Client, run_dir: Path, stage: str) -> dict:
+    """The service's config for ``stage``. The first collect of a stage records it as that
+    stage's snapshot, which is never rewritten; later collects of the stage must find the
+    same config, and every stage must serve the same collection as the others."""
     run_dir.mkdir(parents=True, exist_ok=True)
     run_path = run_dir / "run.json"
     config = rag.get("/v1/config").raise_for_status().json()
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     if run_path.is_file():
-        if json.loads(run_path.read_text(encoding="utf-8"))["config"] != config:
-            raise SystemExit(
-                f"{run_dir.name}: the service's /v1/config changed since this run started"
-            )
+        run = read_run(run_dir)
     else:
-        started = datetime.now(UTC).isoformat(timespec="seconds")
-        run = {"run_id": run_dir.name, "started_at": started, "config": config}
-        run_path.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
+        run = {"run_id": run_dir.name, "started_at": now, "stages": {}}
+    if stage in run["stages"]:
+        if run["stages"][stage]["config"] != config:
+            raise SystemExit(
+                f"{run_dir.name}: the service's /v1/config changed since this run's "
+                f"{stage} stage started"
+            )
+        return config
+    for other, snapshot in run["stages"].items():
+        if differ := [k for k in SHARED_CONFIG if snapshot["config"].get(k) != config.get(k)]:
+            raise SystemExit(
+                f"{run_dir.name}: the service doesn't serve what this run's {other} stage "
+                f"measured ({', '.join(differ)} differ); start a new run"
+            )
+    run["stages"][stage] = {"started_at": now, "config": config}
+    run_path.write_text(json.dumps(run, indent=2) + "\n", encoding="utf-8")
     return config
 
 
@@ -155,7 +187,7 @@ def collect_retrieval(
     rag: httpx.Client, questions: Sequence[GoldenQuestion], modes: Sequence[str], run_dir: Path
 ) -> int:
     """Search every question in every mode into ``run_dir``; returns the number of errors."""
-    _open_run(rag, run_dir)
+    open_stage(rag, run_dir, "retrieval")
     out = run_dir / "retrieval.jsonl"
     done = {key for key, r in latest(out).items() if "error" not in r}
     searched = errors = 0
@@ -254,7 +286,7 @@ def collect_answers(
 ) -> int:
     """Ask and judge every question in every mode into ``run_dir``; returns 1 on a budget
     stop or any error, else 0."""
-    config = _open_run(rag, run_dir)
+    config = open_stage(rag, run_dir, "answers")
     if judge.provider == config["llm_provider"] and not allow_same_provider_judge:
         raise SystemExit(
             f"the judge ({judge.provider}:{judge.model}) comes from the generator's provider "
@@ -366,7 +398,7 @@ def _answer_record(q: GoldenQuestion, mode: str, raw: dict, grade: dict | None) 
 def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = None) -> list[dict]:
     """The run joined with the golden set: a header, then one record per question, mode
     and stage. A human grade joins only the exact answer it was given for."""
-    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
+    run = read_run(run_dir)
     questions = load_golden(golden_path)
     grades = {
         (g["id"], g["mode"], g["answer_sha"]): g
@@ -376,7 +408,8 @@ def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = N
         "record": "run",
         "run_id": run["run_id"],
         "collected": run["started_at"][:10],
-        "config": run["config"],
+        # The shared settings (collection, embedding model, chunking), from the first stage.
+        "config": next(iter(run["stages"].values()))["config"],
         "golden": {
             "rows": len(questions),
             "sha256": hashlib.sha256(golden_path.read_bytes()).hexdigest(),
@@ -402,7 +435,14 @@ def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = N
                 else:
                     grade = grades.get((q.id, mode, answer_sha(r["answer"])))
                     rows.append(_answer_record(q, mode, r, grade))
-        header[stage] = {"modes": modes, "top_k": top_k, "missing": missing}
+        snapshot = run["stages"][stage]
+        header[stage] = {
+            "modes": modes,
+            "top_k": top_k,
+            "missing": missing,
+            "collected": snapshot["started_at"][:10],
+            "config": snapshot["config"],
+        }
         if stage == "answers":
             header[stage] |= {
                 "unjudged": sum(bool(r["unjudged"]) for r in rows),
@@ -410,6 +450,11 @@ def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = N
             }
         records += rows
     return [header, *records]
+
+
+def stage_config(header: dict, stage: str) -> dict:
+    """A stage's config snapshot (records written before per-stage snapshots have one)."""
+    return header[stage].get("config", header["config"])
 
 
 # --- score: retrieval ---------------------------------------------------------------
@@ -556,7 +601,7 @@ def _refusals_by_kind(records: list[dict], chosen: float | None, configured: flo
 
 
 def score_retrieval(header: dict, rows: list[dict]) -> dict:
-    thresholds = header["config"].get("thresholds", {})
+    thresholds = stage_config(header, "retrieval").get("thresholds", {})
     scores: dict = {}
     for mode in header["retrieval"]["modes"]:
         mine = [r for r in rows if r["mode"] == mode]
@@ -733,6 +778,7 @@ def main(
     collect.add_argument("--golden", type=Path, default=Path("golden/golden_set.jsonl"))
     collect.add_argument("--runs", type=Path, default=Path("runs"))
     collect.add_argument("--limit", type=int, help="only the first N questions (a smoke run)")
+    collect.add_argument("--ids", help="only these golden ids, comma-separated (a pilot)")
     collect.add_argument("--max-cost-usd", type=float, help="spending cap (answers: required)")
     collect.add_argument(
         "--judge",
@@ -763,7 +809,13 @@ def main(
         url = args.rag or os.environ.get("RAG_URL")
         if not url and rag_client is None:
             parser.error("--rag or RAG_URL is required")
-        questions = load_golden(args.golden)[: args.limit]
+        questions = load_golden(args.golden)
+        if args.ids:
+            wanted = {i.strip() for i in args.ids.split(",") if i.strip()}
+            if unknown := wanted - {q.id for q in questions}:
+                parser.error(f"not in the golden set: {sorted(unknown)}")
+            questions = [q for q in questions if q.id in wanted]
+        questions = questions[: args.limit]
         run_dir = args.runs / args.run_id
         with rag_client or httpx.Client(base_url=url, timeout=120) as rag:
             if args.stage == "retrieval":
