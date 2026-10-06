@@ -70,7 +70,7 @@ TEXT = {
 }
 
 
-def q(id_, question, category, split, *quotes, origin="targeted"):
+def q(id_, question, category, split, *quotes, origin="targeted", notes=""):
     evidence = [EvidenceItem(quotes=[Quote(source="tool/x.md", text=t)]) for t in quotes]
     return GoldenQuestion(
         id=id_,
@@ -81,6 +81,7 @@ def q(id_, question, category, split, *quotes, origin="targeted"):
         origin=origin,
         split=split,
         verified=True,
+        notes=notes,
     )
 
 
@@ -94,8 +95,14 @@ GOLDEN = [
         QUOTE_B,
         QUOTE_C,
     ),
-    q("q003", "How much does hosting cost?", "no_answer", "test"),
-    q("q004", "Is there a GUI?", "no_answer", "dev"),
+    q("q003", "How much does hosting cost?", "no_answer", "test", notes="out-of-scope: pricing."),
+    q(
+        "q004",
+        "Is there a GUI?",
+        "no_answer",
+        "dev",
+        notes="near-miss: a GUI; the docs cover the CLI.",
+    ),
     q("s001", "What is the default port?", "lookup", "dev", QUOTE_D, origin="synthetic"),
     q("s002", "Which file holds the lock?", "lookup", "test", QUOTE_E, origin="synthetic"),
 ]
@@ -638,3 +645,39 @@ def test_reports_print_the_value_to_configure_and_keep_thresholds_exact(tmp_path
     }
     assert report.threshold_text(0.963599) == "0.963599"
     assert report.threshold_text(0.3) == "0.3"
+
+
+# --- no_answer kinds ----------------------------------------------------------------
+
+
+def test_the_kind_comes_from_the_notes_and_travels_in_the_records(tmp_path, golden):
+    assert rag_eval.no_answer_kind(GOLDEN[2]) == "out-of-scope"
+    assert rag_eval.no_answer_kind(GOLDEN[0]) is None  # answerable
+    unlabelled = GOLDEN[3].model_copy(update={"notes": "No prefix here."})
+    assert rag_eval.no_answer_kind(unlabelled) == "unlabelled"
+    records, _ = scored(tmp_path, golden)
+    kinds = {(r["id"], r["mode"]): r["no_answer_kind"] for r in records[1:]}
+    assert kinds[("q003", "dense")] == "out-of-scope" and kinds[("q001", "dense")] is None
+
+
+def test_gate_refusals_by_kind(tmp_path, golden):
+    _, scores = scored(tmp_path, golden)
+    dense = scores["retrieval"]["dense"]["refusal"]["by_kind"]
+    hybrid = scores["retrieval"]["hybrid"]["refusal"]["by_kind"]
+    # Dense: q004 (near-miss, dev) scores 0.50 < 0.55; q003 (out-of-scope, test) 0.58 isn't,
+    # nor below the configured 0.3.
+    assert list(dense) == ["near-miss", "out-of-scope"]
+    assert dense["near-miss"]["dev"] == {"n": 1, "refused_chosen": 1}
+    assert dense["out-of-scope"]["test"] == {"n": 1, "refused_chosen": 0, "refused_configured": 0}
+    # Hybrid: q003 scores 0.10, below both 0.9 and 0.3.
+    assert hybrid["out-of-scope"]["test"] == {"n": 1, "refused_chosen": 1, "refused_configured": 1}
+    assert hybrid["out-of-scope"]["median_top_score"] == 0.10
+
+
+def test_who_declined_each_no_answer_question(tmp_path, golden):
+    _, scores = answers_scored(tmp_path, golden)
+    dense = scores["answers"]["modes"]["dense"]["no_answer_by_kind"]
+    # Dense answered q003 (out-of-scope, test) and refused q004 (near-miss, dev) at the gate.
+    assert dense["out-of-scope"]["test"] == {"n": 1, "gate": 0, "model": 0, "answered": 1}
+    assert dense["near-miss"]["dev"] == {"n": 1, "gate": 1, "model": 0, "answered": 0}
+    assert dense["near-miss"]["test"]["n"] == 0

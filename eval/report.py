@@ -200,10 +200,83 @@ def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
         "question). Gate only: refusals by the model itself come from the answer run.",
         "",
         *_table(["mode", "threshold", "TP", "FP", "FN", "TN", "precision", "recall", "F1"], rows),
+        *_kinds_section(scores, modes),
         "",
         *(
             f"![Refusal gate, {m}: precision and recall against the threshold](refusal_{m}.svg)"
             for m in modes
+        ),
+    ]
+
+
+KINDS_INTRO = (
+    "No_answer questions come in kinds: near-miss (the docs cover a neighbouring feature), "
+    "knows-elsewhere (a fact a model may know from other sources that the pinned docs "
+    "don't state) and out-of-scope (pricing, roadmaps, benchmarks)."
+)
+
+
+def _count(k: int | None, n: int) -> str:
+    return "n/a" if k is None else f"{k}/{n}"
+
+
+def _kinds_section(scores: dict, modes: list[str]) -> list[str]:
+    rows = [
+        [
+            m,
+            kind,
+            _f(k["median_top_score"]),
+            _count(k["dev"]["refused_chosen"], k["dev"]["n"]),
+            _count(k["test"]["refused_chosen"], k["test"]["n"]),
+            _count(k["test"]["refused_configured"], k["test"]["n"]),
+        ]
+        for m in modes
+        for kind, k in scores[m]["refusal"]["by_kind"].items()
+    ]
+    if not rows:
+        return []
+    return [
+        "",
+        "### Refusals by no_answer kind",
+        "",
+        KINDS_INTRO + " How many of each the gate refuses, as counts (each kind has only a "
+        "few questions); the median is the kind's top score over both splits, and the dev "
+        "rows are the ones the threshold was chosen on.",
+        "",
+        *_table(
+            [
+                "mode",
+                "kind",
+                "median top score",
+                "dev refused (chosen)",
+                "test refused (chosen)",
+                "test refused (configured)",
+            ],
+            rows,
+        ),
+    ]
+
+
+def _answer_kinds(per_mode: dict, modes: list[str]) -> list[str]:
+    rows = [
+        [m, kind, split, str(c["n"]), str(c["gate"]), str(c["model"]), str(c["answered"])]
+        for m in modes
+        for kind, by_split in per_mode[m]["no_answer_by_kind"].items()
+        for split, c in by_split.items()
+        if c["n"]
+    ]
+    if not rows:
+        return []
+    return [
+        "",
+        "### No_answer questions by kind",
+        "",
+        KINDS_INTRO + " Who declined each one: the gate (before generating), the model "
+        "(after reading the contexts), or nobody (it was answered).",
+        "",
+        *_table(
+            ["mode", "kind", "split", "n", "refused by gate", "refused by model", "answered"],
+            rows,
         ),
     ]
 
@@ -327,6 +400,7 @@ def _answers_section(header: dict, scores: dict) -> list[str]:
                 for r in [per_mode[m]["refusal"]]
             ],
         ),
+        *_answer_kinds(per_mode, modes),
         "",
         f"Spend in this run: RAG ${sum(per_mode[m]['cost_total'] for m in modes):.4f}, judge "
         f"${sum(per_mode[m]['judge_cost'] for m in modes):.4f} (a cached verdict costs nothing).",

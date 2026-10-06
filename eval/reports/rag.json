@@ -55,6 +55,44 @@
     "retrieval": {
       "dense": {
         "refusal": {
+          "by_kind": {
+            "knows-elsewhere": {
+              "dev": {
+                "n": 2,
+                "refused_chosen": 2
+              },
+              "median_top_score": 0.575352,
+              "test": {
+                "n": 4,
+                "refused_chosen": 2,
+                "refused_configured": 0
+              }
+            },
+            "near-miss": {
+              "dev": {
+                "n": 2,
+                "refused_chosen": 2
+              },
+              "median_top_score": 0.575183,
+              "test": {
+                "n": 4,
+                "refused_chosen": 3,
+                "refused_configured": 0
+              }
+            },
+            "out-of-scope": {
+              "dev": {
+                "n": 3,
+                "refused_chosen": 2
+              },
+              "median_top_score": 0.588871,
+              "test": {
+                "n": 3,
+                "refused_chosen": 3,
+                "refused_configured": 0
+              }
+            }
+          },
           "chosen": {
             "dev": {
               "f1": 0.666667,
@@ -678,6 +716,44 @@
       },
       "hybrid": {
         "refusal": {
+          "by_kind": {
+            "knows-elsewhere": {
+              "dev": {
+                "n": 2,
+                "refused_chosen": 2
+              },
+              "median_top_score": 0.948632,
+              "test": {
+                "n": 4,
+                "refused_chosen": 2,
+                "refused_configured": 1
+              }
+            },
+            "near-miss": {
+              "dev": {
+                "n": 2,
+                "refused_chosen": 0
+              },
+              "median_top_score": 0.985481,
+              "test": {
+                "n": 4,
+                "refused_chosen": 2,
+                "refused_configured": 1
+              }
+            },
+            "out-of-scope": {
+              "dev": {
+                "n": 3,
+                "refused_chosen": 3
+              },
+              "median_top_score": 0.2281,
+              "test": {
+                "n": 3,
+                "refused_chosen": 2,
+                "refused_configured": 2
+              }
+            }
+          },
           "chosen": {
             "dev": {
               "f1": 0.588235,

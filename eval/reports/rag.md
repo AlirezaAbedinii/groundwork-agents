@@ -66,5 +66,18 @@ The gate refuses before generating when the top hit's score is below the mode's 
 | hybrid | 0.963599 (chosen on dev) | 6 | 6 | 5 | 28 | 0.500 [0.25, 0.75] | 0.545 [0.28, 0.79] | 0.522 |
 | hybrid | 0.3 (configured) | 4 | 0 | 7 | 34 | 1.000 [0.51, 1.00] | 0.364 [0.15, 0.65] | 0.533 |
 
+### Refusals by no_answer kind
+
+No_answer questions come in kinds: near-miss (the docs cover a neighbouring feature), knows-elsewhere (a fact a model may know from other sources that the pinned docs don't state) and out-of-scope (pricing, roadmaps, benchmarks). How many of each the gate refuses, as counts (each kind has only a few questions); the median is the kind's top score over both splits, and the dev rows are the ones the threshold was chosen on.
+
+| mode | kind | median top score | dev refused (chosen) | test refused (chosen) | test refused (configured) |
+|---|---|---|---|---|---|
+| dense | near-miss | 0.575 | 2/2 | 3/4 | 0/4 |
+| dense | knows-elsewhere | 0.575 | 2/2 | 2/4 | 0/4 |
+| dense | out-of-scope | 0.589 | 2/3 | 3/3 | 0/3 |
+| hybrid | near-miss | 0.985 | 0/2 | 2/4 | 1/4 |
+| hybrid | knows-elsewhere | 0.949 | 2/2 | 2/4 | 1/4 |
+| hybrid | out-of-scope | 0.228 | 3/3 | 2/3 | 2/3 |
+
 ![Refusal gate, dense: precision and recall against the threshold](refusal_dense.svg)
 ![Refusal gate, hybrid: precision and recall against the threshold](refusal_hybrid.svg)

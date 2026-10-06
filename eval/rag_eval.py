@@ -71,6 +71,12 @@ RECALL_KS = (1, 3, 5, 10)
 # verifies citations. The real cost (the response's cost_usd) is what gets recorded.
 ASK_INPUT_TOKENS, ASK_OUTPUT_TOKENS = 3000, 1000
 JUDGED = ("correctness", "faithfulness")
+# The kinds of no_answer question, named by the first word of the row's notes
+# ("near-miss: rate limiting. ..."): the docs cover a neighbouring feature; a fact a
+# model may know from elsewhere that the pinned docs don't state; or something outside
+# any docs (pricing, roadmaps, benchmarks). Read once into the records, so re-scoring
+# never parses notes.
+NO_ANSWER_KINDS = ("near-miss", "knows-elsewhere", "out-of-scope")
 
 
 # --- shared -------------------------------------------------------------------------
@@ -79,6 +85,14 @@ JUDGED = ("correctness", "faithfulness")
 def load_golden(path: Path) -> list[GoldenQuestion]:
     lines = path.read_text(encoding="utf-8").splitlines()
     return [GoldenQuestion.model_validate_json(line) for line in lines if line.strip()]
+
+
+def no_answer_kind(q: GoldenQuestion) -> str | None:
+    """A no_answer question's kind from its notes ("unlabelled" without one); None otherwise."""
+    if q.category != "no_answer":
+        return None
+    kind = q.notes.split(":", 1)[0].strip()
+    return kind if kind in NO_ANSWER_KINDS else "unlabelled"
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -307,6 +321,7 @@ def _retrieval_record(q: GoldenQuestion, mode: str, raw: dict) -> dict:
         "id": q.id,
         "mode": mode,
         "category": q.category,
+        "no_answer_kind": no_answer_kind(q),
         "origin": q.origin,
         "split": q.split,
         "n_items": len(q.evidence),
@@ -328,6 +343,7 @@ def _answer_record(q: GoldenQuestion, mode: str, raw: dict, grade: dict | None) 
         "id": q.id,
         "mode": mode,
         "category": q.category,
+        "no_answer_kind": no_answer_kind(q),
         "origin": q.origin,
         "split": q.split,
         "refused": raw["refused"],
@@ -506,6 +522,36 @@ def refusal_scores(records: list[dict], configured: float | None) -> dict:
         }
     out["configured_threshold"] = configured
     out["configured"] = None if configured is None else at(configured, test_scores, test_should)
+    out["by_kind"] = _refusals_by_kind(records, chosen, configured)
+    return out
+
+
+def _kinds(records: list[dict]) -> list[str]:
+    found = {r["no_answer_kind"] for r in records if r["category"] == "no_answer"}
+    return [k for k in (*NO_ANSWER_KINDS, "unlabelled") if k in found]
+
+
+def _refusals_by_kind(records: list[dict], chosen: float | None, configured: float | None) -> dict:
+    """How many no_answer questions of each kind the gate refuses, per split (counts only:
+    a kind has a handful of questions)."""
+
+    def refused(rows: list[dict], threshold: float | None) -> int | None:
+        return None if threshold is None else sum(r["top_score"] < threshold for r in rows)
+
+    out = {}
+    for kind in _kinds(records):
+        rows = [r for r in records if r["category"] == "no_answer" and r["no_answer_kind"] == kind]
+        dev = [r for r in rows if r["split"] == "dev"]
+        test = [r for r in rows if r["split"] == "test"]
+        out[kind] = {
+            "median_top_score": statistics.median(r["top_score"] for r in rows),
+            "dev": {"n": len(dev), "refused_chosen": refused(dev, chosen)},
+            "test": {
+                "n": len(test),
+                "refused_chosen": refused(test, chosen),
+                "refused_configured": refused(test, configured),
+            },
+        }
     return out
 
 
@@ -597,8 +643,28 @@ def score_answers(header: dict, rows: list[dict]) -> dict:
             [r["refused"] for r in test], [r["category"] == "no_answer" for r in test]
         )
         by = Counter(r["refused_by"] for r in test if r["refused"])
+        no_answer = [r for r in mine if r["category"] == "no_answer"]
         scores["modes"][mode] = {
             **answer_scores(mine),
+            "no_answer_by_kind": {
+                kind: {
+                    split: {
+                        "n": len(rows),
+                        "gate": sum(r["refused_by"] == "gate" for r in rows),
+                        "model": sum(r["refused_by"] == "model" for r in rows),
+                        "answered": sum(not r["refused"] for r in rows),
+                    }
+                    for split in ("dev", "test")
+                    for rows in [
+                        [
+                            r
+                            for r in no_answer
+                            if r["no_answer_kind"] == kind and r["split"] == split
+                        ]
+                    ]
+                }
+                for kind in _kinds(no_answer)
+            },
             "by_category": {
                 c: answer_scores([r for r in mine if r["category"] == c])
                 for c in sorted({r["category"] for r in mine})

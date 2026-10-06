@@ -2,7 +2,7 @@
 
 Run `run1`, collected 2026-10-06. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
 
-Golden set: 6 questions (sha256 `8695db3b3e25`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
+Golden set: 6 questions (sha256 `e7cebdd625e7`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
 
 ## Retrieval
 
@@ -64,6 +64,17 @@ The gate refuses before generating when the top hit's score is below the mode's 
 | hybrid | 0.9 (chosen on dev) | 1 | 0 | 0 | 2 | 1.000 [0.21, 1.00] | 1.000 [0.21, 1.00] | 1.000 |
 | hybrid | 0.3 (configured) | 1 | 0 | 0 | 2 | 1.000 [0.21, 1.00] | 1.000 [0.21, 1.00] | 1.000 |
 
+### Refusals by no_answer kind
+
+No_answer questions come in kinds: near-miss (the docs cover a neighbouring feature), knows-elsewhere (a fact a model may know from other sources that the pinned docs don't state) and out-of-scope (pricing, roadmaps, benchmarks). How many of each the gate refuses, as counts (each kind has only a few questions); the median is the kind's top score over both splits, and the dev rows are the ones the threshold was chosen on.
+
+| mode | kind | median top score | dev refused (chosen) | test refused (chosen) | test refused (configured) |
+|---|---|---|---|---|---|
+| dense | near-miss | 0.500 | 1/1 | 0/0 | 0/0 |
+| dense | out-of-scope | 0.580 | 0/0 | 0/1 | 0/1 |
+| hybrid | near-miss | 0.050 | 1/1 | 0/0 | 0/0 |
+| hybrid | out-of-scope | 0.100 | 0/0 | 1/1 | 1/1 |
+
 ![Refusal gate, dense: precision and recall against the threshold](refusal_dense.svg)
 ![Refusal gate, hybrid: precision and recall against the threshold](refusal_hybrid.svg)
 
@@ -98,6 +109,17 @@ The gate and the model together: a refusal by either counts.
 |---|---|---|---|---|---|---|---|---|---|---|
 | dense | 3 | 0 | 1 | 1 | 1 | 0.000 [0.00, 0.79] | 0.000 [0.00, 0.79] | 0.000 | 1 | 0 |
 | hybrid | 3 | 1 | 0 | 0 | 2 | 1.000 [0.21, 1.00] | 1.000 [0.21, 1.00] | 1.000 | 1 | 0 |
+
+### No_answer questions by kind
+
+No_answer questions come in kinds: near-miss (the docs cover a neighbouring feature), knows-elsewhere (a fact a model may know from other sources that the pinned docs don't state) and out-of-scope (pricing, roadmaps, benchmarks). Who declined each one: the gate (before generating), the model (after reading the contexts), or nobody (it was answered).
+
+| mode | kind | split | n | refused by gate | refused by model | answered |
+|---|---|---|---|---|---|---|
+| dense | near-miss | dev | 1 | 1 | 0 | 0 |
+| dense | out-of-scope | test | 1 | 0 | 0 | 1 |
+| hybrid | near-miss | dev | 1 | 1 | 0 | 0 |
+| hybrid | out-of-scope | test | 1 | 1 | 0 | 0 |
 
 Spend in this run: RAG $0.0031, judge $0.0000 (a cached verdict costs nothing).
 
