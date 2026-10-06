@@ -35,9 +35,9 @@ First explain briefly which of the reference's facts the answer gets right, whic
 misses and what it gets wrong. Then rate it:
 
 5 - Correct and complete: every fact in the reference is there and nothing \
-contradicts it.
-4 - Correct in substance: nothing is wrong, and at most a detail is missing or \
-loosely worded, so a reader following it would still do the right thing.
+contradicts it, whatever else the answer adds.
+4 - Correct in substance: nothing is wrong, but a detail of the reference is missing \
+or loosely worded, so a reader following it would still do the right thing.
 3 - Partly correct: some of the reference is right, but a part the question asks \
 for is missing, or a minor error sits next to the right answer.
 2 - Mostly wrong: the main point is missing or wrong, though something relevant is \
@@ -45,8 +45,10 @@ right; or it hedges between the right answer and a wrong one without choosing.
 1 - Wrong or no answer: it contradicts the reference's main point, or it declines \
 or says it doesn't know although the reference gives an answer.
 
-Between 4 and 3: would a reader who follows the answer miss or get wrong something \
-the question asked for? If so, the rating is 3 or lower. A hedge such as "probably" \
+Between 5 and 4: only a detail of the reference that is missing or blurred costs \
+the point; added detail and different wording never do. Between 4 and 3: would a \
+reader who follows the answer miss or get wrong something the question asked for? \
+If so, the rating is 3 or lower. A hedge such as "probably" \
 doesn't lower the rating if the answer still commits to the right fact. When the \
 reference itself says the documentation doesn't cover the question, an answer that \
 says so is correct, and one that answers the question anyway is rated 1."""
