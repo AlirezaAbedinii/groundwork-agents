@@ -1,7 +1,7 @@
 {
   "run": {
     "answers": {
-      "collected": "2026-10-06",
+      "collected": "2026-10-07",
       "config": {
         "citation_verification": false,
         "collection": "fixture",
@@ -36,7 +36,7 @@
       "top_k": 5,
       "unjudged": 0
     },
-    "collected": "2026-10-06",
+    "collected": "2026-10-07",
     "config": {
       "citation_verification": false,
       "collection": "fixture",
@@ -75,7 +75,7 @@
     },
     "record": "run",
     "retrieval": {
-      "collected": "2026-10-06",
+      "collected": "2026-10-07",
       "config": {
         "citation_verification": false,
         "collection": "fixture",

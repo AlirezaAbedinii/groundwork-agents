@@ -1,6 +1,41 @@
 {
   "run": {
-    "answers": null,
+    "answers": {
+      "collected": "2026-10-06",
+      "config": {
+        "citation_verification": true,
+        "collection": "toolchain_docs",
+        "default_mode": "hybrid",
+        "embedding_model": "text-embedding-3-small",
+        "embedding_provider": "openai",
+        "generation_model": "gpt-4o-mini",
+        "index": {
+          "chunk_overlap": 120,
+          "chunk_size": 800,
+          "chunk_strategy": "fixed",
+          "chunks": 3571,
+          "dim": 1536,
+          "embedding_model": "text-embedding-3-small"
+        },
+        "llm_provider": "openai",
+        "rerank_top_k": 5,
+        "thresholds": {
+          "dense": 0.617442,
+          "hybrid": 0.963599
+        },
+        "top_k": 10
+      },
+      "judges": [
+        "anthropic:claude-haiku-4-5 prompts v1"
+      ],
+      "missing": 0,
+      "modes": [
+        "dense",
+        "hybrid"
+      ],
+      "top_k": 5,
+      "unjudged": 0
+    },
     "collected": "2026-10-06",
     "config": {
       "citation_verification": false,
@@ -75,7 +110,449 @@
     "run_id": "2026-10-06-openai"
   },
   "scores": {
-    "answers": null,
+    "answers": {
+      "agreement": {
+        "kappa": null,
+        "n": 0,
+        "raw": null
+      },
+      "modes": {
+        "dense": {
+          "by_category": {
+            "ambiguous": {
+              "citation_accuracy_self": 1.0,
+              "correct": {
+                "ci": [
+                  0.0,
+                  0.390343
+                ],
+                "k": 0,
+                "n": 6,
+                "rate": 0.0
+              },
+              "cost_per_query": 0.000156,
+              "cost_total": 0.000937,
+              "faithfulness": 1.0,
+              "fully_supported": {
+                "ci": [
+                  0.438494,
+                  1.0
+                ],
+                "k": 3,
+                "n": 3,
+                "rate": 1.0
+              },
+              "judge_cost": 0.021757,
+              "mean_rating": 3.0,
+              "n": 6,
+              "p50_ms": 239.511,
+              "p95_ms": 4081.212,
+              "rated": 3
+            },
+            "lookup": {
+              "citation_accuracy_self": 0.880952,
+              "correct": {
+                "ci": [
+                  0.487587,
+                  0.781746
+                ],
+                "k": 24,
+                "n": 37,
+                "rate": 0.648649
+              },
+              "cost_per_query": 0.000225,
+              "cost_total": 0.008336,
+              "faithfulness": 0.910494,
+              "fully_supported": {
+                "ci": [
+                  0.675209,
+                  0.940842
+                ],
+                "k": 23,
+                "n": 27,
+                "rate": 0.851852
+              },
+              "judge_cost": 0.163898,
+              "mean_rating": 4.481481,
+              "n": 37,
+              "p50_ms": 2482.654,
+              "p95_ms": 5452.283,
+              "rated": 27
+            },
+            "multi_hop": {
+              "citation_accuracy_self": 1.0,
+              "correct": {
+                "ci": [
+                  0.453505,
+                  0.882788
+                ],
+                "k": 10,
+                "n": 14,
+                "rate": 0.714286
+              },
+              "cost_per_query": 0.000335,
+              "cost_total": 0.004684,
+              "faithfulness": 0.888462,
+              "fully_supported": {
+                "ci": [
+                  0.423689,
+                  0.873195
+                ],
+                "k": 9,
+                "n": 13,
+                "rate": 0.692308
+              },
+              "judge_cost": 0.093689,
+              "mean_rating": 4.076923,
+              "n": 14,
+              "p50_ms": 3601.62,
+              "p95_ms": 6715.978,
+              "rated": 13
+            },
+            "no_answer": {
+              "citation_accuracy_self": null,
+              "correct": {
+                "ci": [
+                  0.824115,
+                  1.0
+                ],
+                "k": 18,
+                "n": 18,
+                "rate": 1.0
+              },
+              "cost_per_query": 2.5e-05,
+              "cost_total": 0.000453,
+              "faithfulness": null,
+              "fully_supported": {
+                "ci": [
+                  0.0,
+                  1.0
+                ],
+                "k": 0,
+                "n": 0,
+                "rate": null
+              },
+              "judge_cost": 0,
+              "mean_rating": null,
+              "n": 18,
+              "p50_ms": 209.786,
+              "p95_ms": 1241.536,
+              "rated": 0
+            }
+          },
+          "citation_accuracy_self": 0.935897,
+          "correct": {
+            "ci": [
+              0.581693,
+              0.786133
+            ],
+            "k": 52,
+            "n": 75,
+            "rate": 0.693333
+          },
+          "cost_per_query": 0.000192,
+          "cost_total": 0.01441,
+          "faithfulness": 0.910078,
+          "fully_supported": {
+            "ci": [
+              0.673827,
+              0.902584
+            ],
+            "k": 35,
+            "n": 43,
+            "rate": 0.813953
+          },
+          "judge_cost": 0.279344,
+          "mean_rating": 4.255814,
+          "n": 75,
+          "no_answer_by_kind": {
+            "knows-elsewhere": {
+              "dev": {
+                "answered": 0,
+                "gate": 2,
+                "model": 0,
+                "n": 2
+              },
+              "test": {
+                "answered": 0,
+                "gate": 2,
+                "model": 2,
+                "n": 4
+              }
+            },
+            "near-miss": {
+              "dev": {
+                "answered": 0,
+                "gate": 2,
+                "model": 0,
+                "n": 2
+              },
+              "test": {
+                "answered": 0,
+                "gate": 3,
+                "model": 1,
+                "n": 4
+              }
+            },
+            "out-of-scope": {
+              "dev": {
+                "answered": 0,
+                "gate": 2,
+                "model": 1,
+                "n": 3
+              },
+              "test": {
+                "answered": 0,
+                "gate": 3,
+                "model": 0,
+                "n": 3
+              }
+            }
+          },
+          "p50_ms": 2275.661,
+          "p95_ms": 5428.889,
+          "rated": 43,
+          "refusal": {
+            "by_gate": 13,
+            "by_model": 4,
+            "f1": 0.785714,
+            "fn": 0,
+            "fp": 6,
+            "n": 45,
+            "precision": 0.647059,
+            "precision_ci": [
+              0.413,
+              0.826905
+            ],
+            "recall": 1.0,
+            "recall_ci": [
+              0.74116,
+              1.0
+            ],
+            "should_refuse": 11,
+            "tn": 28,
+            "tp": 11
+          }
+        },
+        "hybrid": {
+          "by_category": {
+            "ambiguous": {
+              "citation_accuracy_self": 1.0,
+              "correct": {
+                "ci": [
+                  0.0,
+                  0.390343
+                ],
+                "k": 0,
+                "n": 6,
+                "rate": 0.0
+              },
+              "cost_per_query": 0.000302,
+              "cost_total": 0.001815,
+              "faithfulness": 1.0,
+              "fully_supported": {
+                "ci": [
+                  0.565509,
+                  1.0
+                ],
+                "k": 5,
+                "n": 5,
+                "rate": 1.0
+              },
+              "judge_cost": 0.036057,
+              "mean_rating": 2.8,
+              "n": 6,
+              "p50_ms": 3579.484,
+              "p95_ms": 6173.123,
+              "rated": 5
+            },
+            "lookup": {
+              "citation_accuracy_self": 1.0,
+              "correct": {
+                "ci": [
+                  0.461001,
+                  0.759362
+                ],
+                "k": 23,
+                "n": 37,
+                "rate": 0.621622
+              },
+              "cost_per_query": 0.000211,
+              "cost_total": 0.007789,
+              "faithfulness": 0.967949,
+              "fully_supported": {
+                "ci": [
+                  0.710237,
+                  0.959968
+                ],
+                "k": 23,
+                "n": 26,
+                "rate": 0.884615
+              },
+              "judge_cost": 0.144421,
+              "mean_rating": 4.653846,
+              "n": 37,
+              "p50_ms": 2810.844,
+              "p95_ms": 15740.401,
+              "rated": 26
+            },
+            "multi_hop": {
+              "citation_accuracy_self": 0.964286,
+              "correct": {
+                "ci": [
+                  0.38764,
+                  0.836555
+                ],
+                "k": 9,
+                "n": 14,
+                "rate": 0.642857
+              },
+              "cost_per_query": 0.000332,
+              "cost_total": 0.004648,
+              "faithfulness": 0.9375,
+              "fully_supported": {
+                "ci": [
+                  0.551964,
+                  0.953036
+                ],
+                "k": 10,
+                "n": 12,
+                "rate": 0.833333
+              },
+              "judge_cost": 0.09347,
+              "mean_rating": 3.916667,
+              "n": 14,
+              "p50_ms": 4095.952,
+              "p95_ms": 6251.863,
+              "rated": 12
+            },
+            "no_answer": {
+              "citation_accuracy_self": null,
+              "correct": {
+                "ci": [
+                  0.824115,
+                  1.0
+                ],
+                "k": 18,
+                "n": 18,
+                "rate": 1.0
+              },
+              "cost_per_query": 6e-05,
+              "cost_total": 0.001082,
+              "faithfulness": null,
+              "fully_supported": {
+                "ci": [
+                  0.0,
+                  1.0
+                ],
+                "k": 0,
+                "n": 0,
+                "rate": null
+              },
+              "judge_cost": 0,
+              "mean_rating": null,
+              "n": 18,
+              "p50_ms": 947.557,
+              "p95_ms": 1679.546,
+              "rated": 0
+            }
+          },
+          "citation_accuracy_self": 0.987013,
+          "correct": {
+            "ci": [
+              0.554172,
+              0.762919
+            ],
+            "k": 50,
+            "n": 75,
+            "rate": 0.666667
+          },
+          "cost_per_query": 0.000204,
+          "cost_total": 0.015334,
+          "faithfulness": 0.963178,
+          "fully_supported": {
+            "ci": [
+              0.755206,
+              0.949296
+            ],
+            "k": 38,
+            "n": 43,
+            "rate": 0.883721
+          },
+          "judge_cost": 0.273948,
+          "mean_rating": 4.232558,
+          "n": 75,
+          "no_answer_by_kind": {
+            "knows-elsewhere": {
+              "dev": {
+                "answered": 0,
+                "gate": 2,
+                "model": 0,
+                "n": 2
+              },
+              "test": {
+                "answered": 0,
+                "gate": 2,
+                "model": 2,
+                "n": 4
+              }
+            },
+            "near-miss": {
+              "dev": {
+                "answered": 0,
+                "gate": 0,
+                "model": 2,
+                "n": 2
+              },
+              "test": {
+                "answered": 0,
+                "gate": 2,
+                "model": 2,
+                "n": 4
+              }
+            },
+            "out-of-scope": {
+              "dev": {
+                "answered": 0,
+                "gate": 3,
+                "model": 0,
+                "n": 3
+              },
+              "test": {
+                "answered": 0,
+                "gate": 2,
+                "model": 1,
+                "n": 3
+              }
+            }
+          },
+          "p50_ms": 2685.005,
+          "p95_ms": 6173.123,
+          "rated": 43,
+          "refusal": {
+            "by_gate": 12,
+            "by_model": 7,
+            "f1": 0.733333,
+            "fn": 0,
+            "fp": 8,
+            "n": 45,
+            "precision": 0.578947,
+            "precision_ci": [
+              0.362756,
+              0.768584
+            ],
+            "recall": 1.0,
+            "recall_ci": [
+              0.74116,
+              1.0
+            ],
+            "should_refuse": 11,
+            "tn": 26,
+            "tp": 11
+          }
+        }
+      }
+    },
     "retrieval": {
       "dense": {
         "refusal": {

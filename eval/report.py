@@ -385,7 +385,10 @@ def _answers_section(header: dict, scores: dict) -> list[str]:
         "judge rates a complete answer that adds correct detail beyond the reference 4 rather "
         "than 5, so the mean understates thorough answers; the pass rate is unaffected. "
         "Citations (self-check) is the pipeline's own verdict on its citations, n/a when it "
-        "doesn't verify them.",
+        "doesn't verify them. Faithfulness, fully supported and the citation self-check only "
+        "cover the answers a mode gave, not its refusals, so a mode that refuses more of its "
+        "harder questions can score higher on them: they compare how answers are grounded, not "
+        "which mode does better end to end. Correctness is the end-to-end measure.",
         "",
         "### Correct by category",
         "",

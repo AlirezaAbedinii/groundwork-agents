@@ -1,6 +1,6 @@
 # RAG evaluation
 
-Run `run1`, collected 2026-10-06. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
+Run `run1`, collected 2026-10-07. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
 
 Golden set: 6 questions (sha256 `e7cebdd625e7`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
 
@@ -8,7 +8,7 @@ Each stage records the service's settings when it starts, and every stage of a r
 
 |  | retrieval | answers |
 |---|---|---|
-| collected | 2026-10-06 | 2026-10-06 |
+| collected | 2026-10-07 | 2026-10-07 |
 | `top_k` asked for | 10 | 5 |
 | refusal thresholds (dense / hybrid) | 0.3 / 0.3 | 0.3 / 0.3 |
 | generator | `gpt-4o-mini` (openai) | `gpt-4o-mini` (openai) |
@@ -98,7 +98,7 @@ An answerable question the system refused fails correctness without a judge call
 | dense | 6 | 0.333 [0.10, 0.70] | 4.000 | 0.500 | 0.333 [0.06, 0.79] | n/a | $0.00025 | 900 | 900 |
 | hybrid | 6 | 0.833 [0.44, 0.97] | 4.000 | 0.875 | 0.750 [0.30, 0.95] | 0.500 | $0.00027 | 900 | 900 |
 
-The mean rating is over the answers the judge rated (answerable and not refused). The judge rates a complete answer that adds correct detail beyond the reference 4 rather than 5, so the mean understates thorough answers; the pass rate is unaffected. Citations (self-check) is the pipeline's own verdict on its citations, n/a when it doesn't verify them.
+The mean rating is over the answers the judge rated (answerable and not refused). The judge rates a complete answer that adds correct detail beyond the reference 4 rather than 5, so the mean understates thorough answers; the pass rate is unaffected. Citations (self-check) is the pipeline's own verdict on its citations, n/a when it doesn't verify them. Faithfulness, fully supported and the citation self-check only cover the answers a mode gave, not its refusals, so a mode that refuses more of its harder questions can score higher on them: they compare how answers are grounded, not which mode does better end to end. Correctness is the end-to-end measure.
 
 ### Correct by category
 
