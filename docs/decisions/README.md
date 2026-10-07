@@ -11,6 +11,8 @@ supersedes it.
 | [0003](0003-one-event-loop-per-worker.md) | One event loop per Celery worker thread | accepted |
 | [0004](0004-mcp-as-the-seam.md) | MCP as the seam between the agents and retrieval | accepted |
 | [0005](0005-pgvector-over-chroma.md) | Postgres with pgvector instead of Chroma | accepted |
+| [0006](0006-evaluation-harness-and-judge.md) | One evaluation suite over HTTP, evidence-quote labels and a judge from another provider | accepted |
+| [0007](0007-refusal-threshold-calibration.md) | Refusal thresholds calibrated per retrieval mode on held-out questions | accepted |
 
 ## Format
 

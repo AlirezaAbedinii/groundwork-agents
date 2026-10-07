@@ -133,16 +133,18 @@ class Settings(BaseSettings):
     )
     # The gate compares the top hit's score with its mode's threshold, and the two
     # scores mean different things: a cosine similarity in dense mode, the
-    # cross-encoder's sigmoid in hybrid mode. Defaults until the evaluation
-    # calibrates them on held-out questions.
+    # cross-encoder's sigmoid in hybrid mode. Both defaults were chosen on the
+    # golden set's dev split (highest refusal F1) and hold for text-embedding-3-small
+    # with cross-encoder/ms-marco-MiniLM-L-6-v2; recalibrate when either changes
+    # (eval/reports/rag.md, docs/decisions/0007-refusal-threshold-calibration.md).
     retrieval_confidence_threshold_dense: float = Field(
-        default=0.30,
+        default=0.617442,
         ge=0.0,
         le=1.0,
         description="Dense mode: below this top cosine similarity, refuse instead of generating.",
     )
     retrieval_confidence_threshold_hybrid: float = Field(
-        default=0.30,
+        default=0.963599,
         ge=0.0,
         le=1.0,
         description="Hybrid mode: below this top reranker score, refuse instead of generating.",

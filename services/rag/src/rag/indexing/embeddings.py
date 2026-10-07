@@ -33,7 +33,13 @@ class EmbeddingClient(Protocol):
 
 
 class OpenAIEmbeddingClient:
-    """OpenAI embeddings backend (``text-embedding-3-small`` by default)."""
+    """OpenAI embeddings backend (``text-embedding-3-small`` by default).
+
+    Texts go out in batches of ``batch_size``: a request takes at most 2,048 inputs
+    and 300,000 tokens, and 256 chunks of up to ~1,000 tokens each stay under both.
+    """
+
+    batch_size = 256
 
     def __init__(self, model: str, api_key: str, price_per_million: float) -> None:
         self.model = model
@@ -58,12 +64,16 @@ class OpenAIEmbeddingClient:
         if not texts:
             return []
         client = self._ensure_client()
-        resp = client.embeddings.create(model=self.model, input=texts)
-        tokens = getattr(resp, "usage", None)
-        if tokens is not None:
-            self.total_tokens += tokens.total_tokens
-            self.total_cost_usd += token_cost(tokens.total_tokens, self._price_per_million)
-        return [item.embedding for item in resp.data]
+        vectors: list[Vector] = []
+        for start in range(0, len(texts), self.batch_size):
+            batch = texts[start : start + self.batch_size]
+            resp = client.embeddings.create(model=self.model, input=batch)
+            tokens = getattr(resp, "usage", None)
+            if tokens is not None:
+                self.total_tokens += tokens.total_tokens
+                self.total_cost_usd += token_cost(tokens.total_tokens, self._price_per_million)
+            vectors += [item.embedding for item in resp.data]
+        return vectors
 
     def embed_query(self, text: str) -> Vector:
         return self.embed_texts([text])[0]

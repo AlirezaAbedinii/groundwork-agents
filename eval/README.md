@@ -7,3 +7,38 @@ calibrated threshold, and rubric-based agent tasks scored on success, tool-call
 correctness, cost and wall-clock. It replaces the retrieval service's own
 harness, which has been retired
 ([last version](https://github.com/AlirezaAbedinii/groundwork-agents/tree/940677e9078e4cd4d8a70aecb74f26c8295435d0/services/rag/eval)).
+
+It is a small project of its own, like [`mcp/`](../mcp/README.md): it talks to
+both services over HTTP only, so it measures what actually runs.
+
+## So far
+
+| Path | What it is |
+|---|---|
+| `schemas.py` | Golden questions, agent tasks, judge verdicts and metric results |
+| `textnorm.py` | How a quote is matched against chunk text, for labels and scoring alike |
+| `golden/` | The golden set and its [schema and rules](golden/SCHEMA.md) |
+| `dataset/validate.py` | Checks the golden set against the schema, the corpus files and the served chunks |
+| `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
+| `dataset/synthesize.py` | Drafts synthetic golden candidates, one chunk each (paid; `--max-cost-usd` required) |
+| `dataset/review.py` | Accepts, edits or rejects those drafts by hand |
+| `metrics.py` | Retrieval, refusal, answer and agreement metrics: pure functions over recorded runs |
+| `judge.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
+| `judge_fake.py` | A scripted judge for tests and keyless runs |
+| `rag_eval.py` | Collects searches from the RAG API into `runs/` and scores them: retrieval, snippet size, the refusal gate |
+| `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
+| `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
+| `tasks/` | Agent evaluation tasks |
+
+```bash
+uv venv .venv -p 3.12
+uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
+.venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
+.venv/bin/python -m dataset.validate golden/golden_set.jsonl \
+  --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
+# Collect once (retrieval is free on a local embedding model), then score as often as needed
+.venv/bin/python -m rag_eval collect --stage retrieval --rag http://localhost:8000 --run-id my-run
+.venv/bin/python -m rag_eval collect --stage answers --rag http://localhost:8000 --run-id my-run \
+  --max-cost-usd 1.00                                          # paid: generation + judge
+.venv/bin/python -m rag_eval score --run-id my-run              # -> runs/my-run/report/
+```

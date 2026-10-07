@@ -1,0 +1,52 @@
+# The evaluation suite for both services: the golden set and its validator, and
+# (as they land) the retrieval, answer and agent harnesses. It talks to the
+# services over HTTP only, so it measures what actually runs.
+#
+# A dependencies-only project: nothing here is installed as a package. Commands
+# run as modules from this directory (`python -m dataset.validate ...`), and
+# tests import them through pythonpath below. Install with:
+#   uv pip install -r pyproject.toml --extra dev
+
+[project]
+name = "groundwork-eval"
+version = "0.0.0"
+description = "Evaluation of the Groundwork RAG and agent services: retrieval, answers, refusals and agent tasks."
+requires-python = ">=3.12"
+dependencies = [
+    # The services' HTTP APIs.
+    "httpx>=0.27",
+    # Golden-set rows, agent tasks and judge verdicts.
+    "pydantic>=2.5",
+    # Judge and synthetic-draft calls (structured outputs on either provider).
+    "openai>=1.30",
+    "anthropic>=0.34",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3", "ruff>=0.4"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+# Same rule set as services/rag.
+select = ["E", "F", "I", "UP", "B", "W"]
+
+[tool.ruff.lint.isort]
+# This project's own modules, imported by path (it isn't a package). Declared so
+# the import order doesn't depend on which of them exist yet.
+known-first-party = [
+    "budget", "dataset", "judge", "judge_fake", "judge_prompts", "llm", "metrics", "rag_eval",
+    "report", "schemas", "svg", "textnorm",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+# Paid tests never run by accident: a plain `pytest` deselects them, and `-m live` on
+# the command line (which overrides this) selects them deliberately.
+addopts = "-m 'not live'"
+markers = [
+    "live: tests that call real provider APIs (deselected in CI; each run needs an explicit OK)",
+]
