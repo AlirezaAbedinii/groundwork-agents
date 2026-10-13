@@ -18,7 +18,7 @@ both services over HTTP only, so it measures what actually runs.
 | `schemas.py` | Golden questions, agent tasks, judge verdicts and metric results |
 | `textnorm.py` | How a quote is matched against chunk text, for labels and scoring alike |
 | `golden/` | The golden set and its [schema and rules](golden/SCHEMA.md) |
-| `dataset/validate.py` | Checks the golden set against the schema, the corpus files and the served chunks |
+| `dataset/validate.py` | Checks the golden set against the schema, the corpus files and the served chunks, and the agent tasks against the agent's tools |
 | `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
 | `dataset/synthesize.py` | Drafts synthetic golden candidates, one chunk each (paid; `--max-cost-usd` required) |
 | `dataset/review.py` | Accepts, edits or rejects those drafts by hand |
@@ -28,7 +28,7 @@ both services over HTTP only, so it measures what actually runs.
 | `rag_eval.py` | Collects searches from the RAG API into `runs/` and scores them: retrieval, snippet size, the refusal gate |
 | `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
 | `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
-| `tasks/` | Agent evaluation tasks |
+| `tasks/` | Agent evaluation tasks, plus two keyless smoke tasks that replay the agent's recorded test fixtures |
 
 ```bash
 uv venv .venv -p 3.12
@@ -36,6 +36,7 @@ uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
 .venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
 .venv/bin/python -m dataset.validate golden/golden_set.jsonl \
   --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
+.venv/bin/python -m dataset.validate tasks/agent_tasks.jsonl --tasks
 # Collect once (retrieval is free on a local embedding model), then score as often as needed
 .venv/bin/python -m rag_eval collect --stage retrieval --rag http://localhost:8000 --run-id my-run
 .venv/bin/python -m rag_eval collect --stage answers --rag http://localhost:8000 --run-id my-run \

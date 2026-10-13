@@ -18,7 +18,12 @@ against the target composition (warnings).
                  not specific enough: every chunk containing it counts as relevant.
 --assign-splits  gives each row without a split one, per category toward 40 % dev
                  and 60 % test, and rewrites only those lines; assigned rows never move.
---tasks          the file holds agent tasks (``schemas.AgentTask``).
+--tasks          the file holds agent tasks (``schemas.AgentTask``): every tool named
+                 is one of the agent's, `args` keys are arguments of their tool, no
+                 tool is both allowed and forbidden, no task requires a tool that
+                 reaches an outside service, and every task forbids api_call. A
+                 rubric needs unique criterion ids and a critical criterion; an empty
+                 one is a warning until the rubrics are written.
 
 Exits 1 when there are errors; warnings don't fail the run.
 """
@@ -39,7 +44,7 @@ from typing import get_args
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from schemas import AgentTask, Category, GoldenQuestion, Origin
+from schemas import AGENT_TOOLS, AgentTask, Category, GoldenQuestion, Origin
 from textnorm import normalize_ws
 
 CATEGORIES: tuple[str, ...] = get_args(Category)
@@ -51,6 +56,11 @@ TARGET_CATEGORIES = {"lookup": 37, "multi_hop": 14, "no_answer": 18, "ambiguous"
 TARGET_ORIGINS = {"targeted": 50, "synthetic": 25}
 DEV_SHARE = 0.4
 MAX_CHUNKS_PER_QUOTE = 2
+
+# Tools whose results come from outside services and change between runs, so no task
+# requires them; api_call can also POST to an outside API, so every task forbids it.
+EXTERNAL_TOOLS = ("web_search", "api_call")
+ALWAYS_FORBIDDEN = ("api_call",)
 
 
 @dataclass
@@ -350,6 +360,52 @@ def check_rag(questions: list[GoldenQuestion], client: httpx.Client, findings: F
     )
 
 
+# --- agent tasks --------------------------------------------------------------------
+
+
+def _check_task_tools(task: AgentTask, findings: Findings) -> None:
+    named = [t for entry in task.must_call for t in entry.tools] + task.may_call + task.forbidden
+    for tool in dict.fromkeys(named):
+        if tool not in AGENT_TOOLS:
+            findings.error(task.id, f"unknown tool {tool!r}")
+    for i, entry in enumerate(task.must_call):
+        for tool in entry.tools:
+            if tool in AGENT_TOOLS and (unknown := sorted(set(entry.args) - AGENT_TOOLS[tool])):
+                listed = ", ".join(unknown)
+                findings.error(task.id, f"must_call[{i}].args: {tool} takes no {listed}")
+            if tool in EXTERNAL_TOOLS:
+                message = f"must_call[{i}]: {tool} reaches an outside service, so no task needs it"
+                findings.error(task.id, message)
+    required = {t for entry in task.must_call for t in entry.tools}
+    for tool in dict.fromkeys(task.forbidden):
+        if tool in required or tool in task.may_call:
+            where = "must_call" if tool in required else "may_call"
+            findings.error(task.id, f"{tool} is both in {where} and forbidden")
+    for tool in ALWAYS_FORBIDDEN:
+        if tool not in task.forbidden:
+            findings.error(task.id, f"forbidden doesn't list {tool}, which every task forbids")
+
+
+def _check_rubric(task: AgentTask, findings: Findings) -> None:
+    ids = Counter(c.id for c in task.rubric)
+    for cid, n in ids.items():
+        if n > 1:
+            findings.error(task.id, f"rubric: criterion id {cid!r} is used {n} times")
+    if task.rubric and not any(c.critical for c in task.rubric):
+        findings.error(task.id, "rubric: no critical criterion, so the task can't be scored")
+
+
+def check_tasks(rows: list[Row], findings: Findings) -> list[AgentTask]:
+    tasks = parse_rows(rows, AgentTask, findings)
+    for task in tasks:
+        _check_task_tools(task, findings)
+        _check_rubric(task, findings)
+    unwritten = [t.id for t in tasks if not t.rubric]
+    if unwritten:
+        findings.warn("rubrics", f"{len(unwritten)} of {len(tasks)} tasks have none yet")
+    return tasks
+
+
 # --- summaries ----------------------------------------------------------------------
 
 
@@ -387,6 +443,17 @@ def summarize_tasks(path: Path, n_rows: int, tasks: list[AgentTask], findings: F
     if by_category:
         line += " · " + ", ".join(f"{c} {n}" for c, n in by_category)
     findings.summary.insert(0, line)
+    required = Counter(" or ".join(entry.tools) for t in tasks for entry in t.must_call)
+    if required:
+        listed = ", ".join(f"{tools} {n}" for tools, n in required.most_common())
+        findings.summary.append(f"  required: {listed}")
+    if tasks:
+        criteria = [c for t in tasks for c in t.rubric]
+        rubrics = f"  rubrics: {sum(1 for t in tasks if t.rubric)} of {len(tasks)} written"
+        if criteria:
+            n_critical = sum(c.critical for c in criteria)
+            rubrics += f", {len(criteria)} criteria ({n_critical} critical)"
+        findings.summary.append(rubrics)
 
 
 def _grouped(entries: list[tuple[str, str]]) -> list[str]:
@@ -437,7 +504,7 @@ def main(argv: Sequence[str] | None = None, *, rag_client: httpx.Client | None =
     rows = read_rows(lines, findings)
 
     if args.tasks:
-        tasks = parse_rows(rows, AgentTask, findings)
+        tasks = check_tasks(rows, findings)
         summarize_tasks(args.file, len(rows), tasks, findings)
         report(findings)
         return 1 if findings.errors else 0

@@ -149,6 +149,20 @@ def test_expected_call_args_keep_their_json_types():
     assert [type(v) for v in call.args.values()] == [str, int, float, bool]
 
 
+def test_expected_call_takes_alternatives():
+    one = ExpectedCall.model_validate({"tool": "db_query"})
+    either = ExpectedCall.model_validate({"tool": ["rag_search", "rag_ask"]})
+    assert one.tools == ("db_query",)
+    assert either.tools == ("rag_search", "rag_ask")
+    assert either.model_dump() == {"tool": ["rag_search", "rag_ask"], "args": {}}
+
+
+@pytest.mark.parametrize("tool", [[], ["rag_search"], ["rag_ask", "rag_ask"]])
+def test_alternatives_name_at_least_two_different_tools(tool):
+    with pytest.raises(ValidationError, match="2 or more different tools"):
+        ExpectedCall.model_validate({"tool": tool})
+
+
 def test_agent_task_defaults():
     task = AgentTask.model_validate(
         {

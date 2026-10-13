@@ -302,9 +302,14 @@ def task(tid: str, category: str, **overrides) -> dict:
         "request": "Look it up in the docs and write notes.md",
         "category": category,
         "must_call": [{"tool": "rag_search"}, {"tool": "file_write", "args": {"path": "notes.md"}}],
+        "forbidden": ["api_call"],
         "rubric": [],
     }
     return base | overrides
+
+
+def errors(out: str) -> list[str]:
+    return [line for line in out.splitlines() if line.startswith("ERROR")]
 
 
 def test_tasks_mode(tmp_path, capsys):
@@ -312,6 +317,98 @@ def test_tasks_mode(tmp_path, capsys):
     code, out = run(capsys, path, "--tasks")
     assert code == 0, out
     assert "2 tasks · code 1, docs 1" in out
+    assert "required: rag_search 2, file_write 2" in out
+    # rubrics come later, so an empty one is a warning, not an error
+    assert "WARN  rubrics: 2 of 2 tasks have none yet" in out
+    assert "rubrics: 0 of 2 written" in out
+
+
+def test_tasks_mode_takes_alternatives(tmp_path, capsys):
+    docs = [{"tool": ["rag_search", "rag_ask"], "args": {"mode": "hybrid"}}]
+    path = write_rows(tmp_path / "t.jsonl", [task("t01", "docs", must_call=docs)])
+    code, out = run(capsys, path, "--tasks")
+    assert code == 0, out
+    assert "required: rag_search or rag_ask 1" in out
+
+
+def test_tasks_mode_checks_tool_names_and_args(tmp_path, capsys):
+    bad = task(
+        "t01",
+        "docs",
+        must_call=[
+            {"tool": "rag_serch"},
+            {"tool": "file_write", "args": {"filename": "notes.md"}},
+            # `query` is an argument of rag_search only
+            {"tool": ["rag_search", "rag_ask"], "args": {"query": "cache"}},
+        ],
+        may_call=["file_wrte"],
+        forbidden=["api_call", "shell"],
+    )
+    code, out = run(capsys, write_rows(tmp_path / "t.jsonl", [bad]), "--tasks")
+    assert code == 1
+    assert errors(out) == [
+        "ERROR t01: unknown tool 'rag_serch'",
+        "ERROR t01: unknown tool 'file_wrte'",
+        "ERROR t01: unknown tool 'shell'",
+        "ERROR t01: must_call[1].args: file_write takes no filename",
+        "ERROR t01: must_call[2].args: rag_ask takes no query",
+    ]
+
+
+def test_tasks_mode_rejects_a_tool_both_allowed_and_forbidden(tmp_path, capsys):
+    rows = [
+        task("t01", "docs", forbidden=["api_call", "file_write"]),
+        task("t02", "docs", may_call=["code_exec"], forbidden=["api_call", "code_exec"]),
+        # forbidding one alternative of a required entry contradicts it too
+        task(
+            "t03",
+            "docs",
+            must_call=[{"tool": ["rag_search", "rag_ask"]}],
+            forbidden=["api_call", "rag_ask"],
+        ),
+    ]
+    code, out = run(capsys, write_rows(tmp_path / "t.jsonl", rows), "--tasks")
+    assert code == 1
+    assert errors(out) == [
+        "ERROR t01: file_write is both in must_call and forbidden",
+        "ERROR t02: code_exec is both in may_call and forbidden",
+        "ERROR t03: rag_ask is both in must_call and forbidden",
+    ]
+
+
+def test_tasks_mode_keeps_outside_services_out_of_must_call(tmp_path, capsys):
+    rows = [
+        task("t01", "docs", must_call=[{"tool": "web_search"}]),
+        task("t02", "docs", must_call=[{"tool": ["rag_search", "web_search"]}]),
+        task("t03", "docs", forbidden=[]),
+    ]
+    code, out = run(capsys, write_rows(tmp_path / "t.jsonl", rows), "--tasks")
+    assert code == 1
+    assert errors(out) == [
+        "ERROR t01: must_call[0]: web_search reaches an outside service, so no task needs it",
+        "ERROR t02: must_call[0]: web_search reaches an outside service, so no task needs it",
+        "ERROR t03: forbidden doesn't list api_call, which every task forbids",
+    ]
+
+
+def test_tasks_mode_checks_written_rubrics(tmp_path, capsys):
+    def criterion(cid: str, critical: bool = True) -> dict:
+        return {"id": cid, "description": "Names UV_CACHE_DIR", "critical": critical}
+
+    rows = [
+        task("t01", "docs", rubric=[criterion("c1"), criterion("c2", critical=False)]),
+        task("t02", "docs", rubric=[criterion("c1"), criterion("c1")]),
+        task("t03", "docs", rubric=[criterion("c1", critical=False)]),
+        task("t04", "docs"),
+    ]
+    code, out = run(capsys, write_rows(tmp_path / "t.jsonl", rows), "--tasks")
+    assert code == 1
+    assert errors(out) == [
+        "ERROR t02: rubric: criterion id 'c1' is used 2 times",
+        "ERROR t03: rubric: no critical criterion, so the task can't be scored",
+    ]
+    assert "WARN  rubrics: 1 of 4 tasks have none yet" in out
+    assert "rubrics: 3 of 4 written, 5 criteria (3 critical)" in out
 
 
 def test_tasks_mode_reports_bad_rows(tmp_path, capsys):
@@ -334,3 +431,4 @@ def test_the_committed_files_are_valid(capsys):
     root = Path(__file__).parent.parent
     assert main([str(root / "golden" / "golden_set.jsonl")]) == 0
     assert main([str(root / "tasks" / "agent_tasks.jsonl"), "--tasks"]) == 0
+    assert main([str(root / "tasks" / "smoke_tasks.jsonl"), "--tasks"]) == 0

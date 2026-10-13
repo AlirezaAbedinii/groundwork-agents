@@ -116,6 +116,23 @@ class FaithfulnessVerdict(_Strict):
 
 # --- agent tasks --------------------------------------------------------------------
 
+# The tools a task can name, each with the argument names of its input schema: the
+# agent's six local tools (services/agent/src/orchestrator/tools/) and the RAG
+# service's three MCP tools, which the agent registers with a rag_ prefix
+# (mcp/server.py). eval/ reaches the services over HTTP only, so this is a copy:
+# keep it in sync with those files.
+AGENT_TOOLS: dict[str, frozenset[str]] = {
+    "web_search": frozenset({"query", "max_results"}),
+    "api_call": frozenset({"method", "url", "json_body"}),
+    "db_query": frozenset({"sql", "max_rows"}),
+    "code_exec": frozenset({"code", "timeout_s"}),
+    "file_read": frozenset({"path"}),
+    "file_write": frozenset({"path", "content"}),
+    "rag_search": frozenset({"query", "top_k", "mode"}),
+    "rag_ask": frozenset({"question", "mode", "top_k"}),
+    "rag_list_sources": frozenset(),
+}
+
 
 class RubricCriterion(_Strict):
     id: str
@@ -124,13 +141,37 @@ class RubricCriterion(_Strict):
 
 
 class ExpectedCall(_Strict):
-    """A call the task needs: a successful call to `tool` whose arguments contain `args`."""
+    """A call the task needs: a successful call to `tool` whose arguments contain `args`.
 
-    tool: str
+    `tool` may list alternatives, any one of which will do: ``["rag_search", "rag_ask"]``
+    requires that the agent consulted the docs without prescribing how.
+    """
+
+    tool: str | list[str]
     args: dict[str, str | int | float | bool] = {}
+
+    @field_validator("tool")
+    @classmethod
+    def _alternatives(cls, v: str | list[str]) -> str | list[str]:
+        if isinstance(v, list) and (len(v) < 2 or len(set(v)) < len(v)):
+            raise ValueError("alternatives are 2 or more different tools (one tool is a string)")
+        return v
+
+    @property
+    def tools(self) -> tuple[str, ...]:
+        """The tools that can satisfy this entry."""
+        return (self.tool,) if isinstance(self.tool, str) else tuple(self.tool)
 
 
 class AgentTask(_Strict):
+    """A request for the agent, with what its tool calls and its output are judged on.
+
+    Tool calls are scored from the invocation log: `must_call` lists the calls the task
+    needs, `may_call` the tools it may also use without losing precision, and
+    `forbidden` the tools it must not touch. The `rubric` is for the task judge, which
+    sees only the outputs.
+    """
+
     id: str
     request: str
     category: str
