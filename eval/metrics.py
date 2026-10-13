@@ -12,6 +12,7 @@ Conventions every function follows:
 - **Undefined is None, not 0.0**: a ratio with a zero denominator is None, which the
   reports print as "n/a" and leave out of means.
 - **Bad input raises ValueError** instead of producing a number that looks valid.
+- **Fail closed**: a criterion the judge's verdict leaves out has failed.
 """
 
 from __future__ import annotations
@@ -19,7 +20,17 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from schemas import PRF, CorrectnessVerdict, FaithfulnessVerdict, SweepPoint
+from schemas import (
+    PRF,
+    AgentTask,
+    CorrectnessVerdict,
+    ExpectedCall,
+    FaithfulnessVerdict,
+    SweepPoint,
+    TaskVerdict,
+    ToolCall,
+    ToolCallScores,
+)
 
 # One entry per ranked hit, best first: the evidence items (indexes into the question's
 # evidence list) that the hit covers.
@@ -241,3 +252,82 @@ def faithfulness_score(verdict: FaithfulnessVerdict) -> float | None:
     faithful about: counting it as 1.0 would let refusals inflate the mean.
     """
     return _ratio(sum(c.supported for c in verdict.claims), len(verdict.claims))
+
+
+# --- agents -------------------------------------------------------------------------
+# Tool calls come from the agent's invocation log (the trajectory); task verdicts come
+# from the rubric judge, which sees only the outputs (the outcome).
+
+
+def _same(expected: object, actual: object) -> bool:
+    # Equal and of the same type: "3" isn't 3, 3.0 isn't 3, and True isn't 1 (a bool is
+    # an int to ==), so a task's args mean exactly what they say.
+    return type(expected) is type(actual) and expected == actual
+
+
+def _meets(call: ToolCall, entry: ExpectedCall) -> bool:
+    """A successful call to one of the entry's tools, with every one of its args."""
+    return (
+        call.status == "success"
+        and call.tool_name in entry.tools
+        and all(k in call.arguments and _same(v, call.arguments[k]) for k, v in entry.args.items())
+    )
+
+
+def tool_call_scores(calls: Sequence[ToolCall], task: AgentTask) -> ToolCallScores:
+    """How the run used its tools, scored from the invocation log.
+
+    - must_call_recall: the share of the task's ``must_call`` entries that some
+      successful call met: a call to the entry's tool (or one of its alternatives)
+      whose arguments contain the entry's ``args``. A failed, rejected or rate-limited
+      call meets nothing: the work it stands for didn't happen. None when the task
+      requires no call.
+    - precision: the share of calls that went to a tool the task names, in
+      ``must_call`` (every alternative counts) or ``may_call``, whatever their status.
+      It rewards choosing the right tools and penalizes detours; how the calls went is
+      the error rate's business.
+    - error_rate: the share of calls that didn't succeed (failure, rejected or
+      rate_limited).
+    - forbidden_calls: calls to a forbidden tool at any status, since attempting one is
+      the mistake.
+
+    Precision and the error rate are None for a run that made no calls.
+    """
+    named = {tool for entry in task.must_call for tool in entry.tools} | set(task.may_call)
+    met = sum(any(_meets(call, entry) for call in calls) for entry in task.must_call)
+    return ToolCallScores(
+        must_call_recall=_ratio(met, len(task.must_call)),
+        precision=_ratio(sum(c.tool_name in named for c in calls), len(calls)),
+        error_rate=_ratio(sum(c.status != "success" for c in calls), len(calls)),
+        forbidden_calls=sum(c.tool_name in task.forbidden for c in calls),
+        n_calls=len(calls),
+    )
+
+
+def criteria_passed(verdict: TaskVerdict, task: AgentTask) -> dict[str, bool]:
+    """Whether each of the task's rubric criteria passed, by id, failing closed.
+
+    A criterion the verdict leaves out failed, and one it lists more than once passed
+    only if every entry for it did. Entries for ids that aren't in the rubric are
+    ignored. The report's per-criterion pass rates come from here too, so they follow
+    the same rule as ``task_success``.
+    """
+    entries: dict[str, list[bool]] = {}
+    for c in verdict.criteria:
+        entries.setdefault(c.id, []).append(c.passed)
+    return {c.id: bool(entries.get(c.id)) and all(entries[c.id]) for c in task.rubric}
+
+
+def task_success(verdict: TaskVerdict, task: AgentTask) -> bool:
+    """True iff every critical criterion passed: the task's outcome, judged from its outputs.
+
+    Non-critical criteria never fail a task; the report shows their pass rate instead. A
+    critical criterion missing from the verdict counts as failed, so a judge that skips
+    one can't pass the task. Raises ValueError for a task without a critical criterion:
+    "every critical criterion passed" would then be true of any run, so it couldn't fail.
+    """
+    critical = [c.id for c in task.rubric if c.critical]
+    if not critical:
+        raise ValueError(f"task {task.id} has no critical criterion, so it can't be scored")
+    passed = criteria_passed(verdict, task)
+    return all(passed[cid] for cid in critical)
