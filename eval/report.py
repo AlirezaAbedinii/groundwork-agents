@@ -528,3 +528,222 @@ def write_rag(records: list[dict], scores: dict, out: Path, *, with_records: boo
         path.write_text(text, encoding="utf-8")
         written.append(path)
     return written
+
+
+# --- agent evaluation ---------------------------------------------------------------
+
+
+def _secs(x: float | None) -> str:
+    return "n/a" if x is None else f"{x:,.1f} s"
+
+
+def _rate_text(r: dict) -> str:
+    return "n/a" if r["rate"] is None else f"{_ci(r['rate'], r['ci'])} ({r['k']}/{r['n']})"
+
+
+def _yes(flag: bool) -> str:
+    return "yes" if flag else "no"
+
+
+def _agent_provenance(header: dict, scores: dict, labels: list[str]) -> list[str]:
+    info = header["labels"]
+
+    def row(name: str, value) -> list[str]:
+        return [name, *(value(info[label], scores["labels"][label]) for label in labels)]
+
+    rows = [
+        row("collected", lambda i, s: i["collected"]),
+        row("supervisor", lambda i, s: f"`{i['config']['models']['supervisor']}`"),
+        row("specialists", lambda i, s: f"`{i['config']['models']['specialist']}`"),
+        row("reviewer, as routed", lambda i, s: f"`{i['config']['models']['reviewer']}`"),
+        row("reviewer policy", lambda i, s: f"`{i['config']['reviewer_provider']}`"),
+        row("memory", lambda i, s: f"`{i['config']['models']['memory']}`"),
+        row("MOCK_LLM", lambda i, s: _yes(i["config"]["mock_llm"])),
+        row("rag_* tools", lambda i, s: _yes(i["config"]["mcp_rag"])),
+        row(
+            "tasks",
+            lambda i, s: (
+                f"{s['n']} from `{i['tasks']['file']}` (sha256 `{i['tasks']['sha256'][:12]}`)"
+            ),
+        ),
+        row("task judge", lambda i, s: ", ".join(f"`{j}`" for j in i["judges"]) or "none"),
+        row(
+            "spend: agent, judge",
+            lambda i, s: (
+                f"none (notional {_money(s['cost_total'])}), {_money(s['judge_cost'])}"
+                if i["config"]["mock_llm"]
+                else f"{_money(s['cost_total'])}, {_money(s['judge_cost'])}"
+            ),
+        ),
+    ]
+    return _table(["", *labels], rows)
+
+
+def _agent_results(scores: dict, labels: list[str]) -> list[str]:
+    per = scores["labels"]
+
+    def row(name: str, value) -> list[str]:
+        return [name, *(value(per[label]) for label in labels)]
+
+    rows = [
+        row("task success", lambda s: _rate_text(s["success"])),
+        row("completed", lambda s: f"{s['completed']['k']}/{s['completed']['n']}"),
+        row("tool-call must-call recall", lambda s: _f(s["must_call_recall"])),
+        row("tool-call precision", lambda s: _f(s["precision"])),
+        row("tool-call error rate", lambda s: _f(s["error_rate"])),
+        row("tool calls per task", lambda s: _f(s["calls_per_task"])),
+        row(
+            "forbidden calls",
+            lambda s: f"{s['forbidden_calls']} ({s['tasks_with_forbidden_calls']} tasks)",
+        ),
+        row("cost per task", lambda s: _money(s["cost_per_task"])),
+        row("cost per completed task", lambda s: _money(s["cost_per_completed_task"])),
+        row("wall-clock per task", lambda s: _secs(s["wall_clock_per_task"])),
+        row("wall-clock per completed task", lambda s: _secs(s["wall_clock_per_completed_task"])),
+        row("escalations", lambda s: f"{s['escalations']} ({s['tasks_escalated']} tasks)"),
+        row("approvals given", lambda s: str(s["approvals"])),
+        row(
+            "reviewer mean score",
+            lambda s: (
+                "n/a"
+                if s["review_score_mean"] is None
+                else f"{s['review_score_mean']:.2f} ({s['reviewed_subtasks']} subtasks)"
+            ),
+        ),
+        row(
+            "rework rate",
+            lambda s: (
+                "n/a"
+                if s["rework_rate"] is None
+                else f"{s['rework_rate']:.3f} ({s['subtasks']} subtasks)"
+            ),
+        ),
+        row("non-critical criteria passed", lambda s: _rate_text(s["non_critical"])),
+    ]
+    return _table(["", *labels], rows)
+
+
+def _agent_tasks(scores: dict, label: str) -> list[str]:
+    rows = []
+    for p in scores["tasks"][label]:
+        success = "n/a" if p["success"] is None else ("pass" if p["success"] else "fail")
+        rows.append(
+            [
+                p["id"],
+                p["category"],
+                p["outcome"],
+                success,
+                _f(p["must_call_recall"]),
+                _f(p["precision"]),
+                _f(p["error_rate"]),
+                str(p["forbidden_calls"]),
+                _money(p["cost_usd"]),
+                _secs(p["wall_clock_s"]),
+                str(p["escalations"]),
+                f"`{p['agent_task_id']}`",
+            ]
+        )
+    header = ["task", "category", "outcome", "success", "must-call recall", "precision"]
+    header += ["error rate", "forbidden", "cost", "wall-clock", "escalations", "agent task"]
+    return _table(header, rows)
+
+
+def agent_markdown(header: dict, scores: dict) -> str:
+    labels = list(header["labels"])
+    lines = [
+        "# Agent evaluation",
+        "",
+        f"Run `{header['run_id']}`. Each task runs once per label through the agent API, "
+        "under a user of its own so that no task's memories reach another's plan. Tool calls "
+        "are scored from the agent's invocation log; the outcome comes from a rubric judge "
+        "that sees only the outputs: the final answer, the files the run wrote and, when a "
+        "criterion asks about the work as a whole, what each subtask reported.",
+        "",
+        "## Provenance",
+        "",
+        *_agent_provenance(header, scores, labels),
+    ]
+    if mocked := [label for label in labels if header["labels"][label]["config"]["mock_llm"]]:
+        lines += [
+            "",
+            f"**{', '.join(mocked)}: the agent ran on MOCK_LLM**, replaying recorded replies. "
+            "It prices them like the models they stand in for, so the costs below are "
+            "notional: nothing was spent.",
+        ]
+    for label in labels:
+        info = header["labels"][label]
+        if info["missing"]:
+            lines += ["", f"**{label}: {info['missing']} tasks have no record** (an API error)."]
+        if info["unjudged"]:
+            lines += [
+                "",
+                f"**{label}: {info['unjudged']} completed tasks have no verdict** and are left "
+                "out of task success.",
+            ]
+    lines += [
+        "",
+        "## Results",
+        "",
+        *_agent_results(scores, labels),
+        "",
+        "Task success is over every task run, with a 95 % Wilson interval: a task that didn't "
+        "complete fails without a judge call, and one that did succeeds when every critical "
+        "criterion passed. Tool-call ratios are means over tasks, each task counting once: "
+        "must-call recall is the share of required calls that a successful call made; "
+        "precision the share of calls to tools the task names; the error rate the share that "
+        "failed, were rejected or were rate limited. Cost is the agent's LLM spend plus what "
+        "`rag_ask` spent in the RAG service; the judge's spend is not in it. \"Per completed "
+        'task" means are over the tasks that completed. Escalations are the approvals the '
+        "agent asked for; the harness approves each one (at most 5 per task). The reviewer's "
+        "mean score is over the subtasks it scored, and the rework rate is the share of "
+        "subtasks run more than once.",
+    ]
+    if pair := scores["cross_vs_same"]:
+        only_cross = ", ".join(pair["only_first"]) or "none"
+        only_same = ", ".join(pair["only_second"]) or "none"
+        lines += [
+            "",
+            "## Cross vs same reviewer",
+            "",
+            f"On the {pair['n']} tasks judged under both labels: {pair['both']} succeeded under "
+            f"both, {pair['neither']} under neither; only with the cross-provider reviewer: "
+            f"{only_cross}; only with the same-provider reviewer: {only_same}.",
+        ]
+    categories = sorted({c for label in labels for c in scores["labels"][label]["by_category"]})
+    by = [
+        [
+            c,
+            *(
+                _rate_text(scores["labels"][label]["by_category"].get(c, {"rate": None}))
+                for label in labels
+            ),
+        ]
+        for c in categories
+    ]
+    lines += ["", "## Task success by category", "", *_table(["category", *labels], by)]
+    for label in labels:
+        lines += ["", f"## Per task: {label}", "", *_agent_tasks(scores, label)]
+    return "\n".join(lines) + "\n"
+
+
+def write_agent(records: list[dict], scores: dict, out: Path, *, with_records: bool) -> list[Path]:
+    """Write agent.md, agent.json and (from a run) the records."""
+    header = records[0]
+    out.mkdir(parents=True, exist_ok=True)
+    files = {
+        "agent.md": agent_markdown(header, scores),
+        "agent.json": json.dumps(
+            _rounded({"run": header, "scores": scores}), indent=2, sort_keys=True
+        )
+        + "\n",
+    }
+    if with_records:
+        files["agent-records.jsonl"] = "".join(
+            json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n" for record in records
+        )
+    written = []
+    for name, text in files.items():
+        path = out / name
+        path.write_text(text, encoding="utf-8")
+        written.append(path)
+    return written

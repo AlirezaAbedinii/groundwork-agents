@@ -28,6 +28,7 @@ both services over HTTP only, so it measures what actually runs.
 | `rag_eval.py` | Collects searches from the RAG API into `runs/` and scores them: retrieval, snippet size, the refusal gate |
 | `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
 | `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
+| `agent_eval.py` | Runs agent tasks through the agent API into `runs/` and scores them: task success from the rubric judge, tool calls from the invocation log, cost and wall-clock |
 | `tasks/` | Agent evaluation tasks, plus two keyless smoke tasks that replay the agent's recorded test fixtures |
 
 ```bash
@@ -42,4 +43,12 @@ uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
 .venv/bin/python -m rag_eval collect --stage answers --rag http://localhost:8000 --run-id my-run \
   --max-cost-usd 1.00                                          # paid: generation + judge
 .venv/bin/python -m rag_eval score --run-id my-run              # -> runs/my-run/report/
+# Agent tasks: one label per reviewer policy (cross or same), each against a matching agent
+.venv/bin/python -m agent_eval run --label cross --run-id my-run --max-cost-usd 1.50  # paid
+.venv/bin/python -m agent_eval score --run-id my-run            # -> runs/my-run/report/
 ```
+
+The agent smoke is free: start the agent API in inline mode with `MOCK_LLM=1`, a migrated
+and seeded database and `MCP_RAG_URL` pointing at the RAG stack's MCP server, then run
+`make eval-agent-smoke` from the repository root. It replays the agent's recorded test
+fixtures for the two tasks in `tasks/smoke_tasks.jsonl` and judges them with the fake judge.

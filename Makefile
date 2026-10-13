@@ -10,10 +10,11 @@ RAG_PYTHON := $(if $(wildcard services/rag/.venv/bin/),PYTHON=.venv/bin/python,)
 AGENT_PYTHON := $(if $(wildcard services/agent/.venv/bin/),.venv/bin/python,python)
 MCP_PYTHON := $(if $(wildcard mcp/.venv/bin/),.venv/bin/python,python)
 EVAL_PYTHON := $(if $(wildcard eval/.venv/bin/),.venv/bin/python,python)
+AGENT_URL ?= http://localhost:8080
 
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
-	test-eval e2e-agent eval-score
+	test-eval e2e-agent eval-score eval-agent-smoke
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -54,3 +55,14 @@ eval-score: ## Re-score the published evaluation from its committed records ($0,
 	@cd eval && if [ -f reports/rag-records.jsonl ]; then \
 		$(EVAL_PYTHON) -m rag_eval score --records reports/rag-records.jsonl; \
 	else echo "no published RAG records yet (eval/reports/rag-records.jsonl)"; fi
+	@cd eval && if [ -f reports/agent-records.jsonl ]; then \
+		$(EVAL_PYTHON) -m agent_eval score --records reports/agent-records.jsonl; \
+	else echo "no published agent records yet (eval/reports/agent-records.jsonl)"; fi
+
+# Needs the agent API at AGENT_URL in inline mode with MOCK_LLM=1, a migrated and seeded
+# database, and MCP_RAG_URL pointing at the RAG stack's MCP server (see eval/README.md).
+eval-agent-smoke: ## Run the 2 smoke tasks against a local MOCK_LLM agent ($0) into eval/runs/agent-smoke.
+	cd eval && rm -rf runs/agent-smoke && \
+		$(EVAL_PYTHON) -m agent_eval run --tasks tasks/smoke_tasks.jsonl --label smoke \
+			--run-id agent-smoke --agent $(AGENT_URL) --judge fake --max-cost-usd 0 && \
+		$(EVAL_PYTHON) -m agent_eval score --run-id agent-smoke
