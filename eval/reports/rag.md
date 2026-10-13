@@ -149,4 +149,11 @@ Spend in this run: RAG $0.0297, judge $0.5533 (a cached verdict costs nothing).
 
 ### Judge agreement with a human
 
-No human grades for this run yet.
+30 rated answers graded pass or fail by a person who didn't see the judge's verdict: raw agreement 0.933, Cohen's κ 0.830. With this few items, κ is a coarse check.
+
+Where they disagree (the judge passes a rating of 4 or 5):
+
+| id | mode | category | judge rating | judge | person | person's note |
+|---|---|---|---|---|---|---|
+| q019 | dense | multi_hop | 4 | pass | fail | it is not complete, the explanation on the uv cache prune command |
+| s024 | hybrid | lookup | 2 | fail | pass | - |

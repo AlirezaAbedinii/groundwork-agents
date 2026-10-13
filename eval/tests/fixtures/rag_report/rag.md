@@ -1,6 +1,6 @@
 # RAG evaluation
 
-Run `run1`, collected 2026-10-07. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
+Run `run1`, collected 2026-10-13. Collection `fixture`: 5 chunks (fixed, 800 characters, 120 overlap), embedded with `fake-embedder`. Hybrid mode adds BM25 and a cross-encoder reranker to the dense search.
 
 Golden set: 6 questions (sha256 `e7cebdd625e7`): lookup 3, multi_hop 1, no_answer 2; synthetic 2, targeted 4.
 
@@ -8,7 +8,7 @@ Each stage records the service's settings when it starts, and every stage of a r
 
 |  | retrieval | answers |
 |---|---|---|
-| collected | 2026-10-07 | 2026-10-07 |
+| collected | 2026-10-13 | 2026-10-13 |
 | `top_k` asked for | 10 | 5 |
 | refusal thresholds (dense / hybrid) | 0.3 / 0.3 | 0.3 / 0.3 |
 | generator | `gpt-4o-mini` (openai) | `gpt-4o-mini` (openai) |
@@ -136,3 +136,9 @@ Spend in this run: RAG $0.0031, judge $0.0000 (a cached verdict costs nothing).
 ### Judge agreement with a human
 
 2 rated answers graded pass or fail by a person who didn't see the judge's verdict: raw agreement 0.500, Cohen's κ 0.000. With this few items, κ is a coarse check.
+
+Where they disagree (the judge passes a rating of 4 or 5):
+
+| id | mode | category | judge rating | judge | person | person's note |
+|---|---|---|---|---|---|---|
+| s002 | hybrid | lookup | 2 | fail | pass | - |

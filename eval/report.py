@@ -459,6 +459,28 @@ def _answers_section(header: dict, scores: dict) -> list[str]:
             f"judge's verdict: raw agreement {agreement['raw']:.3f}, Cohen's κ {kappa}. With "
             "this few items, κ is a coarse check."
         )
+        disagreements = agreement.get("disagreements", [])
+        if disagreements:
+            lines += [
+                "",
+                "Where they disagree (the judge passes a rating of 4 or 5):",
+                "",
+                *_table(
+                    ["id", "mode", "category", "judge rating", "judge", "person", "person's note"],
+                    [
+                        [
+                            d["id"],
+                            d["mode"],
+                            d["category"],
+                            str(d["rating"]),
+                            "pass" if d["judge_pass"] else "fail",
+                            "pass" if d["human_pass"] else "fail",
+                            d["note"].replace("|", "\\|") or "-",
+                        ]
+                        for d in disagreements
+                    ],
+                ),
+            ]
     else:
         lines.append("No human grades for this run yet.")
     return lines

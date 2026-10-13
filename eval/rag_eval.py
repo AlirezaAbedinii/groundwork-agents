@@ -392,6 +392,7 @@ def _answer_record(q: GoldenQuestion, mode: str, raw: dict, grade: dict | None) 
         "judge_cost_usd": sum(e["cost_usd"] for e in (correctness, faithfulness) if e),
         "judges": sorted({_judge_id(e) for e in (correctness, faithfulness) if e}),
         "human_pass": grade["pass"] if grade else None,
+        "human_note": grade.get("note", "") if grade else None,
     }
 
 
@@ -729,6 +730,21 @@ def score_answers(header: dict, rows: list[dict]) -> dict:
         "n": len(graded),
         "raw": _mean([j == h for j, h in zip(judge, human, strict=True)]),
         "kappa": metrics.cohens_kappa(judge, human) if graded else None,
+        "disagreements": [
+            {
+                "id": r["id"],
+                "mode": r["mode"],
+                "category": r["category"],
+                "rating": r["rating"],
+                "judge_pass": j,
+                "human_pass": h,
+                "note": r.get("human_note") or "",
+            }
+            for r, j, h in sorted(
+                zip(graded, judge, human, strict=True), key=lambda t: (t[0]["mode"], t[0]["id"])
+            )
+            if j != h
+        ],
     }
     return scores
 

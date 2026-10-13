@@ -611,12 +611,25 @@ def test_kappa_against_human_grades_of_the_same_answers(tmp_path, golden):
             "note": "",
         }
     )
+    rows[3]["note"] = "misses the 422 | part"  # hybrid q002, where the person fails it
     grades.write_text("".join(json.dumps(r) + "\n" for r in rows))
     _, scores = answers_scored(tmp_path, golden, grades)
     agreement = scores["answers"]["agreement"]
     assert agreement["n"] == 6
     assert agreement["raw"] == pytest.approx(4 / 6)
     assert agreement["kappa"] == pytest.approx(0.25)
+    # The two disagreements, by mode then id, with the person's note.
+    assert [
+        (d["id"], d["mode"], d["rating"], d["judge_pass"], d["human_pass"], d["note"])
+        for d in agreement["disagreements"]
+    ] == [
+        ("s001", "dense", 3, False, True, ""),
+        ("q002", "hybrid", 4, True, False, "misses the 422 | part"),
+    ]
+    score_run(tmp_path, golden, tmp_path / "out", grades=grades)
+    report_md = (tmp_path / "out" / "rag.md").read_text()
+    assert "| q002 | hybrid | multi_hop | 4 | pass | fail | misses the 422 \\| part |" in report_md
+    assert "| s001 | dense | lookup | 3 | fail | pass | - |" in report_md
 
 
 # --- the threshold to configure -----------------------------------------------------

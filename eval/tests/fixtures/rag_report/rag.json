@@ -1,7 +1,7 @@
 {
   "run": {
     "answers": {
-      "collected": "2026-10-07",
+      "collected": "2026-10-13",
       "config": {
         "citation_verification": false,
         "collection": "fixture",
@@ -36,7 +36,7 @@
       "top_k": 5,
       "unjudged": 0
     },
-    "collected": "2026-10-07",
+    "collected": "2026-10-13",
     "config": {
       "citation_verification": false,
       "collection": "fixture",
@@ -75,7 +75,7 @@
     },
     "record": "run",
     "retrieval": {
-      "collected": "2026-10-07",
+      "collected": "2026-10-13",
       "config": {
         "citation_verification": false,
         "collection": "fixture",
@@ -111,6 +111,17 @@
   "scores": {
     "answers": {
       "agreement": {
+        "disagreements": [
+          {
+            "category": "lookup",
+            "human_pass": true,
+            "id": "s002",
+            "judge_pass": false,
+            "mode": "hybrid",
+            "note": "",
+            "rating": 2
+          }
+        ],
         "kappa": 0.0,
         "n": 2,
         "raw": 0.5

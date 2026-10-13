@@ -112,9 +112,29 @@
   "scores": {
     "answers": {
       "agreement": {
-        "kappa": null,
-        "n": 0,
-        "raw": null
+        "disagreements": [
+          {
+            "category": "multi_hop",
+            "human_pass": false,
+            "id": "q019",
+            "judge_pass": true,
+            "mode": "dense",
+            "note": "it is not complete, the explanation on the uv cache prune command",
+            "rating": 4
+          },
+          {
+            "category": "lookup",
+            "human_pass": true,
+            "id": "s024",
+            "judge_pass": false,
+            "mode": "hybrid",
+            "note": "",
+            "rating": 2
+          }
+        ],
+        "kappa": 0.829545,
+        "n": 30,
+        "raw": 0.933333
       },
       "modes": {
         "dense": {

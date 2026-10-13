@@ -1,0 +1,30 @@
+{"id": "q016", "mode": "dense", "answer_sha": "5b706673620762b2", "pass": true, "note": "Answer is more detailed than the reference on the first part, good if faithful, bad otherwise", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s001", "mode": "dense", "answer_sha": "3175e2c6411ced4f", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q020", "mode": "hybrid", "answer_sha": "fbb12247e4ba30db", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s018", "mode": "dense", "answer_sha": "11b1769eceff6c74", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s007", "mode": "dense", "answer_sha": "06ea1c8333070fbd", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s016", "mode": "hybrid", "answer_sha": "9349ce3bcd7824ca", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s004", "mode": "hybrid", "answer_sha": "8864b4d5a406d7c3", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s011", "mode": "dense", "answer_sha": "e61ee304da34855e", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s006", "mode": "dense", "answer_sha": "670536437f06ed9d", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q006", "mode": "hybrid", "answer_sha": "de192b3d79d4ac47", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s025", "mode": "hybrid", "answer_sha": "b033b1da3f1d20f2", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q026", "mode": "hybrid", "answer_sha": "324e9695ae7c5d97", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s023", "mode": "hybrid", "answer_sha": "f9ffc4f4974e97ba", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q014", "mode": "hybrid", "answer_sha": "44a539dd2f1e9612", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q005", "mode": "hybrid", "answer_sha": "0ba3955e8f873567", "pass": false, "note": "The answer is different and propose another approach. If its correct, then it should pass. However, if it is wrong then fails. The reference presents a simpler approach. Pssing or failing this question depends on whether the proposed answers is correct or not. Even if it is correct, the reference shows a simpler approach!", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q049", "mode": "dense", "answer_sha": "5621759930f99cba", "pass": false, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s022", "mode": "dense", "answer_sha": "964f6b2d68bcdfc4", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s002", "mode": "dense", "answer_sha": "0f8565378514570b", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q046", "mode": "hybrid", "answer_sha": "e47ecc41ba3485bd", "pass": false, "note": "Kind of the same things without mentioning the difference between uv and Pydantic, not a complete failure", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q015", "mode": "dense", "answer_sha": "0cb39876f090cf4d", "pass": false, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q047", "mode": "hybrid", "answer_sha": "3549dacf5c50cad7", "pass": false, "note": "The provided answer do not include the information about uv. Based on the reference, it is a fail. However, since the user didn't explicitly ask about extras in uv the response is not a complete failure. The question is ambigous. It depends on how to assign fail and pass. It can be both a failure and a pass", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q022", "mode": "hybrid", "answer_sha": "a4b20a9059e89ffe", "pass": false, "note": "It can be true as well. Only based on reference, it is false though. It needs a fact check", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s009", "mode": "dense", "answer_sha": "0eafee2cbef475ea", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s003", "mode": "hybrid", "answer_sha": "4457ec10af7a883f", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s018", "mode": "hybrid", "answer_sha": "11b1769eceff6c74", "pass": true, "note": "This looks redundant. I see this question before\u001b[D\u001b[D\u001b[D\u001b[D\u001b[D\u001b[", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q019", "mode": "dense", "answer_sha": "0babd1696d5efb7f", "pass": false, "note": "it is not complete, the explanation on the uv cache prune command", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q022", "mode": "dense", "answer_sha": "1910c75d8a23efdd", "pass": false, "note": "answered this question before as well", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q023", "mode": "dense", "answer_sha": "722a8a9484dcbf7a", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "q002", "mode": "dense", "answer_sha": "5bcecba18f74992c", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
+{"id": "s024", "mode": "hybrid", "answer_sha": "6d11e970efb3912c", "pass": true, "note": "", "run_id": "2026-10-06-openai", "graded_on": "2026-10-13"}
