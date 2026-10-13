@@ -5,6 +5,7 @@ pin the judge's mechanics and not the wording of any prompt.
 """
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import anthropic
@@ -14,10 +15,18 @@ import openai
 import pytest
 
 from budget import Budget, BudgetExceeded
-from judge import Judge, cache_key, render_contexts
+from judge import (
+    Judge,
+    SubtaskOutput,
+    cache_key,
+    criterion_subject,
+    render_contexts,
+    render_task_outputs,
+)
 from judge_fake import FakeJudge
 from llm import LLMError
 from schemas import (
+    AgentTask,
     ClaimVerdict,
     Context,
     CorrectnessVerdict,
@@ -343,3 +352,65 @@ def test_the_fake_follows_its_script_and_checks_inputs_like_the_judge():
     assert fake.correctness("q", "yes", "no").rating == 2
     with pytest.raises(ValueError):
         fake.faithfulness([], "a")
+
+
+# --- what the task judge sees besides the final output -------------------------------
+
+
+def agent_task(*descriptions: str) -> AgentTask:
+    return AgentTask(
+        id="t01",
+        request="Look it up in the docs and write notes.md",
+        category="docs",
+        must_call=[
+            {"tool": ["rag_search", "rag_ask"]},
+            {"tool": "file_write", "args": {"path": "notes.md"}},
+        ],
+        rubric=[{"id": f"c{i}", "description": d} for i, d in enumerate(descriptions, 1)],
+    )
+
+
+REPORTS = [SubtaskOutput("s1", "research", "Look it up", "UV_CACHE_DIR moves the cache.")]
+
+
+def test_a_criterion_is_about_the_answer_a_written_file_or_anything():
+    task = agent_task("The answer names UV_CACHE_DIR.", "`notes.md` names UV_CACHE_DIR.")
+    assert [criterion_subject(c, task) for c in task.rubric] == ["answer", "notes.md"]
+    # a file the task doesn't write, or no subject at all: any output may meet it
+    for text in ("`other.md` names UV_CACHE_DIR.", "Names UV_CACHE_DIR."):
+        assert criterion_subject(agent_task(text).rubric[0], task) is None
+
+
+def test_subtask_reports_stay_out_when_every_criterion_names_a_deliverable():
+    task = agent_task("`notes.md` names UV_CACHE_DIR.", "The answer says where the note is.")
+    shown = render_task_outputs(task, {"notes.md": "Set UV_CACHE_DIR."}, REPORTS)
+    assert shown == '<file path="notes.md">\nSet UV_CACHE_DIR.\n</file>'
+
+
+def test_subtask_reports_come_after_the_files_when_a_criterion_needs_them():
+    task = agent_task("`notes.md` names UV_CACHE_DIR.", "Says why the cache matters.")
+    shown = render_task_outputs(task, {"notes.md": "Set UV_CACHE_DIR."}, REPORTS)
+    assert shown == (
+        '<file path="notes.md">\nSet UV_CACHE_DIR.\n</file>\n\n'
+        '<subtask id="s1" specialist="research">\nTask: Look it up\nOutput:\n'
+        "UV_CACHE_DIR moves the cache.\n</subtask>"
+    )
+
+
+def test_nothing_to_show_says_so():
+    assert render_task_outputs(agent_task("The answer names it."), {}, REPORTS) == "(none)"
+
+
+def test_the_suite_is_judged_on_deliverables_and_the_smoke_tasks_on_any_output():
+    tasks = Path(__file__).parent.parent / "tasks"
+
+    def load(name: str) -> list[AgentTask]:
+        lines = (tasks / name).read_text(encoding="utf-8").splitlines()
+        return [AgentTask.model_validate_json(line) for line in lines if line]
+
+    # every criterion of the suite names the answer or a file its task writes, so the
+    # judge never sees the subtask reports there; the smoke criteria name neither
+    for task in load("agent_tasks.jsonl"):
+        assert all(criterion_subject(c, task) is not None for c in task.rubric), task.id
+    for task in load("smoke_tasks.jsonl"):
+        assert all(criterion_subject(c, task) is None for c in task.rubric), task.id

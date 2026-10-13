@@ -17,15 +17,22 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, get_args
+from typing import Any, NamedTuple, get_args
 
 from pydantic import BaseModel, ValidationError
 
 from budget import Budget
 from llm import LLM, Provider
-from schemas import Context, CorrectnessVerdict, FaithfulnessVerdict, RubricCriterion, TaskVerdict
+from schemas import (
+    AgentTask,
+    Context,
+    CorrectnessVerdict,
+    FaithfulnessVerdict,
+    RubricCriterion,
+    TaskVerdict,
+)
 
 DEFAULT_PROVIDER: Provider = "anthropic"
 DEFAULT_MODEL = "claude-haiku-4-5"
@@ -58,6 +65,56 @@ def render_criteria(criteria: Sequence[RubricCriterion]) -> str:
     """One ``- id: description`` line per criterion. Whether a criterion is critical is a
     scoring rule, so the judge doesn't see it and grades each one on its own."""
     return "\n".join(f"- {c.id}: {c.description}" for c in criteria)
+
+
+class SubtaskOutput(NamedTuple):
+    """What one subtask of an agent run reported, as the task judge may see it."""
+
+    subtask: str  # the plan's id, e.g. "s1"
+    specialist: str
+    task: str  # the subtask's description
+    output: str
+
+
+def required_files(task: AgentTask) -> list[str]:
+    """The paths the task requires the agent to write (`file_write` entries with a path)."""
+    return [
+        entry.args["path"]
+        for entry in task.must_call
+        if entry.tools == ("file_write",) and isinstance(entry.args.get("path"), str)
+    ]
+
+
+def criterion_subject(criterion: RubricCriterion, task: AgentTask) -> str | None:
+    """What a criterion is about: "answer" when it starts with "The answer" (the final
+    output), a path when it starts with a file the task writes, written `like.this`, or
+    None when it names neither and any output may meet it."""
+    if criterion.description.startswith("The answer"):
+        return "answer"
+    paths = required_files(task)
+    return next((p for p in paths if criterion.description.startswith(f"`{p}`")), None)
+
+
+def render_task_outputs(
+    task: AgentTask, files: Mapping[str, str], subtasks: Sequence[SubtaskOutput]
+) -> str:
+    """Everything the task judge sees besides the final output: each file the run wrote,
+    labelled with its path, then what each subtask reported, but only if a criterion
+    needs it.
+
+    A criterion about a deliverable is judged on that deliverable alone, and a judge that
+    can read a subtask report stating what the deliverable left out credits the
+    deliverable anyway. So the reports are shown only when some criterion names neither a
+    file nor the answer.
+    """
+    blocks = [f'<file path="{path}">\n{content}\n</file>' for path, content in files.items()]
+    if any(criterion_subject(c, task) is None for c in task.rubric):
+        blocks += [
+            f'<subtask id="{s.subtask}" specialist="{s.specialist}">\n'
+            f"Task: {s.task}\nOutput:\n{s.output}\n</subtask>"
+            for s in subtasks
+        ]
+    return "\n\n".join(blocks) or "(none)"
 
 
 def cache_key(provider: str, model: str, prompt_version: str, system: str, user: str) -> str:

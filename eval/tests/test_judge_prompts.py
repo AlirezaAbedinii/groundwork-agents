@@ -69,6 +69,14 @@ def test_faithfulness_never_mentions_the_reference_answer():
     assert "reference" not in text.lower()
 
 
+@_no_task_templates
+def test_the_task_judge_is_not_told_which_criteria_are_critical():
+    # Criticality is a scoring rule (metrics.task_success), so every criterion is judged
+    # the same way; the criteria reach the judge without it.
+    text = judge_prompts.TASK_SYSTEM + judge_prompts.TASK_USER
+    assert "critical" not in text.lower()
+
+
 @pytest.mark.parametrize("rating", range(1, 6))
 def test_the_correctness_scale_defines_every_rating(rating):
     # Each level of the 1-5 scale starts its own line ("5: ...", "- **5** ..."), so a
