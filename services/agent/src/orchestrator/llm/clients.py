@@ -54,7 +54,8 @@ class RealLLMClient:
         if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
 
-            return ChatAnthropic(model=model, api_key=settings.anthropic_api_key, temperature=0)
+            # No temperature: current Claude models reject sampling parameters with a 400.
+            return ChatAnthropic(model=model, api_key=settings.anthropic_api_key)
         raise ValueError(f"Unknown provider {provider!r}")
 
     async def chat(

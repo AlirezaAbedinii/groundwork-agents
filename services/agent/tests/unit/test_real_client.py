@@ -4,6 +4,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, Field
 
+from orchestrator.config import get_settings
 from orchestrator.llm import clients
 from orchestrator.llm.clients import RealLLMClient
 from orchestrator.llm.mock import ToolCall
@@ -113,3 +114,19 @@ async def test_chat_parsing_error_becomes_structured_output_error(stub):
         await RealLLMClient().chat("supervisor", _MESSAGES, output_schema=_Verdict)
     assert "_Verdict" in str(excinfo.value)
     assert "score must be <= 5" in str(excinfo.value)
+
+
+def test_claude_requests_carry_no_temperature_and_openai_requests_keep_zero(monkeypatch):
+    # Current Claude models reject sampling parameters (400), so Anthropic requests omit
+    # temperature; OpenAI requests keep temperature 0. Payloads only, nothing is sent.
+    settings = get_settings()
+    monkeypatch.setattr(settings, "openai_api_key", "sk-test")
+    monkeypatch.setattr(settings, "anthropic_api_key", "sk-ant-test")
+    RealLLMClient._chat_model.cache_clear()
+    try:
+        claude = RealLLMClient._chat_model("anthropic", "claude-sonnet-5")
+        assert "temperature" not in claude._get_request_payload([HumanMessage(content="hi")])
+        gpt = RealLLMClient._chat_model("openai", "gpt-4o")
+        assert gpt._get_request_payload([HumanMessage(content="hi")])["temperature"] == 0
+    finally:
+        RealLLMClient._chat_model.cache_clear()
