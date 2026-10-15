@@ -250,7 +250,9 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 ```bash
 curl localhost:8080/traces/<task_id>            # span tree + full llm calls
 curl localhost:8080/traces/<task_id>/costs      # tokens, tools, wall clock, dollars
+curl localhost:8080/traces/<task_id>/tools      # every tool call: status, arguments, output, error
 curl localhost:8080/traces/aggregates/costs     # the four cross-task rollups
+curl localhost:8080/config                      # models as routed, reviewer policy, run mode (no secrets)
 curl -X POST localhost:8080/replay/<task_id> -H "Content-Type: application/json" \
   -d '{}'                                       # deterministic replay (zero API calls)
 curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
@@ -282,7 +284,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 |---|---|---|
 | 0 | Project scaffolding, config, infra containers | ✅ Done |
 | 1 | Agent hierarchy, task decomposition, tool registry, LangGraph state machine | ✅ Done |
-| 2 | Working memory (Redis) + long-term semantic memory (ChromaDB, since moved to Postgres with pgvector) with retrieval, consolidation, expiration | ✅ Done |
+| 2 | Working memory (Redis) + long-term semantic memory (now in Postgres with pgvector) with retrieval, consolidation, expiration | ✅ Done |
 | 3 | Human-in-the-loop: escalation triggers, approval queue on graph interrupts, review UI | ✅ Done |
 | 4 | Execution tracing, trace explorer, cost tracking, replay/fork/compare | ✅ Done |
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
@@ -401,7 +403,7 @@ tests/
 
 The full reasoning lives in [docs/architecture.md](docs/architecture.md); the headlines:
 
-- **Reviewer on a different provider than the producer.** If the same model both writes and grades an answer, systematic blind spots go uncaught. The router forces the reviewer onto the other configured provider.
+- **Reviewer on a different provider than the producer.** If the same model both writes and grades an answer, systematic blind spots go uncaught. The router forces the reviewer onto the other configured provider; `REVIEWER_PROVIDER=same` keeps it on the producer's provider instead, so the two policies can be compared on the same tasks. [The evaluation](../../eval/README.md) did: the cross-provider reviewer was far stricter (mean score 3.30 against 4.36, three times the escalations) and rejected invented data the same-provider reviewer approved, at 2.4 times the cost per task.
 - **Plans are validated, not trusted.** Subtask ids, dependency resolution, and cycle detection (topological sort via Kahn's algorithm) are checked before a plan is scheduled; an invalid plan gets one retry with the validation error fed back to the model, then fails the task rather than executing a broken graph.
 - **Sandboxed code execution.** `code_exec` runs in a container with no network access and capped CPU/memory/pids/time — a specialist can compute, not exfiltrate or DoS the host.
 - **Postgres checkpointer from day one.** Human-in-the-loop needs to pause a running graph and resume it later; building on LangGraph's checkpointer early avoided a state-management rewrite when that landed.
@@ -420,6 +422,7 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 - **`MOCK_LLM=1` (default for a keyless checkout): $0.** Fixtures play through the production path and carry realistic token counts, so the cost dashboards still show real numbers (the showcase task reports ≈ $0.015).
 - **`make demo` with real keys:** the warm-up + showcase pair is roughly 35–45 LLM calls — `gpt-4o` for planning/synthesis, `gpt-4o-mini` for the specialists and memory extraction, `claude-sonnet` for ~10 reviews — typically **$0.10–$0.30 per full run**, dominated by search-result verbosity in the specialist prompts.
 - **Replays: $0 by construction** — recorded responses only, no fallback client.
+- **Measured on the evaluation's tasks:** $0.081 per task with the cross-provider reviewer (`claude-sonnet-5`, which writes the longest reviews) and $0.034 with the same-provider one (`gpt-4o`); the reviewer is most of the difference ([report](../../eval/reports/agent.md)).
 - Every run's actual spend is on `GET /traces/<task_id>/costs` and the 💰 Costs tab; prices come from a static per-MTok table in [`llm/pricing.py`](src/orchestrator/llm/pricing.py).
 
 ## Limitations & next steps
@@ -430,17 +433,17 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 - **No authentication or multi-tenancy.** `user_id` is honor-system, and both UIs are unauthenticated — this is a portfolio system, not a hosted product.
 - **Poll-based progress.** No token streaming or push updates; clients and the demo script poll task state.
 - **Sandbox needs the Docker socket.** In the composed stack `code_exec` launches sibling containers via the host engine — isolated from the network but a trusted-host assumption; a rootless runtime (gVisor/Firecracker) would harden it.
-- **Five built-in tools, no MCP adapter yet.** The registry is custom; an MCP adapter is the natural next tool-ecosystem step.
+- **The planner doesn't know which specialist holds which tool.** The evaluation found database lookups planned for the research specialist, which has no `db_query`; an approved escalation then retries the same specialist, so the task loops until someone stops approving. Research also prefers `rag_search` snippets to `rag_ask` answers, and simple requests get split into about five subtasks ([findings](../../eval/README.md#findings)).
 - **Replay comparison is a step table.** Side-by-side with divergence highlighting — deliberately not a graphical graph-diff.
 - **Heuristic memory management.** Consolidation/expiration use embedding similarity, access counts, and recency — no learned relevance model.
 
 **Next steps**
 
-1. MCP adapter so specialists can use external tool servers alongside the built-in registry.
+1. Act on the evaluation's findings: give the planner each specialist's tools, let an approved escalation reassign a subtask, and steer research to `rag_ask` when it needs an answer rather than a source; the harness measures the change for a few dollars.
 2. Screenshots + the <5-minute demo recording (shot list in [docs/architecture.md](docs/architecture.md)).
 3. SSE/WebSocket progress streaming for the UIs and demo script.
 4. AuthN + per-tenant memory namespaces.
-5. An eval harness scoring plan quality and reviewer calibration across fixture corpora.
+5. An isolated reviewer benchmark with planted flaws, to measure reviewer calibration apart from the rest of the task.
 
 ## License
 

@@ -13,6 +13,7 @@ supersedes it.
 | [0005](0005-pgvector-over-chroma.md) | Postgres with pgvector instead of Chroma | accepted |
 | [0006](0006-evaluation-harness-and-judge.md) | One evaluation suite over HTTP, evidence-quote labels and a judge from another provider | accepted |
 | [0007](0007-refusal-threshold-calibration.md) | Refusal thresholds calibrated per retrieval mode on held-out questions | accepted |
+| [0008](0008-agent-evaluation.md) | Agent tasks scored on their deliverables and their invocation log | accepted |
 
 ## Format
 

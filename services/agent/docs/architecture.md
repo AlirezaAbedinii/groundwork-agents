@@ -70,7 +70,7 @@ Two run modes share every line of orchestration code:
 | Layer | Agent | Responsibility | Default model |
 |---|---|---|---|
 | 1 | **Supervisor** | Retrieves memories, creates the execution plan, delegates, synthesizes the final deliverable | `openai:gpt-4o` |
-| 2 | **Research** | Web research, source gathering (`web_search`, `api_call`) | `openai:gpt-4o-mini` |
+| 2 | **Research** | Web research, internal documentation, source gathering (`web_search`, `api_call`, and the `rag_*` tools when MCP is on) | `openai:gpt-4o-mini` |
 | 2 | **Analysis** | Data extraction & computation (`db_query`, `code_exec`, files) | `openai:gpt-4o-mini` |
 | 2 | **Writing** | Drafts, summaries, memos (files) | `openai:gpt-4o-mini` |
 | 2 | **Code** | Writes and runs code (`code_exec`, files) | `openai:gpt-4o-mini` |
@@ -81,7 +81,9 @@ Routing lives in one place (`llm/router.py`): agents call
 providers. The reviewer's
 route depends on the *producer's* provider — an OpenAI-produced deliverable is
 reviewed by Anthropic and vice versa — so a provider-wide blind spot can't
-grade its own homework. Specialists are a prompt-role plus a tool allowlist,
+grade its own homework. `REVIEWER_PROVIDER=same` turns that off (the reviewer stays
+on the producer's provider, at its default model) so the two policies can be
+measured against each other; `GET /config` shows the models as routed. Specialists are a prompt-role plus a tool allowlist,
 which is why adding a fifth specialist is a ~30-line change.
 
 ## The task graph
@@ -218,6 +220,7 @@ agent / tool / memory / gate code
        └─ custom SpanExporter → Postgres `spans` table
             ├─ `llm_calls` table: full prompt, response and tool calls per call, FK to span
             ├─ trace explorer (Streamlit) reads via /traces API
+            ├─ GET /traces/{id}/tools: the tool invocation log (status, arguments, output)
             └─ cost report joins llm_calls × static price table + tool invocations
                                         + approval review times
 ```
@@ -266,7 +269,11 @@ doesn't produce false divergences.
    errors; routing the reviewer to the other provider makes the quality gate
    an independent measurement. Cost: a second provider dependency —
    worthwhile because the reviewer is the only agent whose judgment gates
-   everything else.
+   everything else. Measured on 13 evaluation tasks: the cross-provider reviewer
+   scored lower, sent back more work and rejected invented data that a
+   same-provider reviewer approved, at 2.4 times the cost per task; task success
+   was the same (1/13), because most failures started in planning
+   ([evaluation](../../../eval/README.md)).
 2. **Validated plans over trusted plans.** Native structured output (JSON
    schema, strict on OpenAI) fixes the plan's shape; Pydantic then checks what
    a schema cannot — unique ids, known dependencies, no cycles (Kahn's

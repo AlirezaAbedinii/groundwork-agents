@@ -22,18 +22,26 @@ from two services:
 Both services run locally, each with its own tests and measured results (see
 their READMEs). The agents reach the retrieval service over MCP: its search and
 question answering are tools the research specialist can call, under the same
-permissions, rate limits and tracing as its other tools. Still in progress: one
-evaluation suite that measures the whole system, and Terraform that deploys it
-to Azure.
+permissions, rate limits and tracing as its other tools. One evaluation suite
+measures both services over their APIs, with every published number recomputable
+for free from committed records. Still in progress: Terraform that deploys the
+system to Azure.
+
+**Results** ([details](eval/README.md)): on a 75-question golden set over the uv,
+Pydantic and FastAPI docs, retrieval finds 76 % of the needed facts in the top 10
+and 67–69 % of answers are correct, with every unanswerable question refused; a
+blind human check agrees with the judge at κ 0.83. On 13 agent tasks, success is
+1/13 under either reviewer policy: the evaluation traces the failures to planning
+and research, not to review.
 
 ## Layout
 
 | Path | Contents |
 |---|---|
-| [`services/rag`](services/rag/README.md) | Retrieval service: ingestion, hybrid search, reranking, API, UI, evaluation harness |
+| [`services/rag`](services/rag/README.md) | Retrieval service: ingestion, hybrid search over Postgres with pgvector, reranking, API, UI |
 | [`services/agent`](services/agent/README.md) | Agent service: supervisor and specialist agents, tools, approvals, tracing, API, UIs |
 | [`mcp/`](mcp/README.md) | MCP server: the retrieval service's search, ask and list_sources as tools |
-| [`eval/`](eval/README.md) | Evaluation across both services (planned) |
+| [`eval/`](eval/README.md) | Evaluation across both services: retrieval, answers, refusals and agent tasks, with published reports |
 | [`infra/`](infra/README.md) | Terraform for Azure (planned) |
 | [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
 
@@ -68,8 +76,8 @@ MCP on port 8001) and set `MCP_RAG_URL` in `services/agent/.env`; its
 `.env.example` shows the values.
 
 The service READMEs cover endpoints, configuration and local development.
-`make test` at the repository root runs all three test suites: both services
-and the MCP server.
+`make test` at the repository root runs all four test suites: both services,
+the MCP server and the evaluation suite.
 
 ## Roadmap
 
@@ -78,7 +86,7 @@ and the MCP server.
 | 0 | Two services with tests and CI, brought into one repository | done |
 | 1 | Native tool calling and structured outputs in the agent loop | done |
 | 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | done |
-| 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | planned |
+| 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | done |
 | 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | planned |
 | 5 | Results, screenshots and a recorded demo | planned |
 

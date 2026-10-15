@@ -1,8 +1,9 @@
 # Demo Storyboard (< 4 minutes)
 
 Scene-by-scene script for the demo video. All five beats are recordable
-against the current build; voiceover numbers are from the 2026-07-07 eval run
-(`eval/reports/comparison.md`) — re-check them against the latest report
+against the current build on the small Ferry corpus. The voiceover's evaluation
+numbers come from the docs-corpus evaluation in [`eval/`](../../eval/README.md)
+([report](../../eval/reports/rag.md)); re-check them against the latest report
 before recording.
 
 ## Prep checklist (before recording)
@@ -16,8 +17,9 @@ before recording.
 - [ ] Ask each scripted question once off-camera so responses are warm and the
       stats panel has data; then **reset the trace store** (delete
       `data/traces.sqlite`, restart API) so on-camera stats start clean.
-- [ ] Questions come from the golden set (`eval/golden/golden_set.jsonl`) — the
-      demo shows the *evaluated* behavior, not cherry-picked prompts.
+- [ ] The Ferry questions below show the behaviors the golden set evaluates on
+      the docs corpus (lookup, multi-hop, refusal, exact token); they are demo
+      prompts, not golden questions.
 
 ---
 
@@ -44,14 +46,14 @@ every stage of this system is metered from day one."
 
 **UI tab, dense mode, top-k 5.** Ask, in order:
 
-1. **Lookup** (golden `q001`): *"What does the error code FERRY-429 mean?"*
+1. **Lookup**: *"What does the error code FERRY-429 mean?"*
    **Show:** grounded answer; click a `[n]` citation — it jumps to the exact
    source chunk with its similarity score.
-2. **Multi-hop** (golden `q007`): *"If a job exceeds its execution time, what
+2. **Multi-hop**: *"If a job exceeds its execution time, what
    error is returned and how do I fix it?"*
    **Show:** answer synthesized from **two** documents (error codes +
    configuration), each claim carrying its own citation.
-3. **No-answer** (golden `q013`): *"Does Ferry support deploying workers on
+3. **No-answer**: *"Does Ferry support deploying workers on
    Kubernetes?"*
    **Show:** the structured refusal card — and in the latency/cost panel, the
    generation stage is **absent**: below the confidence threshold the system
@@ -78,7 +80,7 @@ shipping — and the answer's confidence reflects it."
 
 ## Scene 4 — Hybrid vs dense, the exact-token case (2:15 – 3:00)
 
-In the UI, ask golden `q002`: *"What is the default value of
+In the UI, ask *"What is the default value of
 ferry.worker.concurrency?"* in **dense** mode, then flip the toggle to
 **hybrid** and re-ask.
 
@@ -88,9 +90,9 @@ rank change and the answer's citation now hitting the exact configuration table.
 
 **Say:** "Embeddings are great at meaning but blur exact tokens — error codes,
 config keys. Hybrid runs BM25 alongside dense retrieval, fuses the rankings, and
-reranks with a cross-encoder. On our eval suite that lifts answer correctness
-from 0.77 to 0.90 — and it's what makes the refusal gate work: dense-only never
-refused an unanswerable question; hybrid caught 8 of 11."
+reranks with a cross-encoder. On the evaluated docs corpus, with strong
+embeddings, the two modes come out level, so hybrid is cheap insurance for exact
+tokens, and each mode's refusal gate has its own calibrated threshold."
 
 ## Scene 5 — The latency/cost story (3:00 – 3:45)
 
@@ -104,7 +106,7 @@ curl -s localhost:8000/v1/stats | jq
 service rollup — **P50/P95/P99 per stage**, refusal rate, mean cost per query.
 
 **Say:** "Every request logs a full trace — so 'how fast' and 'how much' are
-queries, not guesses: P95 sits around 8 seconds and a query costs about
+queries, not guesses: P95 sits around 5 to 6 seconds and a query costs about
 $0.0002, with the breakdown showing exactly which stage you'd optimize next —
 retrieval is free, the LLM calls dominate." *(Confirm against the live numbers
 on screen while recording.)*
@@ -113,10 +115,12 @@ on screen while recording.)*
 
 **Show:** README header — CI badge green, headline eval numbers.
 
-**Say (§8.4 framing):** "A RAG system with hybrid search — dense plus BM25,
-rank fusion, and reranking — hitting 100% faithfulness and 97.5% citation
-accuracy on a hand-built 53-question golden eval suite, with per-stage latency
-and cost-per-query instrumented end to end."
+**Say:** "A RAG system with hybrid search — dense plus BM25, rank fusion, and
+reranking — that answers 67 to 69 % of a 75-question golden set correctly, with
+91 to 96 % of its claims supported by the passages it cites and every
+unanswerable question refused, as judged by a model from another provider and
+checked against a person, with per-stage latency and cost-per-query instrumented
+end to end."
 
 ---
 

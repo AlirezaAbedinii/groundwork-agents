@@ -18,7 +18,8 @@ SNIPPET_CHARS = 300
 # Measured on the Ferry corpus, worst case: 3 hits of 300 chars come to 1588 chars,
 # 5 hits to 2541 (each hit carries ~160 chars of metadata, and json.dumps turns
 # every non-ASCII character into six). ADR 0004 records the trade-off against
-# 5 hits of 150 chars, to re-check with the Phase 3 evals.
+# 5 hits of 150 chars; the retrieval evaluation kept 3 x 300, since 5 x 150 lost
+# 8 points of hybrid recall on the test split (ADR 0007).
 DEFAULT_TOP_K = 3
 
 # RAG chunk metadata reports "" for a chunk with no section heading.

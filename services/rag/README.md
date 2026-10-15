@@ -7,19 +7,16 @@ The retrieval service of [Groundwork](../../README.md).
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230)](https://github.com/astral-sh/ruff)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Hybrid-search RAG over technical docs: **100% faithfulness** and **97.5%
-> citation accuracy** on a 53-question hand-written eval suite, at
-> **$0.0002/query** with **P95 latency 8.0 s** — and it correctly **refuses**
-> 8/11 questions the corpus can't answer, where dense-only retrieval refused
-> none.
+> Hybrid-search RAG over technical docs. On a 75-question golden set over the uv,
+> Pydantic and FastAPI documentation, **67–69 % of answers are correct** and
+> **0.91–0.96 of their claims are supported** by the passages they cite, as judged
+> by a model from another provider; **every unanswerable question is refused**; a
+> query costs about **$0.0002** with a **P95 of 5–6 s**.
 >
-> Every number in this README was produced by the repo's own evaluation
-> harness ([how to reproduce](#reproducing-the-numbers)) and pasted from its
-> report — measured with `gpt-4o-mini` as both generator and judge, citation
-> verification on, on 2026-07-07. The harness has since moved to a separate
-> judge model that re-verifies every citation itself (see
-> [Evaluation results](#evaluation-results)); these numbers predate that change
-> and will be re-measured.
+> The numbers come from the repository's evaluation suite and its published
+> [report](../../eval/reports/rag.md) (2026-10-06, `text-embedding-3-small`,
+> `gpt-4o-mini`, citation verification on); [`eval/`](../../eval/README.md) explains
+> how they were measured and recomputes them for free.
 
 A production-grade **Retrieval-Augmented Generation** service: it ingests
 multi-format documentation, retrieves the most relevant passages, and generates
@@ -67,34 +64,54 @@ signal that matters, and classical keyword search (BM25) excels. Hybrid retrieva
 runs both, merges the rankings with **Reciprocal Rank Fusion**, and lets a local
 **cross-encoder** rerank the shortlist for precision.
 
-That dense-vs-hybrid gap is this project's central, *measured* claim: the golden
-set deliberately contains exact-token lookups where dense-only retrieval should
-struggle, and the eval harness reports the difference (tables below). Measured
-example: on *"What does FERRY-429 mean?"*, dense-only answered at confidence
-0.56 with one citation flagged unsupported; hybrid answered at 0.90 with every
-citation verified.
+The evaluation puts that claim to the test, and the answer depends on the
+embeddings. With `text-embedding-3-small` on the 3,571-chunk docs corpus, the two
+modes find the same share of the needed facts (Recall@10 0.763 dense, 0.761
+hybrid) and answer about equally well (69 % and 67 % correct; no evidence of a
+difference on 75 questions): strong embeddings already carry the exact tokens.
+Hybrid stays the default because it costs little (BM25 and the reranker run
+locally) and protects the weaker, keyless embedding setup. Its reranker scores
+also feed the refusal gate on a different scale from dense cosine similarity, which
+is why each mode has its own calibrated threshold
+([ADR 0007](../../docs/decisions/0007-refusal-threshold-calibration.md)).
 
 ## Quickstart (60 seconds)
 
-Requires Docker + an OpenAI API key.
+Requires Docker; the default settings use an OpenAI key (keyless below).
 
 ```bash
 git clone https://github.com/AlirezaAbedinii/groundwork-agents.git && cd groundwork-agents/services/rag
 cp .env.example .env                 # put your OPENAI_API_KEY in .env
-docker compose up -d --build         # API :8000, UI :8501, MCP :8001/mcp
-docker compose run --rm seed         # index the sample corpus (idempotent)
+docker compose up -d --build         # Postgres :5433, API :8000, UI :8501, MCP :8001/mcp
+docker compose run --rm seed         # index the sample Ferry corpus (idempotent)
 
 curl -X POST http://localhost:8000/v1/ask \
   -H "Content-Type: application/json" \
-  -d '{"question": "What does FERRY-429 mean?", "mode": "dense", "top_k": 5}'
+  -d '{"question": "What does FERRY-429 mean?", "mode": "hybrid", "top_k": 5}'
 ```
 
 Then open the UI at <http://localhost:8501> or the OpenAPI docs at
 <http://localhost:8000/docs>. The `/v1/ask` response carries the answer, `[n]`
 citations mapped to source chunks, the ranked retrieved contexts, a confidence
-score, token usage, `cost_usd`, and per-stage `timings_ms`. Other endpoints:
-`POST /v1/search` (retrieval only: ranked chunks with scores, nothing generated,
-so no generation key), `POST /v1/ingest`, `GET /v1/documents`, `GET /v1/stats`.
+score, whether and by what it refused (`refused_by`: the gate before generating, or
+the model after reading the contexts), the top retrieval score, token usage,
+`cost_usd`, and per-stage `timings_ms`. Other endpoints: `POST /v1/search`
+(retrieval only: ranked chunks with scores, nothing generated, so no generation
+key), `POST /v1/ingest`, `GET /v1/documents`, `GET /v1/chunks?source_file=…` (a
+document's stored chunks), `GET /v1/config` (the collection, models, thresholds and
+how the index was built; no secrets) and `GET /v1/stats`.
+
+**Keyless:** set `EMBEDDING_PROVIDER=sentence_transformers` and the MiniLM model in
+`.env` (`.env.example` shows the lines); seeding, `/v1/search` and `/v1/documents`
+then need no key, and only `/v1/ask` needs the generation key.
+
+**The evaluation corpus:** `python3 scripts/fetch_corpus.py toolchain_docs` fetches
+the uv, Pydantic and FastAPI docs at the release commits pinned in
+[`corpora/toolchain_docs.json`](corpora/toolchain_docs.json) (253 files, checked by
+hash, never committed); seed them under their own collection with
+`CORPUS_DIR=data/raw/toolchain_docs` and `COLLECTION=…`. Each collection records the
+embedding model that built it, and the API refuses to serve one built by another
+model ([ADR 0005](../../docs/decisions/0005-pgvector-over-chroma.md)).
 
 <details>
 <summary>Local development (only the database in Docker)</summary>
@@ -128,75 +145,29 @@ request here:
 
 ## Evaluation results
 
-Quality is scored by a hand-built **LLM-as-judge** harness over a golden set of
-hand-written Q/A pairs spanning four categories: direct lookups, multi-hop
-questions, questions with **no answer in the corpus** (the system must refuse),
-and ambiguous questions. Ground-truth answers are human-written and verified —
-never LLM-generated.
+The service is evaluated from outside, over its API, by the suite in
+[`eval/`](../../eval/README.md), with a golden set of 75 questions over the docs
+corpus (lookups, multi-hop questions, questions the docs can't answer, and ambiguous
+ones), labelled with verbatim evidence quotes. Answers are judged by
+`claude-haiku-4-5`, from another provider than the generator, and a blind human check
+agrees with the judge at κ 0.83 ([full report](../../eval/reports/rag.md)).
 
-**The judge is not the generator.** Grading uses a separate model
-(`EVAL_JUDGE_MODEL`, default `gpt-4o`) rather than the generation model
-(`gpt-4o-mini`), so the generator never scores its own output. **Citation
-accuracy is judge-verified**: the eval judge re-checks every citation against
-the chunk it cites, using the same claim-vs-source prompt the pipeline uses at
-answer time but a different model. The pipeline's own answer-time verdicts are
-still tallied, as `citation_accuracy_self`, and every report carries both
-numbers so the self-grading gap is visible rather than hidden.
-
-> The tables below were measured **before** that change — `gpt-4o-mini` as
-> both generator and judge, and citation accuracy taken from the pipeline's
-> own verification (what the harness now reports as `citation_accuracy_self`).
-> They are pasted verbatim from the `eval/reports/comparison.md` of that run
-> and will be re-measured with the separate judge; expect the citation numbers
-> in particular to move.
-
-### Hybrid vs dense-only
-
-| Metric | Dense-only | Hybrid (RRF + rerank) |
+| Metric | Dense | Hybrid |
 |---|---|---|
-| Answer correctness (mean) | 0.769 | **0.896** |
-| Faithfulness (mean) | 1.000 | 1.000 |
-| Retrieval relevance | 1.000 | 1.000 |
-| Citation accuracy (pipeline self-check) | 0.932 | **0.975** |
-| Correct refusals (11 no-answer Qs) | 0 / 11 | **8 / 11** |
-| Mean cost / query (USD) | 0.000301 | **0.000196** |
-| P95 total latency (ms) | 7321 | 8025 |
+| Recall@10 (57 answerable questions) | 0.763 | 0.761 |
+| nDCG@10 | 0.661 | 0.655 |
+| Answers correct (75 questions) | 0.693 [0.58, 0.79] | 0.667 [0.55, 0.76] |
+| Faithfulness (supported claims) | 0.910 | 0.963 |
+| Unanswerable questions refused (test split) | 11/11 | 11/11 |
+| Answerable questions refused too (test split) | 6 of 34 | 8 of 34 |
+| Cost per query | $0.00019 | $0.00020 |
+| P50 / P95 latency | 2.3 s / 5.4 s | 2.7 s / 6.2 s |
 
-**What the numbers say.** The headline gap is **refusal behavior**: with
-dense-only retrieval, raw cosine similarity never fell below the confidence
-gate, so the system answered *every* unanswerable question (0/11 correct
-refusals). The hybrid path scores its final chunks with the cross-encoder,
-whose calibrated relevance powers the same gate correctly (8/11) — at the cost
-of one over-refusal on an answerable lookup. That single behavior drives the
-correctness gap (0.769 → 0.896) and, counter-intuitively, makes hybrid
-*cheaper* per query: refusals skip generation and verification entirely, and
-hybrid sends 5 reranked chunks to the LLM where dense sends 10. Retrieval
-relevance saturates at 1.000 for both modes — with a 37-chunk corpus, top-k
-nearly always contains a supporting source — so on a corpus this size the
-discriminating metrics are correctness, refusals, and citation accuracy.
-
-### Chunking strategies (hybrid retrieval)
-
-| Metric | Fixed (800/120) | Recursive | Semantic |
-|---|---|---|---|
-| Answer correctness (mean) | 0.896 | 0.891 | 0.891 |
-| Faithfulness (mean) | 1.000 | 1.000 | 1.000 |
-| Retrieval relevance | 1.000 | 1.000 | 1.000 |
-| Citation accuracy (pipeline self-check) | 0.975 | **0.988** | 0.954 |
-| Mean cost / query (USD) | 0.000196 | 0.000197 | 0.000194 |
-| P95 total latency (ms) | 6748 | 6839 | **5097** |
-
-On this small, well-structured corpus, chunking strategy barely moves quality:
-correctness is within half a point across all three. Recursive edges citation
-accuracy (structure-aligned chunks are easier to cite precisely); semantic cuts
-P95 latency ~24% by producing chunks that pack the prompt tighter. The
-trade-off would sharpen on a larger, messier corpus.
-
-### Reproducing the numbers
-
-The tables above came from this service's own evaluation harness, since retired
-([last version](https://github.com/AlirezaAbedinii/groundwork-agents/tree/940677e9078e4cd4d8a70aecb74f26c8295435d0/services/rag/eval));
-evaluation now lives in [`eval/`](../../eval/README.md) at the repo root.
+Where it falls short: ambiguous questions score 0/6 (the prompt never asks the model
+to name the readings), and hybrid's gate, calibrated where the reranker's scores
+crowd near 1, refuses some answerable questions just below its threshold. The
+tables measured on the earlier seven-file Ferry corpus, with the retired harness,
+are in the [history](https://github.com/AlirezaAbedinii/groundwork-agents/tree/940677e9078e4cd4d8a70aecb74f26c8295435d0/services/rag).
 
 ## Latency & cost
 
@@ -207,28 +178,12 @@ prices) into a SQLite trace store. `GET /v1/stats` serves the rollup —
 **P50/P95/P99 per stage** plus cost totals — and the Streamlit UI shows the same
 per-request panel.
 
-Measured over the 53-question suite in hybrid mode (`gpt-4o-mini`, CPU
-reranker, verification on):
-
-| Stage | P50 (ms) | P95 (ms) | P99 (ms) |
-|---|---|---|---|
-| embed query | 197 | 1158 | 6080 |
-| dense retrieve (Chroma) | 3.3 | 4.0 | 4.4 |
-| sparse retrieve (BM25) | 0.4 | 0.6 | 4.9 |
-| RRF fusion | 0.0 | 0.1 | 0.1 |
-| rerank (cross-encoder, CPU) | 354 | 404 | 9037 |
-| generate | 996 | 1696 | 5011 |
-| verify citations (judge) | 1329 | 4292 | 8946 |
-| **total** | **2773** | **8025** | **15009** |
-
-**Cost per query:** mean **$0.000196** / median **$0.000201** (dense-only:
-mean $0.000301 — see the comparison above for why hybrid is cheaper). The
-entire 5-configuration measurement run — 53 questions × dense, hybrid, and
-three chunking variants, with LLM judging and citation verification — cost
-**$0.0575**. The breakdown shows where the time goes: retrieval is effectively
-free (<5 ms), the local reranker costs ~350 ms of CPU, and the LLM round-trips
-(generation + per-citation verification) dominate — so the optimization lever
-is verification batching, not retrieval.
+Measured in the evaluation's answer run (75 questions per mode, `gpt-4o-mini`,
+citation verification on): P50 2.3 s and P95 5.4 s in dense mode, 2.7 s and 6.2 s
+in hybrid mode, at $0.00019–0.00020 per query. The per-stage breakdown on the earlier Ferry
+corpus put retrieval at a few milliseconds and the CPU reranker at about 350 ms,
+with the LLM round trips (generation, then one verification per citation) taking
+the rest, so batching the verification is the lever, not retrieval.
 
 ## Design decisions
 
@@ -242,11 +197,15 @@ is verification batching, not retrieval.
   LLM spend. The BM25 tokenizer keeps compound tokens (`FERRY-429`,
   `ferry.worker.concurrency`) whole, which is what makes exact-token retrieval
   work.
-- **"I don't know" policy:** if retrieval confidence falls below a threshold
-  (default 0.30), the service returns a structured refusal **before** calling
-  the LLM — no fabrication, no wasted generation cost. Refusing correctly is a
-  *scored* behavior in the golden set — and the measured reason hybrid wins it
-  is that cross-encoder scores are calibrated where raw cosine is not.
+- **"I don't know" policy:** if the top retrieval score falls below the mode's
+  threshold, the service returns a structured refusal **before** calling the
+  LLM: no fabrication, no wasted generation cost. Dense scores are cosine
+  similarities and hybrid scores come from the reranker, so each mode has its own
+  threshold (0.617442 dense, 0.963599 hybrid), chosen on held-out questions for
+  `text-embedding-3-small` and this reranker
+  ([ADR 0007](../../docs/decisions/0007-refusal-threshold-calibration.md)). The model
+  can still decline after reading the contexts, and the response says which one
+  refused.
 - **Citations are verifiable:** answers cite `[n]` against the exact numbered
   context they were generated from; citations pointing outside the retrieved
   set are flagged, and an LLM-as-judge pass confirms each cited chunk actually
@@ -268,10 +227,11 @@ src/rag/
 ├── retrieval/           # dense retrieval + dense/hybrid mode switch
 ├── generation/          # grounded prompt, LLM client, citation parsing
 ├── observability/       # per-stage timers, cost accounting, trace store
-├── api/                 # FastAPI: /v1/ask /v1/search /v1/ingest /v1/documents /v1/stats
+├── api/                 # FastAPI: /v1/ask /v1/search /v1/ingest /v1/documents /v1/chunks /v1/config /v1/stats
 └── pipeline.py          # retrieve → gate → generate → cite
 ui/app.py                # Streamlit front end
-scripts/                 # ingest.py (CLI) + seed.py (sample corpus)
+corpora/                 # pinned manifests of public docs corpora (toolchain_docs.json)
+scripts/                 # ingest.py (CLI), seed.py (index a corpus), fetch_corpus.py (download a pinned corpus)
 tests/                   # deterministic tests (LLM mocked)
 ```
 
