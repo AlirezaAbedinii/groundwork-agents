@@ -1,0 +1,1009 @@
+{
+  "run": {
+    "labels": {
+      "cross": {
+        "collected": "2026-10-14",
+        "config": {
+          "mcp_rag": true,
+          "mock_llm": false,
+          "models": {
+            "memory": "openai:gpt-4o-mini",
+            "reviewer": "anthropic:claude-sonnet-5",
+            "specialist": "openai:gpt-4o-mini",
+            "supervisor": "openai:gpt-4o"
+          },
+          "reviewer_provider": "cross",
+          "run_mode": "inline"
+        },
+        "judges": [
+          "anthropic:claude-haiku-4-5 prompts v2"
+        ],
+        "missing": 0,
+        "tasks": {
+          "file": "agent_tasks.jsonl",
+          "sha256": "d461d3e1cd0e584e4d4901e0dcab658a02b5c09c81eb7d81fa934c4882c95a7a"
+        },
+        "unjudged": 0
+      },
+      "same": {
+        "collected": "2026-10-15",
+        "config": {
+          "mcp_rag": true,
+          "mock_llm": false,
+          "models": {
+            "memory": "openai:gpt-4o-mini",
+            "reviewer": "openai:gpt-4o",
+            "specialist": "openai:gpt-4o-mini",
+            "supervisor": "openai:gpt-4o"
+          },
+          "reviewer_provider": "same",
+          "run_mode": "inline"
+        },
+        "judges": [
+          "anthropic:claude-haiku-4-5 prompts v2"
+        ],
+        "missing": 0,
+        "tasks": {
+          "file": "agent_tasks.jsonl",
+          "sha256": "d461d3e1cd0e584e4d4901e0dcab658a02b5c09c81eb7d81fa934c4882c95a7a"
+        },
+        "unjudged": 0
+      }
+    },
+    "record": "run",
+    "run_id": "2026-10-14-agents"
+  },
+  "scores": {
+    "cross_vs_same": {
+      "both": 0,
+      "n": 13,
+      "neither": 11,
+      "only_first": [
+        "t10"
+      ],
+      "only_second": [
+        "t06"
+      ]
+    },
+    "labels": {
+      "cross": {
+        "approvals": 34,
+        "by_category": {
+          "code": {
+            "ci": [
+              0.094529,
+              0.905471
+            ],
+            "k": 1,
+            "n": 2,
+            "rate": 0.5
+          },
+          "data": {
+            "ci": [
+              0.0,
+              0.561506
+            ],
+            "k": 0,
+            "n": 3,
+            "rate": 0.0
+          },
+          "docs": {
+            "ci": [
+              0.0,
+              0.390343
+            ],
+            "k": 0,
+            "n": 6,
+            "rate": 0.0
+          },
+          "multi": {
+            "ci": [
+              0.0,
+              0.793457
+            ],
+            "k": 0,
+            "n": 1,
+            "rate": 0.0
+          },
+          "no_answer": {
+            "ci": [
+              0.0,
+              0.793457
+            ],
+            "k": 0,
+            "n": 1,
+            "rate": 0.0
+          }
+        },
+        "calls_per_task": 22.846154,
+        "completed": {
+          "ci": [
+            0.291434,
+            0.767942
+          ],
+          "k": 7,
+          "n": 13,
+          "rate": 0.538462
+        },
+        "cost_per_completed_task": 0.077922,
+        "cost_per_task": 0.081434,
+        "cost_total": 1.058641,
+        "error_rate": 0.233291,
+        "escalations": 40,
+        "forbidden_calls": 0,
+        "judge_cost": 0.034732,
+        "must_call_recall": 0.794872,
+        "n": 13,
+        "non_critical": {
+          "ci": [
+            0.094529,
+            0.905471
+          ],
+          "k": 1,
+          "n": 2,
+          "rate": 0.5
+        },
+        "outcomes": {
+          "approval_limit": 6,
+          "completed": 7
+        },
+        "precision": 0.652451,
+        "review_score_mean": 3.301887,
+        "reviewed_subtasks": 53,
+        "rework_rate": 0.25,
+        "subtasks": 68,
+        "success": {
+          "ci": [
+            0.01371,
+            0.333145
+          ],
+          "k": 1,
+          "n": 13,
+          "rate": 0.076923
+        },
+        "tasks_escalated": 8,
+        "tasks_with_forbidden_calls": 0,
+        "unjudged": 0,
+        "wall_clock_per_completed_task": 92.431148,
+        "wall_clock_per_task": 142.80923
+      },
+      "same": {
+        "approvals": 11,
+        "by_category": {
+          "code": {
+            "ci": [
+              0.0,
+              0.657628
+            ],
+            "k": 0,
+            "n": 2,
+            "rate": 0.0
+          },
+          "data": {
+            "ci": [
+              0.0,
+              0.561506
+            ],
+            "k": 0,
+            "n": 3,
+            "rate": 0.0
+          },
+          "docs": {
+            "ci": [
+              0.030053,
+              0.563509
+            ],
+            "k": 1,
+            "n": 6,
+            "rate": 0.166667
+          },
+          "multi": {
+            "ci": [
+              0.0,
+              0.793457
+            ],
+            "k": 0,
+            "n": 1,
+            "rate": 0.0
+          },
+          "no_answer": {
+            "ci": [
+              0.0,
+              0.793457
+            ],
+            "k": 0,
+            "n": 1,
+            "rate": 0.0
+          }
+        },
+        "calls_per_task": 15.923077,
+        "completed": {
+          "ci": [
+            0.577648,
+            0.956743
+          ],
+          "k": 11,
+          "n": 13,
+          "rate": 0.846154
+        },
+        "cost_per_completed_task": 0.03283,
+        "cost_per_task": 0.033762,
+        "cost_total": 0.438906,
+        "error_rate": 0.200278,
+        "escalations": 13,
+        "forbidden_calls": 0,
+        "judge_cost": 0.050029,
+        "must_call_recall": 0.74359,
+        "n": 13,
+        "non_critical": {
+          "ci": [
+            0.300636,
+            0.954414
+          ],
+          "k": 3,
+          "n": 4,
+          "rate": 0.75
+        },
+        "outcomes": {
+          "approval_limit": 2,
+          "completed": 11
+        },
+        "precision": 0.685302,
+        "review_score_mean": 4.358209,
+        "reviewed_subtasks": 67,
+        "rework_rate": 0.070423,
+        "subtasks": 71,
+        "success": {
+          "ci": [
+            0.01371,
+            0.333145
+          ],
+          "k": 1,
+          "n": 13,
+          "rate": 0.076923
+        },
+        "tasks_escalated": 3,
+        "tasks_with_forbidden_calls": 0,
+        "unjudged": 0,
+        "wall_clock_per_completed_task": 47.635655,
+        "wall_clock_per_task": 74.426807
+      }
+    },
+    "tasks": {
+      "cross": [
+        {
+          "agent_task_id": "166c0f3941f2412ab2b43b9c92493032",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.037251,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t01",
+          "judge_cost_usd": 0.004395,
+          "must_call_recall": 1.0,
+          "n_calls": 3,
+          "non_critical": [
+            false
+          ],
+          "outcome": "completed",
+          "precision": 1.0,
+          "review_scores": [
+            3,
+            4,
+            3,
+            4,
+            4
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 66.853242
+        },
+        {
+          "agent_task_id": "fe4770a4510a4f73920d544d9f5260b0",
+          "approvals": 5,
+          "category": "docs",
+          "completed": false,
+          "cost_usd": 0.174618,
+          "error_rate": 0.0,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t02",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 1.0,
+          "n_calls": 11,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.636364,
+          "review_scores": [
+            3,
+            3,
+            3,
+            3,
+            1
+          ],
+          "reworked": 2,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 287.494587
+        },
+        {
+          "agent_task_id": "1d97a298c2954361837a92e94189e464",
+          "approvals": 3,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.119383,
+          "error_rate": 0.0,
+          "escalations": 3,
+          "forbidden_calls": 0,
+          "id": "t03",
+          "judge_cost_usd": 0.006604,
+          "must_call_recall": 1.0,
+          "n_calls": 11,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.909091,
+          "review_scores": [
+            3,
+            3,
+            3,
+            3,
+            3
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 189.787531
+        },
+        {
+          "agent_task_id": "5dad7501e3024f5a9ba2680f8dbf3b26",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.132381,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t04",
+          "judge_cost_usd": 0.00717,
+          "must_call_recall": 1.0,
+          "n_calls": 5,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.6,
+          "review_scores": [
+            3,
+            3,
+            3,
+            3,
+            3,
+            4,
+            3
+          ],
+          "reworked": 3,
+          "subtasks": 7,
+          "success": false,
+          "wall_clock_s": 99.0579
+        },
+        {
+          "agent_task_id": "1bbf456033ad4d4782a0a83244e0bca1",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.061412,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t05",
+          "judge_cost_usd": 0.005508,
+          "must_call_recall": 1.0,
+          "n_calls": 5,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.8,
+          "review_scores": [
+            4,
+            4,
+            3,
+            4,
+            4,
+            4
+          ],
+          "reworked": 1,
+          "subtasks": 6,
+          "success": false,
+          "wall_clock_s": 70.122648
+        },
+        {
+          "agent_task_id": "10149cc4838e42e3899f859a6352f79a",
+          "approvals": 1,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.082899,
+          "error_rate": 0.0,
+          "escalations": 1,
+          "forbidden_calls": 0,
+          "id": "t06",
+          "judge_cost_usd": 0.004948,
+          "must_call_recall": 1.0,
+          "n_calls": 13,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.769231,
+          "review_scores": [
+            3,
+            4,
+            3,
+            3,
+            5
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 107.190169
+        },
+        {
+          "agent_task_id": "82f88eed6993439cbe1c207d2a1dd1ab",
+          "approvals": 5,
+          "category": "data",
+          "completed": false,
+          "cost_usd": 0.04753,
+          "error_rate": 0.475,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t07",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 0.0,
+          "n_calls": 40,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.0,
+          "review_scores": [
+            1
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 131.858495
+        },
+        {
+          "agent_task_id": "a6f3ae2652874fa881d3497e9d61175f",
+          "approvals": 5,
+          "category": "data",
+          "completed": false,
+          "cost_usd": 0.055352,
+          "error_rate": 0.439024,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t08",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 0.0,
+          "n_calls": 41,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.0,
+          "review_scores": [
+            1
+          ],
+          "reworked": 1,
+          "subtasks": 6,
+          "success": false,
+          "wall_clock_s": 115.697816
+        },
+        {
+          "agent_task_id": "913302e74a394c7a9f01a1f1736b84e6",
+          "approvals": 5,
+          "category": "data",
+          "completed": false,
+          "cost_usd": 0.055731,
+          "error_rate": 0.754386,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t09",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 1.0,
+          "n_calls": 57,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.807018,
+          "review_scores": [
+            4,
+            1
+          ],
+          "reworked": 2,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 137.802516
+        },
+        {
+          "agent_task_id": "91ca77fdca64469cbf0990780db8845f",
+          "approvals": 0,
+          "category": "code",
+          "completed": true,
+          "cost_usd": 0.074927,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t10",
+          "judge_cost_usd": 0.002893,
+          "must_call_recall": 1.0,
+          "n_calls": 3,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.333333,
+          "review_scores": [
+            5,
+            5,
+            4,
+            3,
+            3
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": true,
+          "wall_clock_s": 80.381291
+        },
+        {
+          "agent_task_id": "3b0c058e6770440ba0b175aa4e7ee8bf",
+          "approvals": 5,
+          "category": "code",
+          "completed": false,
+          "cost_usd": 0.122006,
+          "error_rate": 0.887097,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t11",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 1.0,
+          "n_calls": 62,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.967742,
+          "review_scores": [
+            4,
+            4,
+            3
+          ],
+          "reworked": 2,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 433.022015
+        },
+        {
+          "agent_task_id": "0d4ee02967774468acafaca35c011389",
+          "approvals": 5,
+          "category": "multi",
+          "completed": false,
+          "cost_usd": 0.057948,
+          "error_rate": 0.477273,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t12",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 0.333333,
+          "n_calls": 44,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.659091,
+          "review_scores": [
+            1,
+            5,
+            4
+          ],
+          "reworked": 2,
+          "subtasks": 4,
+          "success": false,
+          "wall_clock_s": 103.626534
+        },
+        {
+          "agent_task_id": "3c0f8f8852784d56968c55decddfbbbd",
+          "approvals": 0,
+          "category": "no_answer",
+          "completed": true,
+          "cost_usd": 0.037202,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t16",
+          "judge_cost_usd": 0.003214,
+          "must_call_recall": 1.0,
+          "n_calls": 2,
+          "non_critical": [
+            true
+          ],
+          "outcome": "completed",
+          "precision": 1.0,
+          "review_scores": [
+            3,
+            3,
+            4,
+            4,
+            4
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 33.625252
+        }
+      ],
+      "same": [
+        {
+          "agent_task_id": "9fd38b78861c4b3a86987e75e7950bc9",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.02732,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t01",
+          "judge_cost_usd": 0.004355,
+          "must_call_recall": 1.0,
+          "n_calls": 3,
+          "non_critical": [
+            false
+          ],
+          "outcome": "completed",
+          "precision": 1.0,
+          "review_scores": [
+            5,
+            4,
+            4,
+            4,
+            4
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 53.492047
+        },
+        {
+          "agent_task_id": "0f93c3ec222c43b0a29c8042e9b98fac",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.034637,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t02",
+          "judge_cost_usd": 0.005247,
+          "must_call_recall": 1.0,
+          "n_calls": 3,
+          "non_critical": [
+            true
+          ],
+          "outcome": "completed",
+          "precision": 0.666667,
+          "review_scores": [
+            3,
+            5,
+            4,
+            4,
+            5
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 45.297888
+        },
+        {
+          "agent_task_id": "e54343b1cbf14b52a52e0fe052ce2dee",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.041581,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t03",
+          "judge_cost_usd": 0.006374,
+          "must_call_recall": 1.0,
+          "n_calls": 3,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.666667,
+          "review_scores": [
+            5,
+            4,
+            5,
+            5,
+            3
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 61.893666
+        },
+        {
+          "agent_task_id": "a89c605705a14fe7b0a9afe39b0615c2",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.049936,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t04",
+          "judge_cost_usd": 0.005054,
+          "must_call_recall": 0.5,
+          "n_calls": 4,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.75,
+          "review_scores": [
+            5,
+            4,
+            4,
+            5,
+            4,
+            5,
+            5,
+            4
+          ],
+          "reworked": 0,
+          "subtasks": 8,
+          "success": false,
+          "wall_clock_s": 34.612383
+        },
+        {
+          "agent_task_id": "708804790ca74b08afa0d10c3042a7b3",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.031935,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t05",
+          "judge_cost_usd": 0.005335,
+          "must_call_recall": 0.5,
+          "n_calls": 6,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.333333,
+          "review_scores": [
+            4,
+            5,
+            5,
+            5,
+            3
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 48.298213
+        },
+        {
+          "agent_task_id": "1816f0150a5148c6a77f27cfc17f7081",
+          "approvals": 0,
+          "category": "docs",
+          "completed": true,
+          "cost_usd": 0.059611,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t06",
+          "judge_cost_usd": 0.005303,
+          "must_call_recall": 1.0,
+          "n_calls": 11,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.272727,
+          "review_scores": [
+            5,
+            5,
+            5,
+            5,
+            5,
+            5,
+            4,
+            5
+          ],
+          "reworked": 0,
+          "subtasks": 8,
+          "success": true,
+          "wall_clock_s": 105.85432
+        },
+        {
+          "agent_task_id": "0c96c2226d504f2cb48d6369c9ea1776",
+          "approvals": 0,
+          "category": "data",
+          "completed": true,
+          "cost_usd": 0.019884,
+          "error_rate": 0.25,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t07",
+          "judge_cost_usd": 0.00328,
+          "must_call_recall": 0.0,
+          "n_calls": 12,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.25,
+          "review_scores": [
+            4,
+            4,
+            4,
+            5,
+            4
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 36.16491
+        },
+        {
+          "agent_task_id": "21707d2947884a3aad91933655eb6af1",
+          "approvals": 0,
+          "category": "data",
+          "completed": true,
+          "cost_usd": 0.030875,
+          "error_rate": 0.357143,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t08",
+          "judge_cost_usd": 0.003554,
+          "must_call_recall": 0.0,
+          "n_calls": 14,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.714286,
+          "review_scores": [
+            3,
+            4,
+            3,
+            5,
+            4,
+            5
+          ],
+          "reworked": 0,
+          "subtasks": 6,
+          "success": false,
+          "wall_clock_s": 49.630643
+        },
+        {
+          "agent_task_id": "c60e664091ee48bcb6ed761f4a97cfbe",
+          "approvals": 0,
+          "category": "data",
+          "completed": true,
+          "cost_usd": 0.021186,
+          "error_rate": 0.25,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t09",
+          "judge_cost_usd": 0.003147,
+          "must_call_recall": 1.0,
+          "n_calls": 8,
+          "non_critical": [],
+          "outcome": "completed",
+          "precision": 0.75,
+          "review_scores": [
+            4,
+            4,
+            5,
+            5,
+            4
+          ],
+          "reworked": 0,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 29.984402
+        },
+        {
+          "agent_task_id": "c58d5676a0554b31b787cffa02183746",
+          "approvals": 5,
+          "category": "code",
+          "completed": false,
+          "cost_usd": 0.024205,
+          "error_rate": 0.859375,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t10",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 1.0,
+          "n_calls": 64,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.9375,
+          "review_scores": [
+            5,
+            5
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 127.753119
+        },
+        {
+          "agent_task_id": "ad0d37ba3e464cabb2f3319d929a6d60",
+          "approvals": 5,
+          "category": "code",
+          "completed": false,
+          "cost_usd": 0.05357,
+          "error_rate": 0.887097,
+          "escalations": 6,
+          "forbidden_calls": 0,
+          "id": "t11",
+          "judge_cost_usd": 0.0,
+          "must_call_recall": 1.0,
+          "n_calls": 62,
+          "non_critical": [],
+          "outcome": "approval_limit",
+          "precision": 0.967742,
+          "review_scores": [
+            4,
+            4,
+            4
+          ],
+          "reworked": 1,
+          "subtasks": 4,
+          "success": false,
+          "wall_clock_s": 315.803166
+        },
+        {
+          "agent_task_id": "1b8990b8cb664a82a8d20d1f3d590642",
+          "approvals": 1,
+          "category": "multi",
+          "completed": true,
+          "cost_usd": 0.023163,
+          "error_rate": 0.0,
+          "escalations": 1,
+          "forbidden_calls": 0,
+          "id": "t12",
+          "judge_cost_usd": 0.004862,
+          "must_call_recall": 0.666667,
+          "n_calls": 15,
+          "non_critical": [
+            true
+          ],
+          "outcome": "completed",
+          "precision": 0.6,
+          "review_scores": [
+            4,
+            5,
+            4,
+            5,
+            5
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 35.616199
+        },
+        {
+          "agent_task_id": "896d26112cfe4e23adbf07f710e1e6b3",
+          "approvals": 0,
+          "category": "no_answer",
+          "completed": true,
+          "cost_usd": 0.021002,
+          "error_rate": 0.0,
+          "escalations": 0,
+          "forbidden_calls": 0,
+          "id": "t16",
+          "judge_cost_usd": 0.003518,
+          "must_call_recall": 1.0,
+          "n_calls": 2,
+          "non_critical": [
+            true
+          ],
+          "outcome": "completed",
+          "precision": 1.0,
+          "review_scores": [
+            3,
+            3,
+            4,
+            5,
+            4
+          ],
+          "reworked": 1,
+          "subtasks": 5,
+          "success": false,
+          "wall_clock_s": 23.147534
+        }
+      ]
+    }
+  }
+}
