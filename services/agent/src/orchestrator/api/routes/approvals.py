@@ -12,7 +12,7 @@ from pydantic import BaseModel, ValidationError
 from orchestrator.config import get_settings
 from orchestrator.hitl.queue import ApprovalQueue
 from orchestrator.llm.clients import get_llm_client
-from orchestrator.memory.working import WorkingMemory
+from orchestrator.memory.working import get_working_memory
 from orchestrator.planning.schemas import ExecutionPlan
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
@@ -133,7 +133,7 @@ async def chat_about_approval(approval_id: str, body: ChatRequest) -> dict:
         request=values.get("request") or context.get("task", {}).get("request", ""),
         plan=json.dumps(values.get("plan") or context.get("plan"))[:3000],
         subtask_states=json.dumps(context.get("subtask_states", {}))[:1500],
-        working=json.dumps(WorkingMemory().snapshot(task_id))[:2000],
+        working=json.dumps(get_working_memory().snapshot(task_id))[:2000],
         question=body.question,
     )
     answer = (await get_llm_client().chat("hitl", [HumanMessage(content=prompt)])).text

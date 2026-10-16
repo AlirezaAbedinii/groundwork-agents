@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     # Storage
     database_url: str = "postgresql+psycopg://orchestrator:orchestrator@localhost:5432/orchestrator"
     redis_url: str = "redis://localhost:6379/0"
+    # Task working memory: Redis, or a Postgres table where there is no Redis (memory/working.py)
+    working_memory_backend: Literal["redis", "postgres"] = "redis"
 
     # Execution
     run_mode: Literal["inline", "celery"] = "inline"

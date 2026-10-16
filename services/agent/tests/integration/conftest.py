@@ -41,7 +41,7 @@ def _clean_tables(_database):
     with engine.begin() as connection:
         connection.exec_driver_sql(
             "TRUNCATE approvals, tool_invocations, subtasks, plans, tasks, "
-            "memory_events, memories, spans, llm_calls CASCADE"
+            "memory_events, memories, spans, llm_calls, working_memory CASCADE"
         )
     for table in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
         try:

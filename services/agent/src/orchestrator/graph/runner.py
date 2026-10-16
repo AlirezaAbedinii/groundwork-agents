@@ -24,7 +24,7 @@ from orchestrator.graph.checkpointing import open_checkpointer
 from orchestrator.hitl.queue import ApprovalQueue
 from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.longterm import LongTermMemory
-from orchestrator.memory.working import WorkingMemory
+from orchestrator.memory.working import get_working_memory
 from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
 from orchestrator.tools.defaults import add_rag_tools, build_default_registry
 from orchestrator.tools.registry import ToolRegistry
@@ -38,7 +38,7 @@ def _dependencies() -> dict:
     return dict(
         llm=TracedLLMClient(get_llm_client(), calls=DBLLMCallStore()),
         repo=DBTaskRepo(),
-        working=WorkingMemory(),
+        working=get_working_memory(),
         longterm=LongTermMemory(),
         memory_events=MemoryEventStore(),
         approvals=ApprovalQueue(),

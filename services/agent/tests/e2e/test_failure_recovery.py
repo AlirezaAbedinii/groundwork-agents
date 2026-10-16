@@ -42,9 +42,9 @@ def test_forced_failures_retry_then_escalate_without_corrupting_state(client):
     assert escalation["attributes"]["trigger"] == "specialist_double_failure"
 
     # working memory survives the pause — the resume needs it
-    from orchestrator.memory.working import WorkingMemory
+    from orchestrator.memory.working import get_working_memory
 
-    assert WorkingMemory().exists(task_id)
+    assert get_working_memory().exists(task_id)
 
     # human takes over → the task completes with the human output
     rows = client.get("/approvals", params={"status": "pending"}).json()["approvals"]
@@ -67,4 +67,4 @@ def test_forced_failures_retry_then_escalate_without_corrupting_state(client):
     assert bundle["final_output"].startswith("FINAL")
 
     # working memory cleared on completion — nothing leaks
-    assert not WorkingMemory().exists(task_id)
+    assert not get_working_memory().exists(task_id)

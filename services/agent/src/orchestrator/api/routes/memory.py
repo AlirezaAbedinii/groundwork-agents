@@ -9,7 +9,7 @@ from orchestrator.db.repo import MemoryEventStore
 from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.management import consolidate, expire
-from orchestrator.memory.working import WorkingMemory
+from orchestrator.memory.working import get_working_memory
 
 router = APIRouter(prefix="/memory", tags=["memory"])
 
@@ -34,7 +34,7 @@ def memory_dashboard(user_id: str) -> dict:
 def delete_user_memory(user_id: str) -> dict:
     """Purge everything remembered about a user (long-term, working, audit)."""
     long_term_deleted = LongTermMemory().delete_user(user_id)
-    working_cleared = WorkingMemory().clear_user(user_id)
+    working_cleared = get_working_memory().clear_user(user_id)
     events_purged = MemoryEventStore().purge_user(user_id)
     return {
         "user_id": user_id,

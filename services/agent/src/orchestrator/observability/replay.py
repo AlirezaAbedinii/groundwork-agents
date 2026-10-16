@@ -143,7 +143,7 @@ async def run_replay(
     from orchestrator.graph.checkpointing import open_checkpointer
     from orchestrator.hitl.queue import ApprovalQueue
     from orchestrator.llm.clients import get_llm_client
-    from orchestrator.memory.working import WorkingMemory
+    from orchestrator.memory.working import get_working_memory
     from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
     from orchestrator.tools.defaults import build_registry
 
@@ -171,7 +171,7 @@ async def run_replay(
                 registry=await build_registry(DBInvocationStore()),
                 repo=repo,
                 checkpointer=checkpointer,
-                working=WorkingMemory(),
+                working=get_working_memory(),
                 longterm=None,  # replays must not read or write long-term memory
                 memory_events=None,
                 approvals=ApprovalQueue(),

@@ -1,17 +1,20 @@
 """Working memory behaviour and its wiring into the task graph.
 
-Uses the dict-backed InMemoryWorkingMemory (same interface as the Redis
-implementation, which the integration suite exercises against a live server).
+Uses the dict-backed InMemoryWorkingMemory (same interface as the Redis and
+Postgres implementations, which the integration suite exercises against live
+servers).
 """
 
 import json
 
 import pytest
 
+from orchestrator.config import get_settings
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
 from orchestrator.hitl.queue import InMemoryApprovalQueue
 from orchestrator.llm.mock import MockLLMClient
+from orchestrator.memory import working
 from orchestrator.memory.working import InMemoryWorkingMemory
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
@@ -57,6 +60,19 @@ def test_clear_user_only_touches_that_user():
     assert memory.clear_user("alice") == 2
     assert not memory.exists("t1") and not memory.exists("t3")
     assert memory.exists("t2")
+
+
+def test_factory_picks_the_configured_backend(monkeypatch):
+    monkeypatch.setattr(get_settings(), "working_memory_backend", "postgres")
+    assert isinstance(working.get_working_memory(), working.PostgresWorkingMemory)
+    monkeypatch.setattr(get_settings(), "working_memory_backend", "redis")
+    assert isinstance(working.get_working_memory(), working.WorkingMemory)
+
+
+def test_factory_keeps_one_store_per_backend(monkeypatch):
+    # one Redis connection pool per process, not one per request
+    monkeypatch.setattr(get_settings(), "working_memory_backend", "redis")
+    assert working.get_working_memory() is working.get_working_memory()
 
 
 class RecordingWorkingMemory(InMemoryWorkingMemory):

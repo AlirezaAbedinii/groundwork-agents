@@ -8,10 +8,12 @@ from datetime import datetime
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
     JSON,
+    BigInteger,
     Boolean,
     DateTime,
     Float,
     ForeignKey,
+    Identity,
     Index,
     Integer,
     String,
@@ -180,6 +182,25 @@ class MemoryRow(Base):
     # extras such as consolidated_from: what the memory code reads as metadata.
     attributes: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class WorkingMemoryRow(Base):
+    """Task working memory when WORKING_MEMORY_BACKEND=postgres (memory/working.py).
+
+    One row per task and field, as in the Redis hash. An error is a row without a
+    field; errors read back in insertion order (``id``).
+    """
+
+    __tablename__ = "working_memory"
+    # NULLs are distinct in a unique constraint, so a task can hold any number of
+    # error rows. The constraint's index also serves lookups by task_id.
+    __table_args__ = (UniqueConstraint("task_id", "field", name="uq_working_memory_task_field"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    task_id: Mapped[str] = mapped_column(String(32))
+    field: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    value: Mapped[str] = mapped_column(Text)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class ToolInvocation(Base):

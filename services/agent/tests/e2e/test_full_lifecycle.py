@@ -106,6 +106,6 @@ def test_full_lifecycle_demo_scenario(client):
     dashboard = client.get("/memory/users/default").json()
     assert sum(dashboard["counts"].values()) >= 4  # warm-up + demo extractions
 
-    from orchestrator.memory.working import WorkingMemory
+    from orchestrator.memory.working import get_working_memory
 
-    assert not WorkingMemory().exists(task_id)
+    assert not get_working_memory().exists(task_id)
