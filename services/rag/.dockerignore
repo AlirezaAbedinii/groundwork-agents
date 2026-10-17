@@ -13,6 +13,10 @@ __pycache__
 # Generated data — the volume provides these at runtime.
 data/processed
 data/traces.sqlite
+# The evaluation corpus is fetched, not shipped; compose's bind mount gives seed its files.
+data/raw/toolchain_docs*
+# A BM25 index older versions pickled; the index is now built in memory from Postgres.
+data/bm25_index.pkl
 # The index of the retired embedded Chroma store, if a checkout still has one.
 data/chroma
 

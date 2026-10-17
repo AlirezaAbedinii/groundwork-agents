@@ -113,6 +113,14 @@ hash, never committed); seed them under their own collection with
 embedding model that built it, and the API refuses to serve one built by another
 model ([ADR 0005](../../docs/decisions/0005-pgvector-over-chroma.md)).
 
+**The images:** the [Dockerfile](Dockerfile) has two targets. `api` (the API and the
+seeder) runs Python 3.12 with the CPU-only torch build, and pins the libraries that
+decide the reranker's scores in [`docker/constraints.txt`](docker/constraints.txt),
+at the versions the published numbers came from. The cross-encoder is downloaded at
+build time, so a container never fetches it (`HF_HUB_OFFLINE=1` makes that strict).
+`ui` is Streamlit alone, which talks to the API over HTTP. Both run as uid 10001;
+compose runs `api` and `seed` as root, because `./data` is a bind mount.
+
 <details>
 <summary>Local development (only the database in Docker)</summary>
 

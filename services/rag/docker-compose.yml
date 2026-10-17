@@ -28,7 +28,12 @@ services:
       retries: 10
 
   api:
-    build: .
+    build:
+      context: .
+      target: api
+    # The image runs as uid 10001; here it runs as root, because ./data is a bind
+    # mount owned by your host user (holding files that root containers wrote).
+    user: root
     env_file: .env
     environment:
       DATABASE_URL: postgresql://rag:rag@db:5432/rag
@@ -53,8 +58,9 @@ services:
       start_period: 5s
 
   ui:
-    build: .
-    command: streamlit run ui/app.py --server.port 8501 --server.address 0.0.0.0 --server.headless true
+    build:
+      context: .
+      target: ui
     environment:
       RAG_API_URL: http://api:8000
     ports:
@@ -91,7 +97,10 @@ services:
 
   # One-off: `docker compose run --rm seed` indexes the sample corpus.
   seed:
-    build: .
+    build:
+      context: .
+      target: api
+    user: root  # as api: ./data is a bind mount
     profiles: ["seed"]
     command: python scripts/seed.py
     env_file: .env
