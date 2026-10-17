@@ -41,6 +41,8 @@ def build_default_registry(store: InvocationStore) -> ToolRegistry:
         db_query.SPEC,
         api_call.SPEC,
     ):
+        if spec is code_exec.SPEC and get_settings().code_exec_backend == "disabled":
+            continue  # no sandbox to run model-written code in
         registry.register(spec)
     return registry
 

@@ -27,3 +27,18 @@ def test_config_shows_the_routing_and_no_secrets(client, monkeypatch):
 
     monkeypatch.setattr(settings, "reviewer_provider", "same")
     assert client.get("/config").json()["models"]["reviewer"] == "openai:gpt-4o"
+
+
+def test_config_shows_the_backends(client, monkeypatch):
+    from orchestrator.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "working_memory_backend", "redis")
+    monkeypatch.setattr(settings, "code_exec_backend", "docker")
+    body = client.get("/config").json()
+    assert (body["working_memory"], body["code_exec"]) == ("redis", "docker")
+
+    monkeypatch.setattr(settings, "working_memory_backend", "postgres")
+    monkeypatch.setattr(settings, "code_exec_backend", "disabled")
+    body = client.get("/config").json()
+    assert (body["working_memory"], body["code_exec"]) == ("postgres", "disabled")

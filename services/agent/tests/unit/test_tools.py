@@ -46,6 +46,14 @@ def test_code_exec_times_out(ctx):
         code_handle(CodeExecInput(code="import time; time.sleep(5)", timeout_s=1), ctx)
 
 
+def test_code_exec_refuses_when_disabled(ctx, monkeypatch):
+    from orchestrator.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "code_exec_backend", "disabled")
+    with pytest.raises(ToolExecutionError, match="disabled"):
+        code_handle(CodeExecInput(code="print(6 * 7)"), ctx)
+
+
 def test_db_query_rejects_writes(ctx):
     with pytest.raises(ToolExecutionError, match="read-only"):
         db_handle(DbQueryInput(sql="DELETE FROM demo.vector_db_stats"), ctx)

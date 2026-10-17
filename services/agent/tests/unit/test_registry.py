@@ -2,6 +2,7 @@ import pytest
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
 
+from orchestrator.config import get_settings
 from orchestrator.llm.router import SPECIALISTS
 from orchestrator.tools.base import (
     InMemoryInvocationStore,
@@ -143,3 +144,14 @@ def test_default_tools_all_produce_native_definitions():
         assert definition["function"]["parameters"]["required"], name
         # what bind_tools runs on every tool: a well-formed definition passes through unchanged
         assert convert_to_openai_tool(definition) == definition, name
+
+
+def test_disabled_code_exec_leaves_the_tool_out(monkeypatch):
+    monkeypatch.setattr(get_settings(), "code_exec_backend", "disabled")
+    registry = build_default_registry(InMemoryInvocationStore())
+    owned = {specialist: {s.name for s in registry.tools_for(specialist)} for specialist in SPECIALISTS}
+    assert not any("code_exec" in names for names in owned.values())
+    assert owned["analysis"] == {"db_query", "file_read", "file_write"}
+    assert owned["code"] == {"file_read", "file_write"}
+    with pytest.raises(UnknownToolError):
+        registry.invoke("code_exec", {"code": "print(1)"}, _ctx(specialist="code"))

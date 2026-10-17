@@ -3,7 +3,10 @@
 Default backend runs the snippet in a dedicated minimal Docker container with
 no network and CPU/memory/time limits (docker/sandbox.Dockerfile). The
 `subprocess` backend (isolated-mode interpreter with a wall-clock timeout) is
-for environments without Docker — used by the test suite.
+for environments without Docker — used by the test suite. `disabled` leaves the
+tool out of the registry (tools/defaults.py), for deployments with no sandbox:
+there `subprocess` would run model-written code inside the API's own container,
+with its environment (provider keys, database URL) and its network.
 """
 
 from __future__ import annotations
@@ -46,6 +49,9 @@ def _run(command: list[str], code: str, timeout: int, cwd=None) -> CodeExecOutpu
 
 def handle(args: CodeExecInput, ctx: ToolContext) -> CodeExecOutput:
     settings = get_settings()
+    if settings.code_exec_backend == "disabled":
+        # the registry leaves the tool out; this guards a registry built under another setting
+        raise ToolExecutionError("Code execution is disabled in this deployment")
     timeout = args.timeout_s or settings.code_exec_timeout_s
     if settings.code_exec_backend == "docker":
         command = [

@@ -54,7 +54,8 @@ class Settings(BaseSettings):
     workspace_root: Path = Path("task_workspaces")
     max_tool_iterations: int = 5  # model turns per specialist attempt; a parallel batch of tool calls is one turn
     api_call_allowlist: list[str] = ["api.github.com"]
-    code_exec_backend: Literal["docker", "subprocess"] = "docker"
+    # "disabled" leaves code_exec out of the registry: for deployments without a sandbox (tools/code_exec.py)
+    code_exec_backend: Literal["docker", "subprocess", "disabled"] = "docker"
     code_exec_image: str = "orchestrator-sandbox"
     code_exec_timeout_s: int = 20
 
