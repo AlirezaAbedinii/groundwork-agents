@@ -297,7 +297,7 @@ Host-run API in inline mode (no worker needed) for fast iteration:
 
 ```bash
 uv venv --python 3.12 .venv
-uv pip install -e ".[dev]"
+uv pip install -e ".[dev,ui]"   # ui: streamlit, for the two UIs
 
 make infra                        # postgres and redis only
 make migrate && make seed         # schema + demo data

@@ -23,7 +23,7 @@ dependencies = [
     "pgvector>=0.4",
     "pydantic-settings>=2.4",
     "opentelemetry-sdk>=1.27",
-    "streamlit>=1.38",
+    "numpy>=1.26",  # memory consolidation's similarity math (memory/management.py)
     "mcp>=2.2,<3",  # 2.x Client; RAG retrieval tools reach the registry over MCP
 ]
 
@@ -33,6 +33,8 @@ dev = [
     "httpx>=0.27",
     "ruff>=0.4",
 ]
+# The two Streamlit UIs (ui/), run from a local venv; compose builds them from docker/ui.Dockerfile
+ui = ["streamlit>=1.38"]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

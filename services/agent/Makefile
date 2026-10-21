@@ -37,8 +37,8 @@ seed:  ## seed the demo schema used by the db_query tool
 sandbox:  ## build the code-execution sandbox image
 	docker build -t orchestrator-sandbox -f docker/sandbox.Dockerfile docker/
 
-review-ui:  ## human review queue UI (port 8511; 8501 tends to be taken)
+review-ui:  ## human review queue UI (port 8511; 8501 tends to be taken; needs the ui extra)
 	ORCHESTRATOR_API_URL=http://localhost:8080 $(STREAMLIT) run ui/review_app.py --server.port 8511 --server.headless true
 
-trace-ui:  ## trace explorer: span trees, costs, replay (port 8512)
+trace-ui:  ## trace explorer: span trees, costs, replay (port 8512; needs the ui extra)
 	ORCHESTRATOR_API_URL=http://localhost:8080 $(STREAMLIT) run ui/trace_explorer.py --server.port 8512 --server.headless true
