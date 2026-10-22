@@ -181,6 +181,16 @@ class Settings(BaseSettings):
         description="Collection to index into and serve from (one table per collection).",
     )
 
+    # -- Telemetry -----------------------------------------------------------
+    applicationinsights_connection_string: str = Field(
+        default="",
+        description="Application Insights connection string; empty sends no traces "
+        "(observability/telemetry.py, the telemetry extra).",
+    )
+    app_version: str = Field(
+        default="dev", description="service.version on the traces; a deployment sets the image tag."
+    )
+
     # -- Paths (resolved relative to the repo root if not absolute) --------
     data_raw_dir: Path = Field(default=Path("data/raw"), description="Raw documents root.")
     data_processed_dir: Path = Field(

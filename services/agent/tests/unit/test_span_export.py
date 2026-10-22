@@ -7,8 +7,10 @@ sink, so nothing touches the database or other tests' tracing state.
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from orchestrator.observability.tracing import PostgresSpanExporter
+from orchestrator.config import Settings
+from orchestrator.observability.tracing import PostgresSpanExporter, build_provider
 
 
 @pytest.fixture()
@@ -93,3 +95,42 @@ def test_a_task_run_is_its_own_trace_even_inside_a_request_span(capture, monkeyp
     assert set(by_name) == {"task:resume", "tool:web_search"}
     assert by_name["task:resume"]["parent_id"] is None
     assert by_name["tool:web_search"]["parent_id"] == by_name["task:resume"]["id"]
+
+
+def _task_span(provider: TracerProvider, name: str = "tool:web_search") -> None:
+    with provider.get_tracer("test").start_as_current_span(name) as span:
+        span.set_attribute("orchestrator.task_id", "t1")
+
+
+def test_without_a_connection_string_spans_go_to_postgres_only():
+    rows, azure = [], InMemorySpanExporter()
+    provider = build_provider(
+        Settings(_env_file=None), postgres=PostgresSpanExporter(sink=rows.extend), azure_monitor=azure
+    )
+    _task_span(provider)
+    provider.force_flush()
+    assert [row["name"] for row in rows] == ["tool:web_search"]
+    assert azure.get_finished_spans() == ()
+    provider.shutdown()
+
+
+def test_with_a_connection_string_the_same_spans_also_reach_azure_monitor():
+    rows, azure = [], InMemorySpanExporter()
+    provider = build_provider(
+        Settings(_env_file=None, applicationinsights_connection_string="InstrumentationKey=test"),
+        postgres=PostgresSpanExporter(sink=rows.extend),
+        azure_monitor=azure,
+    )
+    with provider.get_tracer("test").start_as_current_span("POST /tasks"):  # a request span: no task id
+        _task_span(provider)
+    provider.force_flush()  # the Azure Monitor processor batches
+    assert [row["name"] for row in rows] == ["tool:web_search"]  # Postgres keeps task spans only
+    assert {span.name for span in azure.get_finished_spans()} == {"POST /tasks", "tool:web_search"}
+    provider.shutdown()
+
+
+def test_the_resource_names_the_service_and_its_version():
+    provider = build_provider(Settings(_env_file=None, app_version="sha-abc1234"), postgres=PostgresSpanExporter(sink=[].extend))
+    assert provider.resource.attributes["service.name"] == "groundwork-agent"
+    assert provider.resource.attributes["service.version"] == "sha-abc1234"
+    provider.shutdown()

@@ -5,6 +5,8 @@ memory retrieval, and escalation becomes a span with custom `orchestrator.*`
 attributes, exported synchronously by a custom SpanExporter into the `spans`
 table (no collector/Jaeger service needed — the trace explorer reads SQL).
 Full LLM prompts/responses are stored in `llm_calls`, referenced by span id.
+With APPLICATIONINSIGHTS_CONNECTION_STRING set, the same provider also batches
+every span (FastAPI's request spans included) to Azure Monitor.
 
 Tracing is opt-in per process: nothing is exported until `setup_tracing()`
 installs the provider (the production runner does; unit tests never do, so
@@ -31,10 +33,16 @@ from opentelemetry import context as otel_context
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import ReadableSpan, TracerProvider
-from opentelemetry.sdk.trace.export import SimpleSpanProcessor, SpanExporter, SpanExportResult
+from opentelemetry.sdk.trace.export import (
+    BatchSpanProcessor,
+    SimpleSpanProcessor,
+    SpanExporter,
+    SpanExportResult,
+)
 from opentelemetry.trace import StatusCode
 from pydantic import BaseModel
 
+from orchestrator.config import Settings, get_settings
 from orchestrator.llm.messages import render_messages
 
 logger = logging.getLogger(__name__)
@@ -104,14 +112,39 @@ class PostgresSpanExporter(SpanExporter):
         return None
 
 
-@lru_cache
-def setup_tracing() -> None:
-    """Install the global tracer provider with the Postgres exporter (idempotent)."""
+def build_provider(
+    settings: Settings,
+    *,
+    postgres: SpanExporter | None = None,
+    azure_monitor: SpanExporter | None = None,
+) -> TracerProvider:
+    """The tracer provider: Postgres always, Azure Monitor when a connection string is set.
+
+    The Postgres exporter writes as each span ends, so the trace explorer sees a
+    run as it happens; the Azure Monitor one batches in the background, so network
+    calls never sit inside a run. Tests pass both exporters in.
+    """
     provider = TracerProvider(
-        resource=Resource.create({"service.name": "agent-orchestration-system"})
+        resource=Resource.create({"service.name": "groundwork-agent", "service.version": settings.app_version})
     )
-    provider.add_span_processor(SimpleSpanProcessor(PostgresSpanExporter()))
+    provider.add_span_processor(SimpleSpanProcessor(postgres or PostgresSpanExporter()))
+    if settings.applicationinsights_connection_string:
+        if azure_monitor is None:
+            from azure.monitor.opentelemetry.exporter import AzureMonitorTraceExporter
+
+            azure_monitor = AzureMonitorTraceExporter(
+                connection_string=settings.applicationinsights_connection_string, tracer_provider=provider
+            )
+        provider.add_span_processor(BatchSpanProcessor(azure_monitor))
+    return provider
+
+
+@lru_cache
+def setup_tracing() -> TracerProvider:
+    """Install the global tracer provider (idempotent) and return it."""
+    provider = build_provider(get_settings())
     trace.set_tracer_provider(provider)
+    return provider
 
 
 # --- span helpers ------------------------------------------------------------

@@ -41,14 +41,16 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# torch first, from the PyTorch CPU index, so nothing installs the CUDA build.
+# torch first, from the PyTorch CPU index, so nothing installs the CUDA build. Its
+# C++ headers (63 MB) only serve compiling extensions, which nothing here does.
 COPY docker/constraints.txt /tmp/constraints.txt
-RUN pip install --index-url https://download.pytorch.org/whl/cpu -c /tmp/constraints.txt torch
+RUN pip install --index-url https://download.pytorch.org/whl/cpu -c /tmp/constraints.txt torch \
+    && rm -rf /usr/local/lib/python3.12/site-packages/torch/include
 
 # Dependencies before the rest of the project, so code edits don't bust this layer.
 COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
-RUN pip install -c /tmp/constraints.txt -e ".[api,ingestion,indexing,llm,rerank]"
+RUN pip install -c /tmp/constraints.txt -e ".[api,ingestion,indexing,llm,rerank,telemetry]"
 
 # The reranker the settings name, into HF_HOME.
 RUN python -c "from sentence_transformers import CrossEncoder; \

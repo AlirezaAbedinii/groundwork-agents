@@ -8,19 +8,21 @@ The app is built by :func:`create_app`, which accepts injectable factories so
 tests can swap the pipeline/retriever/trace store for fakes. Real provider clients are
 constructed **lazily on first use** — importing this module, serving ``/docs``,
 and running ``/health`` all work with no API key configured; a missing key
-surfaces as a clear 503 on the endpoints that need it.
+surfaces as a clear 503 on the endpoints that need it. With a connection string,
+each request is also a span in Application Insights (observability/telemetry.py).
 """
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from typing import TypeVar
+from typing import TYPE_CHECKING, TypeVar
 
 from fastapi import FastAPI, HTTPException
 
 from ..config import ConfigError, Settings, get_settings
 from ..indexing.vector_store import ScoredChunk
 from ..observability.metrics import Stopwatch
+from ..observability.telemetry import annotate, fastapi_telemetry, setup_telemetry
 from ..observability.trace_store import TraceStore
 from ..pipeline import AnswerResult, RAGPipeline, SupportsRetrieve
 from .schemas import (
@@ -42,6 +44,9 @@ from .schemas import (
     StatsResponse,
     UsageModel,
 )
+
+if TYPE_CHECKING:
+    from opentelemetry.trace import TracerProvider
 
 PipelineFactory = Callable[[str], RAGPipeline]
 RetrieverFactory = Callable[[str], SupportsRetrieve]
@@ -148,9 +153,11 @@ def create_app(
     trace_store: TraceStore | None = None,
     indexer: Indexer | None = None,
     store_factory: StoreFactory | None = None,
+    tracer_provider: TracerProvider | None = None,
 ) -> FastAPI:
     """Build the FastAPI app with injectable dependencies (fakes in tests)."""
     settings = settings or get_settings()
+    tracer_provider = tracer_provider or setup_telemetry(settings)
 
     app = FastAPI(
         title="RAG Hybrid Search",
@@ -160,6 +167,7 @@ def create_app(
             "with [n] citations, a confidence-gated refusal path, and per-request "
             "latency/cost metadata."
         ),
+        telemetry=fastapi_telemetry(tracer_provider),
     )
     app.state.settings = settings
     app.state.pipeline_factory = pipeline_factory or _default_pipeline_factory(settings)
@@ -197,6 +205,10 @@ def create_app(
             app.state.pipelines[mode] = _build_for_mode(app.state.pipeline_factory, mode)
         return app.state.pipelines[mode]
 
+    def _top_k(mode: str, requested: int | None) -> int:
+        # What the retriever falls back to: hybrid keeps the reranker's top-k.
+        return requested or (settings.rerank_top_k if mode == "hybrid" else settings.top_k)
+
     def _get_retriever(mode: str) -> SupportsRetrieve:
         # Only the retriever: no chat client, so no generation key is needed.
         if mode not in app.state.retrievers:
@@ -228,6 +240,14 @@ def create_app(
                 "timings_ms": result.timings_ms,
             }
         )
+        annotate(
+            mode=result.mode,
+            refused=result.refused,
+            refused_by=result.refused_by,
+            cost_usd=result.cost_usd,
+            top_k=_top_k(mode, body.top_k),
+            timings_ms=result.timings_ms,
+        )
         return _to_response(result)
 
     @app.post("/v1/search", response_model=SearchResponse, tags=["query"])
@@ -239,6 +259,7 @@ def create_app(
         with _missing_pieces_as_http():
             chunks = retriever.retrieve(body.query, top_k=body.top_k, stopwatch=sw)
         # No trace record: /v1/stats summarizes answered questions.
+        annotate(mode=mode, top_k=_top_k(mode, body.top_k), timings_ms=sw.as_dict())
         return SearchResponse(
             query=body.query, mode=mode, hits=[_to_hit(c) for c in chunks], timings_ms=sw.as_dict()
         )

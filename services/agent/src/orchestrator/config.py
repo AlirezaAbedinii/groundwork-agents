@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     review_score_threshold: int = 3
     max_specialist_retries: int = 2
 
+    # Observability: spans also go to Azure Monitor (Application Insights) when this is set
+    applicationinsights_connection_string: str = ""
+    app_version: str = "dev"  # service.version on every span; a deployment sets the image tag
+
     # Human-in-the-loop
     approval_webhook_url: str = ""
     # Per-trigger approval-level overrides, e.g. {"sensitive_operation": "notify"}

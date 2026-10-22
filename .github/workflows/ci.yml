@@ -42,10 +42,11 @@ jobs:
           cache-dependency-path: services/rag/pyproject.toml
 
       - name: Install (editable + dev tools + lightweight extras)
-        # ingestion (pypdf/bs4/markdown-it), api (fastapi/uvicorn) and indexing
-        # (psycopg/pgvector/rank-bm25) are light, so the loader, API and store
+        # ingestion (pypdf/bs4/markdown-it), api (fastapi/uvicorn), indexing
+        # (psycopg/pgvector/rank-bm25) and telemetry (the OTel SDK and the Azure
+        # Monitor exporter) are light, so the loader, API, store and telemetry
         # tests all run in CI. The heavy ML stack (torch) stays out of CI.
-        run: python -m pip install -e ".[dev,ingestion,api,indexing]"
+        run: python -m pip install -e ".[dev,ingestion,api,indexing,telemetry]"
 
       - name: Wait for Postgres
         # Hard gate: the pg tests skip when DATABASE_URL is unreachable, which

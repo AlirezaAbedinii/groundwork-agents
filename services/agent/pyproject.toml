@@ -13,7 +13,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=2.0",
     "langchain-openai>=0.2",
     "langchain-anthropic>=0.2",
-    "fastapi>=0.115",
+    "fastapi>=0.142",  # request spans and FastAPI(telemetry=...)
     "uvicorn[standard]>=0.30",
     "celery>=5.4",
     "redis>=5.0",
@@ -23,6 +23,7 @@ dependencies = [
     "pgvector>=0.4",
     "pydantic-settings>=2.4",
     "opentelemetry-sdk>=1.27",
+    "azure-monitor-opentelemetry-exporter==1.0.0b58",  # traces to Application Insights; a beta series, pinned exactly
     "numpy>=1.26",  # memory consolidation's similarity math (memory/management.py)
     "mcp>=2.2,<3",  # 2.x Client; RAG retrieval tools reach the registry over MCP
 ]

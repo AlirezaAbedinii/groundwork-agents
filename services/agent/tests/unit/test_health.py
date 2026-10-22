@@ -42,3 +42,35 @@ def test_config_shows_the_backends(client, monkeypatch):
     monkeypatch.setattr(settings, "code_exec_backend", "disabled")
     body = client.get("/config").json()
     assert (body["working_memory"], body["code_exec"]) == ("postgres", "disabled")
+
+
+def test_config_says_whether_traces_go_to_azure_without_showing_the_string(client, monkeypatch):
+    from orchestrator.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "applicationinsights_connection_string", "")
+    assert client.get("/config").json()["telemetry"] is False
+
+    monkeypatch.setattr(settings, "applicationinsights_connection_string", "InstrumentationKey=secret-0004")
+    response = client.get("/config")
+    assert response.json()["telemetry"] is True
+    assert "secret-0004" not in response.text
+
+
+def test_the_lifespan_installs_tracing_and_shuts_it_down_on_exit(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from orchestrator import main
+
+    class FakeProvider:
+        shut_down = False
+
+        def shutdown(self):
+            self.shut_down = True
+
+    provider = FakeProvider()
+    monkeypatch.setattr(main, "setup_tracing", lambda: provider)
+    with TestClient(main.create_app()) as client:  # the context manager runs the lifespan
+        assert client.get("/health").status_code == 200
+        assert not provider.shut_down
+    assert provider.shut_down  # the batched exporter flushes on shutdown
