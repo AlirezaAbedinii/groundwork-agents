@@ -1,0 +1,98 @@
+# The three service images, built in CI and published to ghcr.io.
+#
+#   push to main (a service, the MCP server or this file)  build and push: sha-<7> and main
+#   manual dispatch, any branch                             build and push: sha-<7> only
+#   pull request                                            build only
+#
+# The packages are public, so Azure pulls them without registry credentials, and
+# deploy.yml points the Container Apps at a tag.
+name: images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "services/**"
+      - "mcp/**"
+      - ".github/workflows/images.yml"
+  pull_request:
+    paths:
+      - "services/**"
+      - "mcp/**"
+      - ".github/workflows/images.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: images-${{ github.ref }}
+  # A newer push to a pull request supersedes its build; a publish always finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: rag
+            context: services/rag
+            file: services/rag/Dockerfile
+            target: api
+          - name: mcp
+            context: mcp
+            file: mcp/Dockerfile
+          - name: agent
+            context: services/agent
+            file: services/agent/docker/api.Dockerfile
+    env:
+      IMAGE: ghcr.io/alirezaabedinii/groundwork-${{ matrix.name }}
+      PUSH: ${{ github.event_name != 'pull_request' }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Log in to ghcr.io
+        if: env.PUSH == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          # The source label links each package to this repository.
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=main,enable=${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+
+      - name: Build (and push, outside pull requests)
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          target: ${{ matrix.target }}
+          push: ${{ env.PUSH == 'true' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # One plain manifest per image, without an attestation index around it:
+          # the simplest thing for Container Apps to pull.
+          provenance: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Compressed size
+        if: env.PUSH == 'true'
+        run: |
+          ref="$IMAGE:sha-${GITHUB_SHA::7}"
+          bytes=$(docker buildx imagetools inspect --raw "$ref" | jq '[.layers[].size] | add')
+          echo "$ref: $(numfmt --to=si --suffix=B "$bytes") compressed ($bytes bytes)" | tee -a "$GITHUB_STEP_SUMMARY"
