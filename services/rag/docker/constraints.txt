@@ -2,8 +2,8 @@
 # for development. These are the libraries whose versions decide the cross-encoder's
 # scores, at the versions the published evaluation ran on: the calibrated hybrid
 # threshold (ADR 0007) depends on those scores. torch is the CPU-only build.
-torch==2.14.1+cpu
-sentence-transformers==6.1.0
-transformers==5.18.0
-tokenizers==0.23.2
+torch==2.15.0
+sentence-transformers==6.2.0
+transformers==5.22.1
+tokenizers==0.23.3
 huggingface-hub==1.33.0
