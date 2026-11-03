@@ -33,6 +33,16 @@ locals {
     { for cidr in var.internal_cidrs : cidr => "internal" },
   )
 
+  agent_env = {
+    APP_VERSION            = var.image_tag
+    CODE_EXEC_BACKEND      = "disabled" # no sandbox here (D4)
+    MCP_RAG_URL            = "http://${azurerm_container_app.mcp.name}/mcp"
+    MOCK_LLM               = tostring(var.mock_llm)
+    REVIEWER_PROVIDER      = "cross"
+    RUN_MODE               = "inline" # no Celery or Redis in Azure
+    WORKING_MEMORY_BACKEND = "postgres"
+  }
+
   # The calibrated thresholds stay at config.py's defaults.
   rag_env = {
     APP_ENV            = "azure"
@@ -268,4 +278,137 @@ resource "azurerm_container_app" "mcp" {
   lifecycle {
     ignore_changes = [template[0].container[0].image]
   }
+}
+
+# --- Agent --------------------------------------------------------------------
+
+resource "azurerm_container_app" "agent" {
+  name                         = "groundwork-agent"
+  resource_group_name          = var.resource_group_name
+  container_app_environment_id = azurerm_container_app_environment.main.id
+  revision_mode                = "Single"
+
+  identity {
+    type         = "UserAssigned"
+    identity_ids = [azurerm_user_assigned_identity.app["agent"].id]
+  }
+
+  dynamic "secret" {
+    for_each = toset(values(local.key_vault_env.agent))
+    content {
+      name                = secret.value
+      key_vault_secret_id = var.key_vault_secrets[secret.value].uri
+      identity            = azurerm_user_assigned_identity.app["agent"].id
+    }
+  }
+
+  secret {
+    name  = local.app_insights_secret
+    value = var.app_insights_connection_string
+  }
+
+  template {
+    # One replica at most: runs execute inside the API process (RUN_MODE=inline),
+    # and so do the MCP tools it discovers.
+    min_replicas = var.agent_min_replicas
+    max_replicas = 1
+    # A run keeps going after its 202 response, with no request in flight; the
+    # replica must not scale in under it.
+    cooldown_period_in_seconds = var.agent_cooldown_seconds
+
+    # Migrations and the demo seed, at every replica start; both are idempotent.
+    # Sized so the app's total is a valid Consumption pair whether or not init
+    # containers count toward it (0.5 + 0.25 vCPU, 1 + 0.5 Gi).
+    init_container {
+      name    = "migrate"
+      image   = "${var.image_registry}/groundwork-agent:${var.image_tag}"
+      command = ["sh", "-c", "alembic upgrade head && python -m orchestrator.db.seed_demo_data"]
+      cpu     = 0.25
+      memory  = "0.5Gi"
+
+      env {
+        name        = "DATABASE_URL"
+        secret_name = local.key_vault_env.agent.DATABASE_URL
+      }
+    }
+
+    container {
+      name   = "agent"
+      image  = "${var.image_registry}/groundwork-agent:${var.image_tag}"
+      cpu    = 0.5
+      memory = "1Gi"
+
+      dynamic "env" {
+        for_each = local.agent_env
+        content {
+          name  = env.key
+          value = env.value
+        }
+      }
+
+      dynamic "env" {
+        for_each = local.key_vault_env.agent
+        content {
+          name        = env.key
+          secret_name = env.value
+        }
+      }
+
+      env {
+        name        = "APPLICATIONINSIGHTS_CONNECTION_STRING"
+        secret_name = local.app_insights_secret
+      }
+
+      startup_probe {
+        transport               = "HTTP"
+        port                    = 8080
+        path                    = "/health"
+        interval_seconds        = 5
+        timeout                 = 3
+        failure_count_threshold = 24
+      }
+
+      liveness_probe {
+        transport               = "HTTP"
+        port                    = 8080
+        path                    = "/health"
+        interval_seconds        = 30
+        timeout                 = 5
+        failure_count_threshold = 3
+      }
+    }
+  }
+
+  # Your ranges only; nothing else calls the agent.
+  ingress {
+    external_enabled           = true
+    target_port                = 8080
+    allow_insecure_connections = false
+
+    dynamic "ip_security_restriction" {
+      for_each = var.operator_cidrs
+      content {
+        name             = "operator-${replace(replace(ip_security_restriction.value, ".", "-"), "/", "-")}"
+        description      = "Your machine"
+        action           = "Allow"
+        ip_address_range = ip_security_restriction.value
+      }
+    }
+
+    traffic_weight {
+      latest_revision = true
+      percentage      = 100
+    }
+  }
+
+  tags = var.tags
+
+  lifecycle {
+    ignore_changes = [
+      template[0].container[0].image,
+      template[0].init_container[0].image,
+    ]
+  }
+
+  depends_on = [azurerm_role_assignment.secret_reader]
 }
