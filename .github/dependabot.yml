@@ -12,6 +12,10 @@ updates:
   # per service. One PR for routine minor/patch bumps; majors still come individually.
   - package-ecosystem: pip
     directory: /services/rag
+    # The image's reranker stack stays at the versions the published scores and the
+    # calibrated hybrid threshold were measured with; it moves only with a re-check.
+    exclude-paths:
+      - docker/constraints.txt
     schedule:
       interval: weekly
     groups:
