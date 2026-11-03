@@ -239,16 +239,10 @@ jobs:
           terraform_version: 1.16.6
           terraform_wrapper: false
 
-      - name: Format
-        run: terraform fmt -check -recursive infra
-
-      - name: Validate both configurations
+      - name: Format and validate both configurations (make tf-check)
         # The committed lock files decide the provider versions; a cache lets the
         # second init reuse the first one's download.
         run: |
           export TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/terraform-plugins"
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
-          for dir in infra/bootstrap infra/terraform; do
-            terraform -chdir="$dir" init -backend=false -lockfile=readonly -input=false
-            terraform -chdir="$dir" validate
-          done
+          make tf-check
