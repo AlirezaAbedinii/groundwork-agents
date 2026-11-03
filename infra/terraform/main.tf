@@ -1,8 +1,8 @@
 # The stack itself: created by `make up` and destroyed by `make down`. All of it
 # lives in rg-groundwork except what sits in the shared Key Vault: the database
-# URLs and the apps' role assignments on secrets. Postgres, the Container Apps and
-# their observability are modules that see each other only through outputs passed
-# here.
+# password and URLs, and the apps' role assignments on secrets. Postgres, the
+# Container Apps and their observability are modules that see each other only
+# through outputs passed here.
 
 provider "azurerm" {
   # 5.x registers no resource providers by default; these are the ones used here.
