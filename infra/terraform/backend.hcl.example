@@ -1,0 +1,5 @@
+# make bootstrap writes backend.hcl here (gitignored): the same account and
+# container as infra/bootstrap's state, under this module's own key (backend.tf).
+resource_group_name  = "rg-groundwork-shared"
+storage_account_name = "stgwtfstate<suffix>"
+container_name       = "tfstate"

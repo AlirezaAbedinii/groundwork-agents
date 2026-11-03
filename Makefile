@@ -11,10 +11,11 @@ AGENT_PYTHON := $(if $(wildcard services/agent/.venv/bin/),.venv/bin/python,pyth
 MCP_PYTHON := $(if $(wildcard mcp/.venv/bin/),.venv/bin/python,python)
 EVAL_PYTHON := $(if $(wildcard eval/.venv/bin/),.venv/bin/python,python)
 AGENT_URL ?= http://localhost:8080
+ALERT_EMAIL ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
-	test-eval e2e-agent eval-score eval-agent-smoke
+	test-eval e2e-agent eval-score eval-agent-smoke bootstrap
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -66,3 +67,8 @@ eval-agent-smoke: ## Run the 2 smoke tasks against a local MOCK_LLM agent ($0) i
 		$(EVAL_PYTHON) -m agent_eval run --tasks tasks/smoke_tasks.jsonl --label smoke \
 			--run-id agent-smoke --agent $(AGENT_URL) --judge fake --max-cost-usd 0 && \
 		$(EVAL_PYTHON) -m agent_eval score --run-id agent-smoke
+
+# --- Azure (infra/; see infra/README.md) ---------------------------------------
+
+bootstrap: ## Once: shared Azure resources (state, Key Vault, deploy identity, budget); asks first. ALERT_EMAIL=… on the first run.
+	ALERT_EMAIL='$(ALERT_EMAIL)' infra/bootstrap/bootstrap.sh
