@@ -1,0 +1,7 @@
+# Copy to terraform.tfvars (gitignored) to override defaults. make bootstrap writes
+# shared_resource_group, key_vault_name and github_deploy_principal_id to
+# bootstrap.auto.tfvars, and make up passes operator_cidrs from your current IP.
+
+# location         = "eastus2"
+# mock_llm         = true
+# rag_min_replicas = 1
