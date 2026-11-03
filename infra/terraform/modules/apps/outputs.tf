@@ -1,6 +1,6 @@
 output "rag_url" {
   description = "https:// URL of the RAG's ingress."
-  value       = null
+  value       = "https://${azurerm_container_app.rag.ingress[0].fqdn}"
 }
 
 output "agent_url" {
@@ -10,12 +10,12 @@ output "agent_url" {
 
 output "rag_app_name" {
   description = "The RAG's Container App."
-  value       = null
+  value       = azurerm_container_app.rag.name
 }
 
 output "mcp_app_name" {
   description = "The MCP server's Container App, also its host name inside the environment."
-  value       = null
+  value       = azurerm_container_app.mcp.name
 }
 
 output "agent_app_name" {
