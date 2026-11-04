@@ -15,8 +15,8 @@ ALERT_EMAIL ?=
 
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
-	test-eval e2e-agent eval-score eval-agent-smoke bootstrap tf-init plan up warm urls ui-cloud \
-	down tf-check
+	test-eval e2e-agent eval-score eval-agent-smoke bootstrap tf-init plan up seed-cloud warm urls \
+	ui-cloud down tf-check
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -84,6 +84,12 @@ OPERATOR_VAR = -var "operator_cidrs=[\"$$ip/32\"]"
 # Extra variables for plan, up and down, e.g. TF_ARGS='-var mock_llm=true'.
 TF_ARGS ?=
 CLOUD_URLS = RAG_URL=$$($(TF) output -raw rag_url) AGENT_URL=$$($(TF) output -raw agent_url)
+# seed-cloud copies this collection from the local RAG database (compose, :5433).
+SEED_COLLECTION ?= toolchain_docs
+SEED_SOURCE_URL ?= postgresql://rag:rag@localhost:5433/rag
+# Extra arguments for the copy, e.g. SEED_ARGS=--dry-run.
+SEED_ARGS ?=
+SEED_PYTHON := $(if $(wildcard services/rag/.venv/bin/),services/rag/.venv/bin/python,python)
 # Local ports for the cloud UIs, clear of a local stack's 8501, 8511 and 8512.
 RAG_UI_PORT ?= 8521
 REVIEW_UI_PORT ?= 8522
@@ -100,9 +106,18 @@ tf-init:
 plan: tf-init ## Plan the stack against your current IP; changes nothing, costs nothing. TF_ARGS adds variables.
 	@$(WITH_IP) $(TF) plan $(OPERATOR_VAR) $(TF_ARGS)
 
-up: tf-init ## Create or update the stack (asks first), then print its URLs. TF_ARGS adds variables.
+up: tf-init ## Create or update the stack (asks first), seed it, warm it, print its URLs. TF_ARGS adds variables.
 	@$(WITH_IP) $(TF) apply $(OPERATOR_VAR) $(TF_ARGS)
+	@$(MAKE) --no-print-directory seed-cloud warm
 	@$(TF) output
+
+# The target's URL goes from Key Vault into the copy's environment only: never an
+# argument (the process list) and never printed.
+seed-cloud: ## Copy toolchain_docs from the local RAG db to Azure, vectors and all ($0, idempotent).
+	@set -e; kv=$$(terraform -chdir=infra/bootstrap output -raw key_vault_name); \
+	url=$$(az keyvault secret show --vault-name "$$kv" -n rag-database-url --query value -o tsv); \
+	SOURCE_DATABASE_URL='$(SEED_SOURCE_URL)' TARGET_DATABASE_URL="$$url" \
+		$(SEED_PYTHON) services/rag/scripts/copy_collection.py --collection $(SEED_COLLECTION) $(SEED_ARGS)
 
 warm: tf-init ## Wake the RAG and the agent; one hybrid search builds the BM25 index (a fraction of a cent).
 	@$(CLOUD_URLS) infra/scripts/warm.sh
