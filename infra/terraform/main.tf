@@ -10,10 +10,12 @@ provider "azurerm" {
   resource_providers_to_register = [
     "Microsoft.App",
     "Microsoft.DBforPostgreSQL",
-    "Microsoft.Insights",
     "Microsoft.KeyVault",
     "Microsoft.ManagedIdentity",
     "Microsoft.OperationalInsights",
+    # Lowercase on purpose: Azure lists it this way and the provider matches names
+    # exactly, so "Microsoft.Insights" would be skipped with only a log warning.
+    "microsoft.insights",
   ]
 
   features {
