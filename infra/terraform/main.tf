@@ -19,12 +19,6 @@ provider "azurerm" {
   ]
 
   features {
-    application_insights {
-      # Otherwise App Insights adds a "Failure Anomalies" alert rule to the group
-      # by itself, which Terraform doesn't know about.
-      disable_generated_rule = true
-    }
-
     resource_group {
       # The group lasts one session: make down deletes it even if Azure has added
       # something to it.
