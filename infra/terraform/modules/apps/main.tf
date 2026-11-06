@@ -235,11 +235,11 @@ resource "azurerm_container_app" "mcp" {
       cpu    = 0.25
       memory = "0.5Gi"
 
-      # Through the RAG's public ingress, so its allow-list applies; the first
-      # deploy checks this against http://groundwork-rag inside the environment.
+      # The app's name inside the environment. Its public address answers 403 from
+      # here: the RAG's allow-list filters it, and this form isn't filtered.
       env {
         name  = "RAG_API_URL"
-        value = "https://${azurerm_container_app.rag.ingress[0].fqdn}"
+        value = "http://${azurerm_container_app.rag.name}"
       }
 
       startup_probe {
