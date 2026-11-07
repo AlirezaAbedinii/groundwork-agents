@@ -34,7 +34,6 @@ locals {
   )
 
   agent_env = {
-    APP_VERSION            = var.image_tag
     CODE_EXEC_BACKEND      = "disabled" # no sandbox here (D4)
     MCP_RAG_URL            = "http://${azurerm_container_app.mcp.name}/mcp"
     MOCK_LLM               = tostring(var.mock_llm)
@@ -46,7 +45,6 @@ locals {
   # The calibrated thresholds stay at config.py's defaults.
   rag_env = {
     APP_ENV            = "azure"
-    APP_VERSION        = var.image_tag
     COLLECTION         = "toolchain_docs"
     DEFAULT_MODE       = "hybrid"
     EMBEDDING_MODEL    = "text-embedding-3-small"

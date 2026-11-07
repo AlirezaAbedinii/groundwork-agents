@@ -18,5 +18,10 @@ RUN useradd --uid 10001 --create-home orchestrator \
     && mkdir task_workspaces && chown orchestrator task_workspaces
 USER 10001
 
+# The image's tag, passed in by images.yml, so it stays right however the image gets
+# deployed. Last, so a new tag rebuilds nothing else.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 EXPOSE 8080
 CMD ["uvicorn", "orchestrator.main:app", "--host", "0.0.0.0", "--port", "8080"]

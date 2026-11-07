@@ -70,7 +70,7 @@ class Settings(BaseSettings):
 
     # Observability: spans also go to Azure Monitor (Application Insights) when this is set
     applicationinsights_connection_string: str = ""
-    app_version: str = "dev"  # service.version on every span; a deployment sets the image tag
+    app_version: str = "dev"  # service.version on every span; published images set their tag
 
     # Human-in-the-loop
     approval_webhook_url: str = ""

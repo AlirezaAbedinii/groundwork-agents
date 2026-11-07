@@ -188,7 +188,7 @@ class Settings(BaseSettings):
         "(observability/telemetry.py, the telemetry extra).",
     )
     app_version: str = Field(
-        default="dev", description="service.version on the traces; a deployment sets the image tag."
+        default="dev", description="service.version on the traces; published images set their tag."
     )
 
     # -- Paths (resolved relative to the repo root if not absolute) --------
