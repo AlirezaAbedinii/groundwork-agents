@@ -138,7 +138,7 @@ resource "azurerm_federated_identity_credential" "github" {
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
   # Only jobs that run in this repository's environment get a token, whatever branch.
-  subject = "repo:${var.github_repository}:environment:${var.github_environment}"
+  subject = "${var.github_subject_prefix}:environment:${var.github_environment}"
 }
 
 # For stack-guard.yml, which deletes a stack that has outlived its time limit. It must
@@ -149,7 +149,7 @@ resource "azurerm_federated_identity_credential" "github_guard" {
   user_assigned_identity_id = azurerm_user_assigned_identity.github.id
   issuer                    = "https://token.actions.githubusercontent.com"
   audience                  = ["api://AzureADTokenExchange"]
-  subject                   = "repo:${var.github_repository}:ref:refs/heads/main"
+  subject                   = "${var.github_subject_prefix}:ref:refs/heads/main"
 }
 
 # --- Budget -------------------------------------------------------------------

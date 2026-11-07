@@ -31,10 +31,18 @@ variable "budget_amount" {
   }
 }
 
-variable "github_repository" {
+# Repositories created after 2026-07-15 get the owner's and the repository's ids in
+# their tokens' subject, so a later owner of the same name doesn't match. GitHub reports
+# the prefix: gh api 'repos/{owner}/{repo}/actions/oidc/customization/sub' --jq .sub_claim_prefix
+variable "github_subject_prefix" {
   type        = string
-  description = "owner/name of the repository whose deploy workflow signs in as the deploy identity."
-  default     = "AlirezaAbedinii/groundwork-agents"
+  description = "How GitHub's OIDC tokens name the repository whose workflows sign in as the deploy identity."
+  default     = "repo:AlirezaAbedinii@69193677/groundwork-agents@1379017005"
+
+  validation {
+    condition     = can(regex("^repo:[^/:@]+@[0-9]+/[^/:@]+@[0-9]+$", var.github_subject_prefix))
+    error_message = "github_subject_prefix must look like repo:owner@id/name@id."
+  }
 }
 
 variable "github_environment" {
