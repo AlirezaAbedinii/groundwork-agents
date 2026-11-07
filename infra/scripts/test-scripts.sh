@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# `make test-infra`: deploy-images.sh against stand-ins for az and
+# `make test-infra`: stack-guard.sh and deploy-images.sh against stand-ins for az and
 # docker. Nothing here reaches Azure or a registry. Needs jq.
 set -uo pipefail
 
@@ -38,7 +38,9 @@ fi
 app=${url##*containerApps/groundwork-}
 app=${app%%[/?]*}
 case "$method $url" in
+  "get "*/rg-groundwork/resources\?*) echo "${STUB_OLDEST:-}" ;;
   "get "*/rg-groundwork\?*) ;;
+  "delete "*) ;;
   "patch "*) cp "$body" "$WORK/body-$app.json" ;;
   "get "*/revisions/*)
     printf '%s\t%s\t%s\t%s\n' "ghcr.io/alirezaabedinii/groundwork-$app:${STUB_REVISION_TAG:-sha-new}" \
@@ -81,6 +83,28 @@ check() {
     fail "$1 (exit $status, $verb: $did)"
   fi
 }
+
+guard=$here/stack-guard.sh
+hours_ago() { date -u -d "$1 hours ago" +%Y-%m-%dT%H:%M:%S.0000000Z; }
+
+run MAX_HOURS=8 STUB_ERROR='Forbidden({"error":{"code":"AuthorizationFailed"}})' "$guard"
+check "guard: a refused read means the stack is down" delete 0 "stack is down" no
+run MAX_HOURS=8 STUB_ERROR='Not Found({"error":{"code":"ResourceGroupNotFound"}})' "$guard"
+check "guard: a missing group means the stack is down" delete 0 "stack is down" no
+run MAX_HOURS=8 STUB_ERROR='Service Unavailable' "$guard"
+check "guard: any other read error fails the run and deletes nothing" delete 1 "isn't being enforced" no
+run MAX_HOURS=8 STUB_OLDEST=None "$guard"
+check "guard: an empty group is left alone" delete 0 "empty" no
+run MAX_HOURS=8 STUB_OLDEST="$(hours_ago 7)" "$guard"
+check "guard: a stack under its limit is left alone" delete 0 "420 minutes old" no
+run MAX_HOURS=8 STUB_OLDEST="$(hours_ago 9)" "$guard"
+check "guard: a stack over its limit is deleted, and the run fails" delete 1 "being deleted" yes
+run MAX_HOURS=0 STUB_OLDEST="$(hours_ago 0)" "$guard"
+check "guard: a limit of 0 deletes the stack now" delete 1 "being deleted" yes
+run MAX_HOURS=8 STUB_OLDEST=not-a-date "$guard"
+check "guard: an unreadable age fails the run and deletes nothing" delete 1 "invalid date" no
+run MAX_HOURS=eight STUB_OLDEST="$(hours_ago 9)" "$guard"
+check "guard: a bad limit fails the run and deletes nothing" delete 1 "whole number" no
 
 cat >"$WORK/template-agent.json" <<'JSON'
 {

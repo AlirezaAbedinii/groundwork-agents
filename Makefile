@@ -16,7 +16,7 @@ ALERT_EMAIL ?=
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
 	test-eval e2e-agent eval-score eval-agent-smoke bootstrap tf-init plan up seed-cloud warm urls \
-	ui-cloud down tf-check test-infra
+	ui-cloud down tf-check test-infra guard-check
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -106,10 +106,17 @@ tf-init:
 plan: tf-init ## Plan the stack against your current IP; changes nothing, costs nothing. TF_ARGS adds variables.
 	@$(WITH_IP) $(TF) plan $(OPERATOR_VAR) $(TF_ARGS)
 
-up: tf-init ## Create or update the stack (asks first), seed it, warm it, print its URLs. TF_ARGS adds variables.
+# stack-guard.yml is what ends a forgotten stack, so no stack starts without it.
+guard-check:
+	@state=$$(gh api 'repos/{owner}/{repo}/actions/workflows/stack-guard.yml' --jq .state 2>/dev/null); \
+	test "$$state" = active || { echo "stack-guard.yml isn't active on GitHub (state: $${state:-not found}), \
+	so nothing would end a forgotten stack; put it on main or enable it first" >&2; exit 1; }
+
+up: guard-check tf-init ## Create or update the stack (asks first), seed it, warm it, print its URLs. TF_ARGS adds variables.
 	@$(WITH_IP) $(TF) apply $(OPERATOR_VAR) $(TF_ARGS)
 	@$(MAKE) --no-print-directory seed-cloud warm
 	@$(TF) output
+	@echo "stack-guard deletes rg-groundwork once it's older than STACK_MAX_HOURS (8 unless set on GitHub); make down when you're done."
 
 # The target's URL goes from Key Vault into the copy's environment only: never an
 # argument (the process list) and never printed.
@@ -142,5 +149,5 @@ tf-check: ## Terraform fmt and validate for both configurations, without credent
 		terraform -chdir=$$dir validate || exit 1; \
 	done
 
-test-infra: ## The deploy script against stand-ins for az and docker (as CI runs it). Needs jq.
+test-infra: ## The stack-guard and deploy scripts against stand-ins for az and docker (as CI runs it). Needs jq.
 	infra/scripts/test-scripts.sh

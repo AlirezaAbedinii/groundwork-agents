@@ -141,6 +141,17 @@ resource "azurerm_federated_identity_credential" "github" {
   subject = "repo:${var.github_repository}:environment:${var.github_environment}"
 }
 
+# For stack-guard.yml, which deletes a stack that has outlived its time limit. It must
+# run unattended, so it can't use the reviewed environment above; this credential
+# trusts jobs on the default branch that name no environment instead.
+resource "azurerm_federated_identity_credential" "github_guard" {
+  name                      = "github-guard"
+  user_assigned_identity_id = azurerm_user_assigned_identity.github.id
+  issuer                    = "https://token.actions.githubusercontent.com"
+  audience                  = ["api://AzureADTokenExchange"]
+  subject                   = "repo:${var.github_repository}:ref:refs/heads/main"
+}
+
 # --- Budget -------------------------------------------------------------------
 
 resource "azurerm_consumption_budget_subscription" "monthly" {
