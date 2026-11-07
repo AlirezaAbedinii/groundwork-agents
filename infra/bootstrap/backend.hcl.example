@@ -1,0 +1,5 @@
+# make bootstrap writes backend.hcl here (gitignored) from its outputs. On another
+# machine, copy this to backend.hcl with the names `terraform output` shows.
+resource_group_name  = "rg-groundwork-shared"
+storage_account_name = "stgwtfstate<suffix>"
+container_name       = "tfstate"

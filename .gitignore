@@ -13,3 +13,12 @@ __pycache__/
 eval/runs/
 eval/.cache/
 eval/golden/candidates_unverified.jsonl
+# Terraform: working dirs, state, variable values and the generated backend config
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+infra/*/backend.hcl
+*_override.tf
+crash.log

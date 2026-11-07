@@ -64,6 +64,11 @@ COPY . .
 RUN useradd --uid 10001 --create-home rag && mkdir -p data && chown -R rag /app/data /opt/hf
 USER 10001
 
+# The image's tag, passed in by images.yml, so it stays right however the image gets
+# deployed. Last, so a new tag rebuilds nothing else.
+ARG APP_VERSION=dev
+ENV APP_VERSION=$APP_VERSION
+
 EXPOSE 8000
 
 CMD ["uvicorn", "rag.api.main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -226,3 +226,26 @@ jobs:
         # Both suites share the conftest contract (migrate, seed, truncate
         # between tests) and need only the two service containers.
         run: python -m pytest tests/integration tests/e2e -q -m "not live" -rs
+
+  infra:
+    # Static checks only: no backend, no Azure credentials, nothing planned or applied.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.16.6
+          terraform_wrapper: false
+
+      - name: Format and validate both configurations (make tf-check)
+        # The committed lock files decide the provider versions; a cache lets the
+        # second init reuse the first one's download.
+        run: |
+          export TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/terraform-plugins"
+          mkdir -p "$TF_PLUGIN_CACHE_DIR"
+          make tf-check
+
+      - name: Test the guard and deploy scripts (make test-infra)
+        run: make test-infra

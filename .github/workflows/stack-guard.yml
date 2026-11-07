@@ -1,0 +1,48 @@
+# The stack's hard time limit: deletes rg-groundwork once it's older than
+# STACK_MAX_HOURS (a repository variable; 8 unless set). Runs outside any machine or
+# session, so a stack forgotten for any reason still ends. `make up` refuses to start
+# unless this workflow is active.
+#
+# A failed run is how it reports: GitHub emails it, whether the guard deleted the
+# stack or couldn't check it. Schedules only run from the default branch, and GitHub
+# may start them late.
+name: stack-guard
+
+on:
+  schedule:
+    - cron: "23 * * * *"
+  workflow_dispatch:
+    inputs:
+      max_hours:
+        description: The limit for this run, in hours; 0 deletes the stack now
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: stack-guard
+
+jobs:
+  enforce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # No subscription-id: the login would try to select that subscription, which
+      # this identity can't see while the stack is down. The URLs carry the id.
+      - name: Sign in with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Enforce the limit
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          MAX_HOURS: ${{ inputs.max_hours || vars.STACK_MAX_HOURS || '8' }}
+        run: infra/scripts/stack-guard.sh
