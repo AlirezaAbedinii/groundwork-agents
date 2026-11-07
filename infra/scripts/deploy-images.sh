@@ -8,6 +8,8 @@
 #
 # Usage: deploy-images.sh <image tag>. Needs AZURE_SUBSCRIPTION_ID and a signed-in az.
 set -euo pipefail
+# shellcheck source=arm.sh
+source "${BASH_SOURCE[0]%/*}/arm.sh"
 
 tag=${1:?usage: deploy-images.sh <image tag>}
 : "${AZURE_SUBSCRIPTION_ID:?}"
@@ -25,7 +27,7 @@ image_of() { echo "$registry/groundwork-$1:$tag"; }
 # The deploy identity's only role is on the group and goes with it, so a stopped
 # stack shows up here as a refusal rather than as a missing group.
 errors=$(mktemp)
-if ! az rest --method get --url "$group_url?api-version=2023-07-01" -o none 2>"$errors"; then
+if ! arm --method get --url "$group_url?api-version=2023-07-01" -o none 2>"$errors"; then
   if grep -qE 'AuthorizationFailed|ResourceGroupNotFound' "$errors"; then
     echo "::error::the stack is down: run make up first" >&2
   else
@@ -45,13 +47,12 @@ done
 
 body=$(mktemp)
 for app in "${apps[@]}"; do
-  az rest --method get --url "$(app_url "$app")?$api" --query properties.template -o json |
+  arm --method get --url "$(app_url "$app")?$api" --query properties.template -o json |
     jq --arg image "$(image_of "$app")" '
       (.containers[].image) = $image
       | (.initContainers[]?.image) = $image
       | {properties: {template: ({containers, initContainers} | del(.. | nulls))}}' >"$body"
-  az rest --method patch --url "$(app_url "$app")?$api" \
-    --headers content-type=application/json --body "@$body" -o none
+  arm --method patch --url "$(app_url "$app")?$api" --body "@$body" -o none
   echo "$app: pointed at $(image_of "$app")"
 done
 
@@ -62,9 +63,9 @@ deadline=$((SECONDS + WAIT_SECONDS))
 while true; do
   still_pending=()
   for app in "${pending[@]}"; do
-    revision=$(az rest --method get --url "$(app_url "$app")?$api" \
+    revision=$(arm --method get --url "$(app_url "$app")?$api" \
       --query properties.latestRevisionName -o tsv 2>/dev/null || true)
-    state=$(az rest --method get --url "$(app_url "$app")/revisions/$revision?$api" \
+    state=$(arm --method get --url "$(app_url "$app")/revisions/$revision?$api" \
       --query '[properties.template.containers[0].image, properties.provisioningState, properties.runningState, properties.healthState]' \
       -o tsv 2>/dev/null || true)
     read -r image provisioning running health <<<"$state" || true
@@ -94,6 +95,6 @@ while true; do
 done
 
 for app in rag agent; do
-  fqdn=$(az rest --method get --url "$(app_url "$app")?$api" --query properties.configuration.ingress.fqdn -o tsv)
+  fqdn=$(arm --method get --url "$(app_url "$app")?$api" --query properties.configuration.ingress.fqdn -o tsv)
   echo "$app: https://$fqdn"
 done

@@ -17,7 +17,12 @@ STUB
 
 cat >"$WORK/bin/az" <<'STUB'
 #!/usr/bin/env bash
-method='' url='' query='' body=''
+if [[ "${1:-} ${2:-}" == "account get-access-token" ]]; then
+  echo "az account get-access-token" >>"$WORK/calls"
+  echo stub-token
+  exit 0
+fi
+method='' url='' query='' body='' headers='' header_flags=0 own_token=no
 args=$*
 while (($#)); do
   case $1 in
@@ -25,10 +30,21 @@ while (($#)); do
     --url) url=$2; shift ;;
     --query) query=$2; shift ;;
     --body) body=${2#@}; shift ;;
+    --headers) headers=$2; header_flags=$((header_flags + 1)); shift ;;
+    --skip-authorization-header) own_token=yes ;;
   esac
   shift
 done
 echo "az $method $url" >>"$WORK/calls"
+
+# Every call carries the script's own token, from a file: plain az rest fails while
+# the stack is down, and a token on the command line would be in the process list.
+if [[ $own_token != yes || $header_flags != 1 || $headers != @* ]] ||
+  ! grep -q '"Authorization": "Bearer stub-token"' "${headers#@}" ||
+  ! grep -q '"Content-Type": "application/json"' "${headers#@}"; then
+  echo "az rest without the script's own token: $args" >&2
+  exit 3
+fi
 
 if [[ -n ${STUB_ERROR:-} && $method == get ]]; then
   echo "ERROR: $STUB_ERROR" >&2
@@ -57,7 +73,8 @@ case "$method $url" in
 esac
 STUB
 chmod +x "$WORK/bin/az" "$WORK/bin/docker"
-export PATH="$WORK/bin:$PATH" AZURE_SUBSCRIPTION_ID=sub-id POLL_SECONDS=0
+mkdir "$WORK/tmp"
+export PATH="$WORK/bin:$PATH" AZURE_SUBSCRIPTION_ID=sub-id POLL_SECONDS=0 TMPDIR="$WORK/tmp"
 
 failures=0
 pass() { echo "ok    $1"; }
@@ -93,6 +110,8 @@ run MAX_HOURS=8 STUB_ERROR='Not Found({"error":{"code":"ResourceGroupNotFound"}}
 check "guard: a missing group means the stack is down" delete 0 "stack is down" no
 run MAX_HOURS=8 STUB_ERROR='Service Unavailable' "$guard"
 check "guard: any other read error fails the run and deletes nothing" delete 1 "isn't being enforced" no
+run MAX_HOURS=8 STUB_ERROR='Not Found({"error":{"code":"SubscriptionNotFound"}})' "$guard"
+check "guard: a wrong subscription id fails the run, not reported as down" delete 1 "isn't being enforced" no
 run MAX_HOURS=8 STUB_OLDEST=None "$guard"
 check "guard: an empty group is left alone" delete 0 "empty" no
 run MAX_HOURS=8 STUB_OLDEST="$(hours_ago 7)" "$guard"
@@ -135,6 +154,16 @@ run WAIT_SECONDS=0 STUB_HEALTH=Unhealthy "$deploy" sha-new
 check "deploy: an unhealthy revision doesn't count" patch 1 "no healthy revision" yes
 run "$deploy" sha-new
 check "deploy: healthy revisions finish it, with the URLs" patch 0 "https://groundwork-agent.example" yes
+if [[ $(grep -c '^az account get-access-token' "$WORK/calls") == 1 ]]; then
+  pass "deploy: one token serves the whole run"
+else
+  output=$(cat "$WORK/calls") fail "deploy: tokens fetched"
+fi
+if ! grep -rqs stub-token "$WORK/tmp"; then
+  pass "deploy: the token's file is gone after the run"
+else
+  output=$(grep -rls stub-token "$WORK/tmp") fail "deploy: the token's file is left behind"
+fi
 
 body=$WORK/body-agent.json
 if jq -e --arg image "$image" '.properties.template

@@ -13,6 +13,8 @@
 #
 # Needs AZURE_SUBSCRIPTION_ID, MAX_HOURS and a signed-in az.
 set -euo pipefail
+# shellcheck source=arm.sh
+source "${BASH_SOURCE[0]%/*}/arm.sh"
 
 : "${AZURE_SUBSCRIPTION_ID:?}"
 : "${MAX_HOURS:?}"
@@ -25,7 +27,7 @@ fi
 group_url="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/resourceGroups/rg-groundwork"
 errors=$(mktemp)
 
-if ! oldest=$(az rest --method get --url "$group_url/resources?\$expand=createdTime&api-version=2023-07-01" \
+if ! oldest=$(arm --method get --url "$group_url/resources?\$expand=createdTime&api-version=2023-07-01" \
   --query 'min(value[].createdTime)' -o tsv 2>"$errors"); then
   if grep -qE 'AuthorizationFailed|ResourceGroupNotFound' "$errors"; then
     echo "The stack is down: nothing to do."
@@ -47,6 +49,6 @@ if ((age < MAX_HOURS * 3600)); then
   exit 0
 fi
 
-az rest --method delete --url "$group_url?api-version=2023-07-01" -o none
+arm --method delete --url "$group_url?api-version=2023-07-01" -o none
 echo "::error::The stack is $((age / 60)) minutes old, past its $MAX_HOURS h limit, so rg-groundwork is being deleted. Run make down next: Terraform's state still lists it." >&2
 exit 1
