@@ -16,7 +16,7 @@ ALERT_EMAIL ?=
 .DEFAULT_GOAL := help
 .PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
 	test-eval e2e-agent eval-score eval-agent-smoke bootstrap tf-init plan up seed-cloud warm urls \
-	ui-cloud down tf-check
+	ui-cloud down tf-check test-infra
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
@@ -141,3 +141,6 @@ tf-check: ## Terraform fmt and validate for both configurations, without credent
 		terraform -chdir=$$dir init -backend=false -lockfile=readonly -input=false > /dev/null && \
 		terraform -chdir=$$dir validate || exit 1; \
 	done
+
+test-infra: ## The deploy script against stand-ins for az and docker (as CI runs it). Needs jq.
+	infra/scripts/test-scripts.sh

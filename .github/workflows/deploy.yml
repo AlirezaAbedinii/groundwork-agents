@@ -1,0 +1,47 @@
+# Points the running stack's three Container Apps at an image tag. Manual, in the
+# protected `azure` environment, and signed in over OIDC: no password or key is
+# stored anywhere. It never runs Terraform and can't create infrastructure; the stack
+# must already be up (`make up`).
+#
+# The three ids are stored as secrets only to keep them out of this public
+# repository's logs. They grant nothing by themselves.
+name: deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag, such as sha-abc1234 (empty means this commit's)
+        required: false
+        type: string
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: azure
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      # No subscription-id: the login would try to select that subscription, which
+      # this identity can't see while the stack is down, and the run would end here
+      # instead of at the group check. The URLs carry the id.
+      - name: Sign in with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          allow-no-subscriptions: true
+
+      - name: Deploy
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          IMAGE_TAG: ${{ inputs.image_tag }}
+        run: infra/scripts/deploy-images.sh "${IMAGE_TAG:-sha-${GITHUB_SHA::7}}"

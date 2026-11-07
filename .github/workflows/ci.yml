@@ -246,3 +246,6 @@ jobs:
           export TF_PLUGIN_CACHE_DIR="$RUNNER_TEMP/terraform-plugins"
           mkdir -p "$TF_PLUGIN_CACHE_DIR"
           make tf-check
+
+      - name: Test the guard and deploy scripts (make test-infra)
+        run: make test-infra
