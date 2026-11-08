@@ -59,8 +59,9 @@ case "$method $url" in
   "delete "*) ;;
   "patch "*) cp "$body" "$WORK/body-$app.json" ;;
   "get "*/revisions/*)
-    printf '%s\t%s\t%s\t%s\n' "ghcr.io/alirezaabedinii/groundwork-$app:${STUB_REVISION_TAG:-sha-new}" \
-      "${STUB_PROVISIONING:-Provisioned}" "${STUB_RUNNING:-Running}" "${STUB_HEALTH:-Healthy}"
+    # As az prints a list with -o tsv: one value per line, a null as an empty line.
+    printf '%s\n' "ghcr.io/alirezaabedinii/groundwork-$app:${STUB_REVISION_TAG:-sha-new}" \
+      "${STUB_PROVISIONING-Provisioned}" "${STUB_RUNNING-Running}" "${STUB_HEALTH-Healthy}"
     ;;
   "get "*)
     case $query in
@@ -152,6 +153,8 @@ run WAIT_SECONDS=0 STUB_REVISION_TAG=sha-old "$deploy" sha-new
 check "deploy: only a revision of the new image counts" patch 1 "no healthy revision" yes
 run WAIT_SECONDS=0 STUB_HEALTH=Unhealthy "$deploy" sha-new
 check "deploy: an unhealthy revision doesn't count" patch 1 "no healthy revision" yes
+run STUB_PROVISIONING= "$deploy" sha-new
+check "deploy: a null in the revision's state doesn't shift the values after it" patch 0 "running and healthy" yes
 run "$deploy" sha-new
 check "deploy: healthy revisions finish it, with the URLs" patch 0 "https://groundwork-agent.example" yes
 if [[ $(grep -c '^az account get-access-token' "$WORK/calls") == 1 ]]; then

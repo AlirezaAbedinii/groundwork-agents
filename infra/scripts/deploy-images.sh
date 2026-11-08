@@ -68,7 +68,9 @@ while true; do
     state=$(arm --method get --url "$(app_url "$app")/revisions/$revision?$api" \
       --query '[properties.template.containers[0].image, properties.provisioningState, properties.runningState, properties.healthState]' \
       -o tsv 2>/dev/null || true)
-    read -r image provisioning running health <<<"$state" || true
+    # -o tsv prints a list one value per line, and a null as an empty line.
+    image='' provisioning='' running='' health=''
+    { read -r image; read -r provisioning; read -r running; read -r health; } <<<"$state" || true
 
     # Until the new revision is the latest, these fields describe the old one.
     if [[ ${image:-} == "$(image_of "$app")" ]]; then
