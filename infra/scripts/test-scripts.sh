@@ -65,7 +65,7 @@ case "$method $url" in
     ;;
   "get "*)
     case $query in
-      properties.template) cat "$WORK/template-$app.json" ;;
+      properties.template) cat "${STUB_TEMPLATES:-$WORK}/template-$app.json" ;;
       properties.latestRevisionName) echo "groundwork-$app--r1" ;;
       properties.configuration.ingress.fqdn) echo "groundwork-$app.example" ;;
     esac
@@ -183,6 +183,30 @@ if jq -e '.properties.template | .containers[0].image == "ghcr.io/alirezaabedini
   pass "deploy: an app without an init container gets no such field"
 else
   output=$(cat "$WORK/body-rag.json") fail "deploy: the RAG's patch"
+fi
+
+# A rerun: all three apps already on the tag (current/), or only the RAG and the
+# agent's main container, not its init container (mixed/).
+mkdir "$WORK/current" "$WORK/mixed"
+for app in rag mcp; do
+  echo "{\"containers\": [{\"name\": \"$app\", \"image\": \"ghcr.io/alirezaabedinii/groundwork-$app:sha-new\"}]}" \
+    >"$WORK/current/template-$app.json"
+done
+jq --arg image "$image" '.containers[0].image = $image | .initContainers[0].image = $image' \
+  "$WORK/template-agent.json" >"$WORK/current/template-agent.json"
+cp "$WORK/current/template-rag.json" "$WORK/template-mcp.json" "$WORK/mixed/"
+jq --arg image "$image" '.containers[0].image = $image' "$WORK/template-agent.json" >"$WORK/mixed/template-agent.json"
+
+run STUB_TEMPLATES="$WORK/current" STUB_RUNNING=ScaledToZero "$deploy" sha-new
+check "deploy: apps already on the tag are left alone, scaled to zero or not" patch 0 "already on" no
+run STUB_TEMPLATES="$WORK/current" STUB_RUNNING=Failed "$deploy" sha-new
+check "deploy: an app already on the tag whose revision failed fails the run" patch 1 "failed" no
+run STUB_TEMPLATES="$WORK/mixed" "$deploy" sha-new
+if [[ $status == 0 && $output == *"rag: already on"* ]] && ! called '^az patch .*groundwork-rag' &&
+  called '^az patch .*groundwork-mcp' && called '^az patch .*groundwork-agent'; then
+  pass "deploy: a rerun patches only the apps not yet on the tag, init containers included"
+else
+  fail "deploy: the mixed rerun (exit $status)"
 fi
 
 if ((failures)); then

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # deploy.yml's job: point the three Container Apps at one image tag, then wait until
-# each app's newest revision runs that image and is healthy.
+# each app's newest revision runs that image and is healthy. An app already on the
+# tag is left as it is.
 #
 # Each app's containers go back whole with only their images changed, through the
 # same PATCH `az containerapp update` sends. That command's --image skips init
@@ -24,6 +25,19 @@ group_url="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/res
 app_url() { echo "$group_url/providers/Microsoft.App/containerApps/groundwork-$1"; }
 image_of() { echo "$registry/groundwork-$1:$tag"; }
 
+# Sets revision, image, provisioning, running and health for an app's newest revision.
+read_state() {
+  local state
+  revision=$(arm --method get --url "$(app_url "$1")?$api" \
+    --query properties.latestRevisionName -o tsv 2>/dev/null || true)
+  state=$(arm --method get --url "$(app_url "$1")/revisions/$revision?$api" \
+    --query '[properties.template.containers[0].image, properties.provisioningState, properties.runningState, properties.healthState]' \
+    -o tsv 2>/dev/null || true)
+  # -o tsv prints a list one value per line, and a null as an empty line.
+  image='' provisioning='' running='' health=''
+  { read -r image; read -r provisioning; read -r running; read -r health; } <<<"$state" || true
+}
+
 # The deploy identity's only role is on the group and goes with it, so a stopped
 # stack shows up here as a refusal rather than as a missing group.
 errors=$(mktemp)
@@ -45,32 +59,41 @@ for app in "${apps[@]}"; do
   fi
 done
 
-body=$(mktemp)
+template=$(mktemp) body=$(mktemp)
+pending=()
 for app in "${apps[@]}"; do
-  arm --method get --url "$(app_url "$app")?$api" --query properties.template -o json |
-    jq --arg image "$(image_of "$app")" '
-      (.containers[].image) = $image
-      | (.initContainers[]?.image) = $image
-      | {properties: {template: ({containers, initContainers} | del(.. | nulls))}}' >"$body"
+  arm --method get --url "$(app_url "$app")?$api" --query properties.template -o json >"$template"
+
+  # A PATCH that changes nothing makes no new revision, and a revision that has
+  # scaled to zero won't report Running again until traffic arrives: an app already
+  # on the tag (a rerun, say) is left as it is, unless its revision failed.
+  if jq -e --arg image "$(image_of "$app")" \
+    '[.containers[].image, .initContainers[]?.image] | all(. == $image)' "$template" >/dev/null; then
+    read_state "$app"
+    if [[ $provisioning == Failed || $running == Failed ]]; then
+      echo "::error::groundwork-$app is already on $tag, and its revision $revision failed ($provisioning, $running)" >&2
+      exit 1
+    fi
+    echo "$app: already on $(image_of "$app") ($revision: ${running:-no state yet}, ${health:-no health yet})"
+    continue
+  fi
+
+  jq --arg image "$(image_of "$app")" '
+    (.containers[].image) = $image
+    | (.initContainers[]?.image) = $image
+    | {properties: {template: ({containers, initContainers} | del(.. | nulls))}}' "$template" >"$body"
   arm --method patch --url "$(app_url "$app")?$api" --body "@$body" -o none
   echo "$app: pointed at $(image_of "$app")"
+  pending+=("$app")
 done
 
 # All apps in each round: a replica that started early may scale back to zero, and
 # with it the revision's Running state, while a slower app is still being waited on.
-pending=("${apps[@]}")
 deadline=$((SECONDS + WAIT_SECONDS))
-while true; do
+while ((${#pending[@]})); do
   still_pending=()
   for app in "${pending[@]}"; do
-    revision=$(arm --method get --url "$(app_url "$app")?$api" \
-      --query properties.latestRevisionName -o tsv 2>/dev/null || true)
-    state=$(arm --method get --url "$(app_url "$app")/revisions/$revision?$api" \
-      --query '[properties.template.containers[0].image, properties.provisioningState, properties.runningState, properties.healthState]' \
-      -o tsv 2>/dev/null || true)
-    # -o tsv prints a list one value per line, and a null as an empty line.
-    image='' provisioning='' running='' health=''
-    { read -r image; read -r provisioning; read -r running; read -r health; } <<<"$state" || true
+    read_state "$app"
 
     # Until the new revision is the latest, these fields describe the old one.
     if [[ ${image:-} == "$(image_of "$app")" ]]; then
