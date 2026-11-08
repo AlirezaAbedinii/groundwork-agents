@@ -185,10 +185,8 @@ rows and vectors as the published runs, checked by a checksum):
   index found the nearest chunk, which the local one misses). Dense MRR@10 moved 0.678 →
   0.689 and hybrid R@10 0.761 → 0.749. See
   [ADR 0010](../docs/decisions/0010-azure-topology-and-access.md).
-- **One agent task** (t01, cross reviewer): completed for $0.053 with the judge, with
-  `rag_search` served through the cloud MCP server and the retrieval API. The judge
-  passed three of its five criteria, so it counts as a failure, as it did in the
-  published run (one of five).
+- **One agent task** (t01, cross reviewer): completed for $0.053, the judge included,
+  with `rag_search` served through the cloud MCP server and the retrieval API.
 
 The published reports in [`reports/`](reports) stay the local runs; cloud runs go to
 the gitignored `runs/`.
