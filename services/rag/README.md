@@ -119,7 +119,18 @@ decide the reranker's scores in [`docker/constraints.txt`](docker/constraints.tx
 at the versions the published numbers came from. The cross-encoder is downloaded at
 build time, so a container never fetches it (`HF_HUB_OFFLINE=1` makes that strict).
 `ui` is Streamlit alone, which talks to the API over HTTP. Both run as uid 10001;
-compose runs `api` and `seed` as root, because `./data` is a bind mount.
+compose runs `api` and `seed` as root, because `./data` is a bind mount. The `api` image
+also installs the `telemetry` extra: with `APPLICATIONINSIGHTS_CONNECTION_STRING` set,
+each request except `/health` becomes a span in Application Insights, and `/v1/ask` and
+`/v1/search` add the pipeline's mode, refusal, cost and stage timings to it; without the
+setting, nothing is exported.
+
+**In Azure** ([`infra/`](../../infra/README.md)) the `api` image runs as a Container App
+in hybrid mode, against a copy of `toolchain_docs` made by `make seed-cloud`: the same
+rows and vectors, checked by a checksum, so the calibrated thresholds apply unchanged.
+The copy rebuilds the HNSW index, and an approximate index makes its own misses, so a
+few questions get different hits than locally; the [evaluation README](../../eval/README.md#against-the-azure-deployment)
+lists them.
 
 <details>
 <summary>Local development (only the database in Docker)</summary>

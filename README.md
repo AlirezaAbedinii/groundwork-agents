@@ -24,8 +24,8 @@ their READMEs). The agents reach the retrieval service over MCP: its search and
 question answering are tools the research specialist can call, under the same
 permissions, rate limits and tracing as its other tools. One evaluation suite
 measures both services over their APIs, with every published number recomputable
-for free from committed records. Still in progress: Terraform that deploys the
-system to Azure.
+for free from committed records. Terraform deploys the whole system to Azure on
+demand, and a scheduled guard deletes it if it's left running.
 
 **Results** ([details](eval/README.md)): on a 75-question golden set over the uv,
 Pydantic and FastAPI docs, retrieval finds 76 % of the needed facts in the top 10
@@ -42,7 +42,7 @@ and research, not to review.
 | [`services/agent`](services/agent/README.md) | Agent service: supervisor and specialist agents, tools, approvals, tracing, API, UIs |
 | [`mcp/`](mcp/README.md) | MCP server: the retrieval service's search, ask and list_sources as tools |
 | [`eval/`](eval/README.md) | Evaluation across both services: retrieval, answers, refusals and agent tasks, with published reports |
-| [`infra/`](infra/README.md) | Terraform for Azure (planned) |
+| [`infra/`](infra/README.md) | Terraform and scripts for Azure: Container Apps, Postgres, Key Vault, Application Insights; the deploy and the time limit |
 | [`docs/decisions/`](docs/decisions/README.md) | Architecture decision records |
 
 ## Quickstart
@@ -79,6 +79,16 @@ The service READMEs cover endpoints, configuration and local development.
 `make test` at the repository root runs all four test suites: both services,
 the MCP server and the evaluation suite.
 
+## Run it on Azure
+
+The three services run as Azure Container Apps that scale to zero, with Postgres
+(pgvector), Key Vault and Application Insights. After a one-time `make bootstrap`,
+`make up` creates the stack in about 10 minutes, seeded with the evaluated collection,
+and `make down` deletes it; image updates deploy from GitHub Actions over OIDC. Down,
+it costs about $0.01 a month; up, Azure's free amounts cover about 28 hours a month,
+and a two-hour session with real models cost $0.06 in API calls. See
+[`infra/`](infra/README.md).
+
 ## Roadmap
 
 | Phase | Scope | Status |
@@ -87,7 +97,7 @@ the MCP server and the evaluation suite.
 | 1 | Native tool calling and structured outputs in the agent loop | done |
 | 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | done |
 | 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | done |
-| 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | planned |
+| 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | done |
 | 5 | Results, screenshots and a recorded demo | planned |
 
 ## License

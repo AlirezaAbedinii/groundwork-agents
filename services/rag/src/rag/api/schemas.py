@@ -18,8 +18,7 @@ class AskRequest(BaseModel):
     question: str = Field(min_length=1, max_length=2000, description="The user question.")
     mode: Literal["dense", "hybrid"] | None = Field(
         default=None,
-        description="Retrieval mode. Defaults to the server's configured mode "
-        "(dense). 'hybrid' returns 501 until the V1 retrieval stack lands.",
+        description="Retrieval mode. Defaults to the server's configured mode.",
     )
     top_k: int | None = Field(
         default=None, ge=1, le=50, description="Chunks to retrieve (default from config)."

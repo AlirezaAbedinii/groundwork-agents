@@ -14,6 +14,11 @@ supersedes it.
 | [0006](0006-evaluation-harness-and-judge.md) | One evaluation suite over HTTP, evidence-quote labels and a judge from another provider | accepted |
 | [0007](0007-refusal-threshold-calibration.md) | Refusal thresholds calibrated per retrieval mode on held-out questions | accepted |
 | [0008](0008-agent-evaluation.md) | Agent tasks scored on their deliverables and their invocation log | accepted |
+| [0009](0009-inline-runs-in-the-cloud.md) | Inline runs in the cloud, with working memory in Postgres and no code execution | accepted |
+| [0010](0010-azure-topology-and-access.md) | Three Container Apps, one Postgres server, and IP allow-lists for access | accepted |
+| [0011](0011-terraform-state-identity-and-secrets.md) | Two Terraform configurations, secrets only in Key Vault, and OIDC for CI | accepted |
+| [0012](0012-traces-to-application-insights.md) | Traces to Application Insights beside the agent's own store | accepted |
+| [0013](0013-a-hard-time-limit-on-the-stack.md) | A hard time limit on the stack instead of a spending cap | accepted |
 
 ## Format
 

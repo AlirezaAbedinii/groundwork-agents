@@ -158,6 +158,41 @@ runs resume, and a recorded verdict is never paid for twice:
 The published runs cost $2.31 in all: indexing $0.01, synthetic drafts $0.004, the
 judge's sanity checks $0.13, the answer run $0.58, and the agent runs $1.58.
 
+## Against the Azure deployment
+
+The harness takes the cloud URLs like local ones; `make urls` prints them, and only the
+allow-listed IP can reach them. Wake the apps first (`make warm`): a cold app can
+outlast the client's 30 s timeout.
+
+```bash
+.venv/bin/python -m rag_eval collect --stage retrieval --rag "$RAG_URL" --run-id azure
+.venv/bin/python -m agent_eval run --ids t01 --label cross --agent "$AGENT_URL" \
+  --run-id azure-agent --max-cost-usd 0.25
+```
+
+Checked on 2026-11-08 against a stack seeded with a copy of `toolchain_docs` (the same
+rows and vectors as the published runs, checked by a checksum):
+
+- **Retrieval** (150 searches, under $0.0001): 71 of 75 dense and 69 of 75 hybrid top-10
+  lists matched the published records, and at the deployed thresholds the refusal gate
+  decided the same on all 75 questions in dense mode and on 73 in hybrid. Every
+  difference traced to the vector index, not the deployment: for each of the seven
+  questions involved, an exact search returned the same top 20 on both databases, and
+  one side's approximate (HNSW) index had missed a nearer chunk. The exception was a tie
+  between two chunks of equal score, ordered differently because query embeddings vary
+  slightly between calls. The two gate changes: q046, answerable, refused in Azure (its
+  index missed the five nearest chunks); q037, unanswerable, answered in Azure (its
+  index found the nearest chunk, which the local one misses). Dense MRR@10 moved 0.678 →
+  0.689 and hybrid R@10 0.761 → 0.749. See
+  [ADR 0010](../docs/decisions/0010-azure-topology-and-access.md).
+- **One agent task** (t01, cross reviewer): completed for $0.053 with the judge, with
+  `rag_search` served through the cloud MCP server and the retrieval API. The judge
+  passed three of its five criteria, so it counts as a failure, as it did in the
+  published run (one of five).
+
+The published reports in [`reports/`](reports) stay the local runs; cloud runs go to
+the gitignored `runs/`.
+
 ## Findings
 
 **Agents.** The tasks fail mostly for reasons a reviewer can't fix:

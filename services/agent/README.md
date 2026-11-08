@@ -268,7 +268,7 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | Tool framework | Custom registry — permissions, rate limits, invocation logging | ✅ |
 | API | FastAPI | ✅ |
 | Persistent state | PostgreSQL — tasks, plans, subtasks, tool invocations, memory audit | ✅ |
-| Short-term memory | Redis — task-scoped working memory | ✅ |
+| Short-term memory | Redis — task-scoped working memory (Postgres in Azure) | ✅ |
 | Long-term memory | Postgres + pgvector — episodes/facts/preferences with importance scoring | ✅ |
 | Tool calling | Native function calling on both providers — tool schemas from the Pydantic inputs, parallel calls, errors returned to the model | ✅ |
 | Tool protocol | MCP (Python SDK 2.x): the retrieval service's tools, discovered into the same registry | ✅ |
@@ -290,6 +290,25 @@ curl localhost:8080/replay/<fork_id>/compare    # where did it diverge?
 | 5 | Full containerized stack, demo scenario, end-to-end tests | ✅ Done |
 | 6 | Portfolio polish — architecture doc ✅, README ✅, screenshots & <5-min recording | 🚧 recording pending |
 | CI | GitHub Actions: ruff + unit suite on every push and PR, then the integration suite against postgres (pgvector) and redis service containers (mock LLM) | ✅ Done |
+
+## Running in Azure
+
+[`infra/`](../../infra/README.md) runs the API as a Container App with no Redis, no
+worker and no Docker socket. Four settings make that work; each defaults to the local
+behavior:
+
+| Setting | In Azure | What it changes |
+|---|---|---|
+| `RUN_MODE` | `inline` | Runs execute as background tasks in the API process; one replica, with a 600 s scale-in cooldown |
+| `WORKING_MEMORY_BACKEND` | `postgres` | Task working memory in a `working_memory` table instead of Redis (default `redis`) |
+| `CODE_EXEC_BACKEND` | `disabled` | Leaves `code_exec` out of the registry (default `docker`; there is no sandbox there) |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | set | Also exports spans to Application Insights, batched, beside the Postgres exporter |
+
+`GET /config` reports all four (`telemetry` as a yes or no). The image carries its tag
+as `APP_VERSION`, which traces record as `service.version`. An init
+container runs the migrations and the demo seed before each replica starts. The
+reasoning is in [ADR 0009](../../docs/decisions/0009-inline-runs-in-the-cloud.md) and
+[ADR 0012](../../docs/decisions/0012-traces-to-application-insights.md).
 
 ## Local development
 
@@ -429,11 +448,11 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 
 **Known limitations**
 
-- **Single-host deployment.** docker-compose with one Celery worker by default; scaling out is a `--scale worker=N` away but untested beyond a single machine, and there's no HA story for Redis/Postgres.
+- **One process per deployment.** Locally, docker-compose with one Celery worker by default; scaling out is a `--scale worker=N` away but untested beyond a single machine. In Azure, one inline replica: a run in progress is lost if the replica stops. No HA story for Redis/Postgres.
 - **No authentication or multi-tenancy.** `user_id` is honor-system, and both UIs are unauthenticated — this is a portfolio system, not a hosted product.
 - **Poll-based progress.** No token streaming or push updates; clients and the demo script poll task state.
 - **Sandbox needs the Docker socket.** In the composed stack `code_exec` launches sibling containers via the host engine — isolated from the network but a trusted-host assumption; a rootless runtime (gVisor/Firecracker) would harden it.
-- **The planner doesn't know which specialist holds which tool.** The evaluation found database lookups planned for the research specialist, which has no `db_query`; an approved escalation then retries the same specialist, so the task loops until someone stops approving. Research also prefers `rag_search` snippets to `rag_ask` answers, and simple requests get split into about five subtasks ([findings](../../eval/README.md#findings)).
+- **The planner doesn't know which specialist holds which tool.** The evaluation found database lookups planned for the research specialist, which has no `db_query`; an approved escalation then retries the same specialist, so the task loops until someone stops approving. A provider error that retrying can't fix, such as a revoked API key, loops the same way, and the error shows only in the task's trace (`/traces/<id>`) and subtask records, not in the API's log. Research also prefers `rag_search` snippets to `rag_ask` answers, and simple requests get split into about five subtasks ([findings](../../eval/README.md#findings)).
 - **Replay comparison is a step table.** Side-by-side with divergence highlighting — deliberately not a graphical graph-diff.
 - **Heuristic memory management.** Consolidation/expiration use embedding similarity, access counts, and recency — no learned relevance model.
 

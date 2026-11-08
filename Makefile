@@ -103,7 +103,7 @@ tf-init:
 		{ echo "infra/terraform/backend.hcl is missing: run make bootstrap first" >&2; exit 1; }
 	@$(TF) init -input=false -backend-config=backend.hcl > /dev/null
 
-plan: tf-init ## Plan the stack against your current IP; changes nothing, costs nothing. TF_ARGS adds variables.
+plan: tf-init ## Plan the stack against your current IP; free, creates nothing (the first run registers resource providers). TF_ARGS adds variables.
 	@$(WITH_IP) $(TF) plan $(OPERATOR_VAR) $(TF_ARGS)
 
 # stack-guard.yml is what ends a forgotten stack, so no stack starts without it.

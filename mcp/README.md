@@ -51,6 +51,12 @@ uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
 server accepts only localhost `Host` headers. It has no authentication, so keep
 it on localhost or an internal network.
 
+In Azure ([`infra/`](../infra/README.md)) it is a Container App with internal ingress
+only: it has no public address, and the agent reaches it at `http://groundwork-mcp/mcp`.
+It calls the retrieval API by its internal name, `RAG_API_URL=http://groundwork-rag`,
+because the retrieval API's IP allow-list filters calls to its public address even from
+inside the environment ([ADR 0010](../docs/decisions/0010-azure-topology-and-access.md)).
+
 A desktop MCP client starts it over stdio with a config like this:
 
 ```json
