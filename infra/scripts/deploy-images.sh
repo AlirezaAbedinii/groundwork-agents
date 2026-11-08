@@ -101,7 +101,9 @@ while ((${#pending[@]})); do
         echo "::error::groundwork-$app: revision $revision failed ($provisioning, $running)" >&2
         exit 1
       fi
-      if [[ $running == Running && $health == Healthy ]]; then
+      # A revision at its replica limit (one, here) reports RunningAtMaxScale. A new
+      # one reports ScaledToZero and Healthy before any replica has started.
+      if [[ ($running == Running || $running == RunningAtMaxScale) && $health == Healthy ]]; then
         echo "$app: $revision is running and healthy"
         continue
       fi

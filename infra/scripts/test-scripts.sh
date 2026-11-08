@@ -153,6 +153,10 @@ run WAIT_SECONDS=0 STUB_REVISION_TAG=sha-old "$deploy" sha-new
 check "deploy: only a revision of the new image counts" patch 1 "no healthy revision" yes
 run WAIT_SECONDS=0 STUB_HEALTH=Unhealthy "$deploy" sha-new
 check "deploy: an unhealthy revision doesn't count" patch 1 "no healthy revision" yes
+run WAIT_SECONDS=0 STUB_RUNNING=ScaledToZero "$deploy" sha-new
+check "deploy: a new revision scaled to zero doesn't count, though reported healthy" patch 1 "no healthy revision" yes
+run STUB_RUNNING=RunningAtMaxScale "$deploy" sha-new
+check "deploy: a revision running at its replica limit counts" patch 0 "running and healthy" yes
 run STUB_PROVISIONING= "$deploy" sha-new
 check "deploy: a null in the revision's state doesn't shift the values after it" patch 0 "running and healthy" yes
 run "$deploy" sha-new
