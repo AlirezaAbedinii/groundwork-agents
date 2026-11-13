@@ -21,6 +21,11 @@ caps the agent's spend and the judge's together: a task starts only if its reser
 ``rag_ask``'s ``cost_usd``, is recorded when it ends. Runs resume: a recorded task is
 skipped, and a completed task without a verdict is judged again without running again.
 
+Scoring rules are versioned (``metrics``): ``run`` stamps each record with
+``SCORING_VERSION``, and a record without the stamp is scored by version 1, the rules
+the first published run used. Under version 2 a criterion about a file the run never
+wrote fails without being sent to the judge.
+
 ``score`` never calls anything. It turns the run into compact records (each holding the
 task it ran, so the records file alone is enough to re-score), computes every number
 from them with ``metrics``, and writes the report.
@@ -52,7 +57,7 @@ import httpx
 import metrics
 import report
 from budget import Budget, BudgetExceeded
-from judge import SubtaskOutput, render_task_outputs
+from judge import SubtaskOutput, file_subjects, render_task_outputs
 from llm import LLMError, load_env
 from schemas import AgentTask, CriterionVerdict, PlannedSubtask, Share, TaskVerdict, ToolCall
 
@@ -70,6 +75,8 @@ TERMINAL = ("completed", "failed", "rejected", "escalated")
 ARG_CHARS = 200
 PLAN_DESCRIPTION_CHARS = 200  # each planned subtask's description, in the records
 MAX_USER_ID = 64  # the agent's user_id columns
+# The scoring rules new records are collected under; a record without "scoring" is 1.
+SCORING_VERSION = 2
 
 
 def load_tasks(path: Path) -> list[AgentTask]:
@@ -249,27 +256,46 @@ def needs_verdict(record: dict) -> bool:
     return record["outcome"] == "completed" and not record.get("verdict")
 
 
+def scoring_version(record: dict) -> int:
+    return record.get("scoring", 1)
+
+
+def decided_criteria(task: AgentTask, record: dict) -> list[CriterionVerdict]:
+    """The criteria the rules decide without the judge: under version 2, those about a
+    file the run never wrote; none under version 1."""
+    if scoring_version(record) < 2:
+        return []
+    calls = [ToolCall.model_validate(c) for c in record["calls"]]
+    return metrics.unwritten_file_criteria(file_subjects(task), calls)
+
+
 def _judge(judge: Any, task: AgentTask, record: dict) -> tuple[dict, BudgetExceeded | None]:
-    """The rubric verdict of a completed task; a budget stop leaves it for a resume."""
+    """The rubric verdict of a completed task; a budget stop leaves it for a resume. The
+    judge sees only the criteria the scoring rules leave open, and isn't called when
+    they decide every one."""
     record = dict(record)
     if not needs_verdict(record):
         return record, None
-    shown = render_task_outputs(
-        task, files_written(record["calls"]), subtask_outputs(record["bundle"])
-    )
+    decided = decided_criteria(task, record)
+    open_ = [c for c in task.rubric if c.id not in {d.id for d in decided}]
     before = judge.budget.spent_usd
-    try:
-        verdict = judge.task(
-            task.request, record["bundle"]["final_output"] or "", shown, task.rubric
+    judged: list[CriterionVerdict] = []
+    if open_:
+        shown = render_task_outputs(
+            task, files_written(record["calls"]), subtask_outputs(record["bundle"])
         )
-    except BudgetExceeded as exc:
-        return record, exc
-    except LLMError as exc:
-        record["judge_error"] = _error(exc)
-        return record, None
+        try:
+            judged = judge.task(
+                task.request, record["bundle"]["final_output"] or "", shown, open_
+            ).criteria
+        except BudgetExceeded as exc:
+            return record, exc
+        except LLMError as exc:
+            record["judge_error"] = _error(exc)
+            return record, None
     record.pop("judge_error", None)
     record["verdict"] = {
-        "criteria": [c.model_dump() for c in verdict.criteria],
+        "criteria": [c.model_dump() for c in [*judged, *decided]],
         "provider": judge.provider,
         "model": judge.model,
         "prompt_version": judge.prompt_version,
@@ -330,6 +356,7 @@ def run_label(
                     if not notional:
                         budget.record(task_cost(raw))
                     record = {"id": task.id, "label": label, "user_id": user}
+                    record["scoring"] = SCORING_VERSION
                     record |= {"task": task.model_dump(), **raw, "verdict": None}
                     counts[raw["outcome"]] += 1
                 record, stop = _judge(judge, task, record)
@@ -432,7 +459,7 @@ def _record(label: str, raw: dict) -> dict:
         ),
         "judge": _judge_id(verdict) if verdict else None,
         "judge_cost_usd": verdict["cost_usd"] if verdict else 0.0,
-    }
+    } | ({"scoring": raw["scoring"]} if "scoring" in raw else {})
 
 
 def build_records(run_dir: Path) -> list[dict]:
@@ -486,6 +513,8 @@ def task_scores(record: dict) -> dict:
     calls = [ToolCall.model_validate(c) for c in record["calls"]]
     tool = metrics.tool_call_scores(calls, task)
     verdict = _verdict(record)
+    if verdict is not None:
+        verdict = metrics.overrule(verdict, decided_criteria(task, record))
     completed = record["outcome"] == "completed"
     if not completed:
         success = False
@@ -587,6 +616,9 @@ def score_records(records: list[dict]) -> dict:
         "tasks": per,
         "cross_vs_same": None,
     }
+    # Only records stamped with a version name one, so version 1 records score as published.
+    if versions := sorted({r["scoring"] for r in rows if "scoring" in r}):
+        scores["scoring"] = versions
     if "cross" in per and "same" in per:
         scores["cross_vs_same"] = paired(per["cross"], per["same"])
     return scores
@@ -753,6 +785,12 @@ def main(
     score.add_argument(
         "--out", type=Path, help="report directory (default: runs/<id>/report, or the records' own)"
     )
+    score.add_argument(
+        "--scoring",
+        type=int,
+        choices=range(1, SCORING_VERSION + 1),
+        help="score every record under these rules, not the ones it was collected under",
+    )
     diagnose = sub.add_parser(
         "diagnose",
         help="write diagnostics.md and diagnostics.json into runs/<id>/; never calls anything",
@@ -818,6 +856,8 @@ def main(
     else:
         records = build_records(args.runs / args.run_id)
         out = args.out or args.runs / args.run_id / "report"
+    if args.scoring:
+        records = [records[0], *({**r, "scoring": args.scoring} for r in records[1:])]
     written = report.write_agent(
         records, score_records(records), out, with_records=not args.records
     )

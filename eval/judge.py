@@ -95,6 +95,12 @@ def criterion_subject(criterion: RubricCriterion, task: AgentTask) -> str | None
     return next((p for p in paths if criterion.description.startswith(f"`{p}`")), None)
 
 
+def file_subjects(task: AgentTask) -> dict[str, str]:
+    """Each criterion that is about a file the task writes, mapped to that file's path."""
+    subjects = {c.id: criterion_subject(c, task) for c in task.rubric}
+    return {cid: s for cid, s in subjects.items() if s is not None and s != "answer"}
+
+
 def render_task_outputs(
     task: AgentTask, files: Mapping[str, str], subtasks: Sequence[SubtaskOutput]
 ) -> str:

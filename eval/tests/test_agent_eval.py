@@ -734,3 +734,102 @@ def test_diagnose_writes_into_the_run_directory(tmp_path, tasks_file, capsys):
 def test_diagnose_needs_a_run(tmp_path):
     with pytest.raises(SystemExit):
         agent_eval.main(["diagnose", "--run-id", "nope", "--runs", str(tmp_path)])
+
+
+# --- scoring rules ------------------------------------------------------------------
+
+
+MIXED_T01 = TASKS[0] | {
+    "rubric": [
+        *TASKS[0]["rubric"],
+        {"id": "c3", "description": "The answer says where notes.md is.", "critical": True},
+    ]
+}
+
+
+def tasks_with(tmp_path, *tasks) -> Path:
+    path = tmp_path / "custom-tasks.jsonl"
+    path.write_text("".join(json.dumps(t) + "\n" for t in tasks), encoding="utf-8")
+    return path
+
+
+def misnamed() -> dict[str, Script]:
+    """t01 writes notes.txt where the task asked for notes.md."""
+    s = scripts()
+    for c in s[TASKS[0]["request"]].calls:
+        if c["tool_name"] == "file_write":
+            c["arguments"]["path"] = "notes.txt"
+    return s
+
+
+def test_a_misnamed_file_fails_its_criteria_and_the_judge_sees_only_the_rest(tmp_path):
+    tasks = tasks_with(tmp_path, MIXED_T01, TASKS[1], TASKS[2])
+    judge = FakeJudge(task=failing_t02)
+    run(tmp_path, tasks, FakeAgent(misnamed()), judge=judge)
+    t01 = raw(tmp_path)["t01"]
+    assert t01["scoring"] == agent_eval.SCORING_VERSION == 2
+    asked = [args[3] for kind, args in judge.requests if args[0] == TASKS[0]["request"]]
+    assert [[c.id for c in criteria] for criteria in asked] == [["c3"]]
+    verdicts = {c["id"]: (c["passed"], c["reasoning"]) for c in t01["verdict"]["criteria"]}
+    assert verdicts["c1"] == verdicts["c2"] == (False, "the file was not written")
+    assert verdicts["c3"][0] is True  # the judge's
+    t01_score = score(tmp_path)["scores"]["tasks"]["cross"][0]
+    assert t01_score["success"] is False  # c1 is critical
+
+
+def test_a_missing_file_with_only_file_criteria_needs_no_judge_call(tmp_path, tasks_file):
+    gone = scripts()
+    request = TASKS[0]["request"]
+    gone[request].calls = [c for c in gone[request].calls if c["tool_name"] != "file_write"]
+    judge = FakeJudge(task=failing_t02)
+    run(tmp_path, tasks_file, FakeAgent(gone), judge=judge)
+    assert all(args[0] != request for _, args in judge.requests)
+    verdict = raw(tmp_path)["t01"]["verdict"]
+    assert verdict["cost_usd"] == 0
+    assert [(c["id"], c["passed"]) for c in verdict["criteria"]] == [("c1", False), ("c2", False)]
+
+
+def test_a_written_file_leaves_its_criteria_to_the_judge(tmp_path, tasks_file):
+    judge = FakeJudge(task=failing_t02)
+    run(tmp_path, tasks_file, FakeAgent(scripts()), judge=judge)
+    asked = [args[3] for _, args in judge.requests if args[0] == TASKS[0]["request"]]
+    assert [[c.id for c in criteria] for criteria in asked] == [["c1", "c2"]]
+
+
+def as_version_1(records: list[dict]) -> list[dict]:
+    """Records as published before the rules were versioned: no "scoring" field."""
+    return [records[0], *({k: v for k, v in r.items() if k != "scoring"} for r in records[1:])]
+
+
+def test_version_1_records_score_by_the_rules_they_were_published_with(tmp_path, tasks_file):
+    # Collected under version 1, t01's misnamed file was judged like any output and its
+    # criteria passed.
+    def everything_passes(request, final_output, subtask_outputs, criteria):
+        return TaskVerdict(
+            criteria=[CriterionVerdict(id=c.id, reasoning="", passed=True) for c in criteria]
+        )
+
+    run(tmp_path, tasks_file, FakeAgent(misnamed()), judge=FakeJudge(task=everything_passes))
+    records = agent_eval.build_records(tmp_path / "runs" / "run1")
+    # the version 2 run decided t01's file criteria itself; restore what a version 1
+    # judge said, so the records are what a version 1 run would have recorded
+    records[1]["criteria"] = [{"id": "c1", "passed": True}, {"id": "c2", "passed": True}]
+    path = tmp_path / "v1" / "agent-records.jsonl"
+    path.parent.mkdir()
+    path.write_text("".join(json.dumps(r) + "\n" for r in as_version_1(records)), "utf-8")
+
+    agent_eval.main(["score", "--records", str(path)])
+    v1 = json.loads((path.parent / "agent.json").read_text())["scores"]
+    t01 = v1["tasks"]["cross"][0]
+    assert t01["success"] is True
+    assert "scoring" not in v1
+    assert "Scoring rules version 2" not in (path.parent / "agent.md").read_text()
+
+    out = tmp_path / "v2"
+    agent_eval.main(["score", "--records", str(path), "--scoring", "2", "--out", str(out)])
+    v2 = json.loads((out / "agent.json").read_text())["scores"]
+    t01 = v2["tasks"]["cross"][0]
+    assert t01["success"] is False
+    assert t01["non_critical"] == [False]  # c2 is about notes.md too
+    assert v2["scoring"] == [2]
+    assert "Scoring rules version 2" in (out / "agent.md").read_text()

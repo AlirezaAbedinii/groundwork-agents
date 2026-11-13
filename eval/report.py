@@ -698,6 +698,12 @@ def agent_markdown(header: dict, scores: dict) -> str:
         "mean score is over the subtasks it scored, and the rework rate is the share of "
         "subtasks run more than once.",
     ]
+    if 2 in scores.get("scoring", []):
+        lines += [
+            "",
+            "Scoring rules version 2 (ADR 0008): a criterion about a file the run never wrote "
+            "at its exact path fails without a judge call.",
+        ]
     if pair := scores["cross_vs_same"]:
         only_cross = ", ".join(pair["only_first"]) or "none"
         only_same = ", ".join(pair["only_second"]) or "none"

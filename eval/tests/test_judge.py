@@ -20,6 +20,7 @@ from judge import (
     SubtaskOutput,
     cache_key,
     criterion_subject,
+    file_subjects,
     render_contexts,
     render_task_outputs,
 )
@@ -379,6 +380,16 @@ def test_a_criterion_is_about_the_answer_a_written_file_or_anything():
     # a file the task doesn't write, or no subject at all: any output may meet it
     for text in ("`other.md` names UV_CACHE_DIR.", "Names UV_CACHE_DIR."):
         assert criterion_subject(agent_task(text).rubric[0], task) is None
+
+
+def test_file_subjects_map_each_file_criterion_to_its_path():
+    task = agent_task(
+        "The answer names UV_CACHE_DIR.",
+        "`notes.md` names UV_CACHE_DIR.",
+        "`other.md` names UV_CACHE_DIR.",  # not a file the task writes
+        "`notes.md` says how to prune.",
+    )
+    assert file_subjects(task) == {"c2": "notes.md", "c4": "notes.md"}
 
 
 def test_subtask_reports_stay_out_when_every_criterion_names_a_deliverable():

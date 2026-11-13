@@ -323,3 +323,38 @@ def test_artifact_at_path_lists_every_required_file_and_only_those():
     calls = [call("file_write", path="b.csv"), call("file_write", path="other.md")]
     assert metrics.artifact_at_path(calls, t) == {"a.md": False, "b.csv": True}
     assert metrics.artifact_at_path(calls, task(must_call=[])) == {}
+
+
+# --- scoring rules version 2 --------------------------------------------------------
+
+
+def test_criteria_about_an_unwritten_file_fail():
+    subjects = {"c1": "notes.md", "c3": "plan.md"}
+    calls = [
+        call("file_write", path="notes.md"),
+        call("file_write", path="docs/plan.md"),  # another path: plan.md was not written
+        call("file_write", status="rate_limited", path="plan.md"),  # refused: not written
+    ]
+    decided = metrics.unwritten_file_criteria(subjects, calls)
+    assert [(d.id, d.passed, d.reasoning) for d in decided] == [
+        ("c3", False, metrics.UNWRITTEN_FILE)
+    ]
+    assert metrics.unwritten_file_criteria(subjects, []) == [
+        CriterionVerdict(id="c1", reasoning=metrics.UNWRITTEN_FILE, passed=False),
+        CriterionVerdict(id="c3", reasoning=metrics.UNWRITTEN_FILE, passed=False),
+    ]
+    assert metrics.unwritten_file_criteria({}, []) == []  # no file criteria
+
+
+def test_overrule_replaces_every_entry_for_a_decided_criterion():
+    v = TaskVerdict(
+        criteria=[
+            CriterionVerdict(id="c1", reasoning="r", passed=True),
+            CriterionVerdict(id="c3", reasoning="r", passed=True),
+            CriterionVerdict(id="c3", reasoning="again", passed=True),
+        ]
+    )
+    decided = [CriterionVerdict(id="c3", reasoning=metrics.UNWRITTEN_FILE, passed=False)]
+    overruled = metrics.overrule(v, decided)
+    assert metrics.criteria_passed(overruled, task()) == {"c1": True, "c2": False, "c3": False}
+    assert metrics.overrule(v, []) == v

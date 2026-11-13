@@ -25,6 +25,7 @@ from schemas import (
     PRF,
     AgentTask,
     CorrectnessVerdict,
+    CriterionVerdict,
     ExpectedCall,
     FaithfulnessVerdict,
     PlannedSubtask,
@@ -260,6 +261,14 @@ def faithfulness_score(verdict: FaithfulnessVerdict) -> float | None:
 # --- agents -------------------------------------------------------------------------
 # Tool calls come from the agent's invocation log (the trajectory); task verdicts come
 # from the rubric judge, which sees only the outputs (the outcome).
+#
+# The scoring rules are versioned, so a record is always scored by the rules it was
+# collected under. Version 1 (records without a "scoring" field) is what the first
+# published run used. Version 2 adds a rule: a criterion about a file the run never
+# wrote fails without a judge.
+
+# The reasoning recorded for a criterion decided by the file rule instead of the judge.
+UNWRITTEN_FILE = "the file was not written"
 
 
 def _same(expected: object, actual: object) -> bool:
@@ -319,6 +328,36 @@ def criteria_passed(verdict: TaskVerdict, task: AgentTask) -> dict[str, bool]:
     for c in verdict.criteria:
         entries.setdefault(c.id, []).append(c.passed)
     return {c.id: bool(entries.get(c.id)) and all(entries[c.id]) for c in task.rubric}
+
+
+def unwritten_file_criteria(
+    subjects: Mapping[str, str], calls: Sequence[ToolCall]
+) -> list[CriterionVerdict]:
+    """A failed verdict for each criterion whose file the run never wrote (version 2).
+
+    ``subjects`` maps each criterion that is about a file to that file's path (the
+    judge's ``file_subjects``). A file counts as written only if a ``file_write``
+    succeeded at exactly that path: what is under another name, or nowhere, can't meet a
+    criterion about the named file, and a judge shown the final answer or another file
+    can be talked into crediting it. Deciding these without the judge makes the rule
+    exact and costs nothing.
+    """
+    written = {
+        c.arguments.get("path")
+        for c in calls
+        if c.tool_name == "file_write" and c.status == "success"
+    }
+    return [
+        CriterionVerdict(id=cid, reasoning=UNWRITTEN_FILE, passed=False)
+        for cid, path in subjects.items()
+        if path not in written
+    ]
+
+
+def overrule(verdict: TaskVerdict, decided: Sequence[CriterionVerdict]) -> TaskVerdict:
+    """The verdict with every entry for a decided criterion replaced by its decision."""
+    ids = {d.id for d in decided}
+    return TaskVerdict(criteria=[c for c in verdict.criteria if c.id not in ids] + list(decided))
 
 
 def task_success(verdict: TaskVerdict, task: AgentTask) -> bool:
