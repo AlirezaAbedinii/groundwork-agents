@@ -70,3 +70,32 @@ and harness for both.
 - **An isolated reviewer benchmark with planted flaws.** A cleaner test of the
   reviewer alone, but it doesn't show what the reviewer does to whole tasks; left as
   a follow-up.
+
+## Addendum, 2026-11-13: scoring rules version 2
+
+The scoring rules are now versioned. A run stamps each record with `scoring: 2`; a
+record without the field is scored by version 1, the rules above, so a published
+report re-scores exactly as it was published. `agent_eval score --scoring 2` scores
+older records under the new rules for comparison, without a judge call. Version 2
+adds three rules:
+
+- **A criterion about a named file fails when the run never wrote that file at its
+  exact path**, with the reasoning "the file was not written", and is not sent to
+  the judge; when every criterion is decided this way, no judge call is made. This
+  is stricter. A criterion that begins with a file's name is about that deliverable,
+  and a judge shown the final answer or a file under another name can still credit
+  it. Checking the invocation log for a successful `file_write` at that path is
+  exact and free, so the judge is left only the questions that need reading.
+- **A `code_exec` run that exits non-zero is a tool error.** This is stricter. The
+  registry calls a code run successful whenever the sandbox ran it, so a script that
+  raised counted as a success in the error rate. A call with no recorded exit code
+  keeps the status rule.
+- **A task's cost is recorded once its LLM-call count holds still**: equal on two
+  polls 2 s apart, or after 10 s. This is more complete. The agent marks a task
+  completed before it extracts memories from it, so costs fetched at that moment
+  left out the memory step's call. The poll is a heuristic: a memory call slower
+  than the poll interval can still be missed, and the 10 s bound keeps a busy agent
+  from holding the run.
+
+Version 2 changes no rubric and no judge prompt, and task success still requires
+every critical criterion to pass.
