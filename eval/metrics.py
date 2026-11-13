@@ -264,8 +264,8 @@ def faithfulness_score(verdict: FaithfulnessVerdict) -> float | None:
 #
 # The scoring rules are versioned, so a record is always scored by the rules it was
 # collected under. Version 1 (records without a "scoring" field) is what the first
-# published run used. Version 2 adds a rule: a criterion about a file the run never
-# wrote fails without a judge.
+# published run used. Version 2 adds two rules: a code_exec run that exits non-zero is a
+# tool error, and a criterion about a file the run never wrote fails without a judge.
 
 # The reasoning recorded for a criterion decided by the file rule instead of the judge.
 UNWRITTEN_FILE = "the file was not written"
@@ -286,7 +286,16 @@ def _meets(call: ToolCall, entry: ExpectedCall) -> bool:
     )
 
 
-def tool_call_scores(calls: Sequence[ToolCall], task: AgentTask) -> ToolCallScores:
+def _errored(call: ToolCall, exit_codes: bool) -> bool:
+    if call.status != "success":
+        return True
+    # A code run that raised or exited non-zero did not do its job, though the sandbox ran.
+    return exit_codes and call.tool_name == "code_exec" and call.exit_code not in (None, 0)
+
+
+def tool_call_scores(
+    calls: Sequence[ToolCall], task: AgentTask, *, exit_codes: bool = False
+) -> ToolCallScores:
     """How the run used its tools, scored from the invocation log.
 
     - must_call_recall: the share of the task's ``must_call`` entries that some
@@ -299,7 +308,9 @@ def tool_call_scores(calls: Sequence[ToolCall], task: AgentTask) -> ToolCallScor
       It rewards choosing the right tools and penalizes detours; how the calls went is
       the error rate's business.
     - error_rate: the share of calls that didn't succeed (failure, rejected or
-      rate_limited).
+      rate_limited). With ``exit_codes`` (scoring version 2), a ``code_exec`` call that
+      ran but exited non-zero is an error too; a call without a recorded exit code
+      keeps the status rule.
     - forbidden_calls: calls to a forbidden tool at any status, since attempting one is
       the mistake.
 
@@ -310,7 +321,7 @@ def tool_call_scores(calls: Sequence[ToolCall], task: AgentTask) -> ToolCallScor
     return ToolCallScores(
         must_call_recall=_ratio(met, len(task.must_call)),
         precision=_ratio(sum(c.tool_name in named for c in calls), len(calls)),
-        error_rate=_ratio(sum(c.status != "success" for c in calls), len(calls)),
+        error_rate=_ratio(sum(_errored(c, exit_codes) for c in calls), len(calls)),
         forbidden_calls=sum(c.tool_name in task.forbidden for c in calls),
         n_calls=len(calls),
     )

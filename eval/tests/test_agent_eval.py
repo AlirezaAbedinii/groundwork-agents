@@ -796,6 +796,21 @@ def test_a_written_file_leaves_its_criteria_to_the_judge(tmp_path, tasks_file):
     assert [[c.id for c in criteria] for criteria in asked] == [["c1", "c2"]]
 
 
+def failed_code_run() -> dict[str, Script]:
+    """t02's code run succeeds as a call but exits 1."""
+    s = scripts()
+    s[TASKS[1]["request"]].calls[1] = call(
+        "code_exec", "analysis", output={"stdout": "", "stderr": "boom", "exit_code": 1}, code="1/0"
+    )
+    return s
+
+
+def test_a_failed_code_run_is_a_tool_error_under_version_2(tmp_path, tasks_file):
+    run(tmp_path, tasks_file, FakeAgent(failed_code_run()))
+    t02 = score(tmp_path)["scores"]["tasks"]["cross"][1]
+    assert t02["error_rate"] == 0.5  # db_query ran; code_exec exited 1
+
+
 def as_version_1(records: list[dict]) -> list[dict]:
     """Records as published before the rules were versioned: no "scoring" field."""
     return [records[0], *({k: v for k, v in r.items() if k != "scoring"} for r in records[1:])]
@@ -803,13 +818,15 @@ def as_version_1(records: list[dict]) -> list[dict]:
 
 def test_version_1_records_score_by_the_rules_they_were_published_with(tmp_path, tasks_file):
     # Collected under version 1, t01's misnamed file was judged like any output and its
-    # criteria passed.
+    # criteria passed; t02's failed code run counted as a success.
     def everything_passes(request, final_output, subtask_outputs, criteria):
         return TaskVerdict(
             criteria=[CriterionVerdict(id=c.id, reasoning="", passed=True) for c in criteria]
         )
 
-    run(tmp_path, tasks_file, FakeAgent(misnamed()), judge=FakeJudge(task=everything_passes))
+    s = misnamed()
+    s[TASKS[1]["request"]] = failed_code_run()[TASKS[1]["request"]]
+    run(tmp_path, tasks_file, FakeAgent(s), judge=FakeJudge(task=everything_passes))
     records = agent_eval.build_records(tmp_path / "runs" / "run1")
     # the version 2 run decided t01's file criteria itself; restore what a version 1
     # judge said, so the records are what a version 1 run would have recorded
@@ -820,16 +837,16 @@ def test_version_1_records_score_by_the_rules_they_were_published_with(tmp_path,
 
     agent_eval.main(["score", "--records", str(path)])
     v1 = json.loads((path.parent / "agent.json").read_text())["scores"]
-    t01 = v1["tasks"]["cross"][0]
-    assert t01["success"] is True
+    t01, t02 = v1["tasks"]["cross"][:2]
+    assert (t01["success"], t02["error_rate"]) == (True, 0.0)
     assert "scoring" not in v1
     assert "Scoring rules version 2" not in (path.parent / "agent.md").read_text()
 
     out = tmp_path / "v2"
     agent_eval.main(["score", "--records", str(path), "--scoring", "2", "--out", str(out)])
     v2 = json.loads((out / "agent.json").read_text())["scores"]
-    t01 = v2["tasks"]["cross"][0]
-    assert t01["success"] is False
+    t01, t02 = v2["tasks"]["cross"][:2]
+    assert (t01["success"], t02["error_rate"]) == (False, 0.5)
     assert t01["non_critical"] == [False]  # c2 is about notes.md too
     assert v2["scoring"] == [2]
     assert "Scoring rules version 2" in (out / "agent.md").read_text()

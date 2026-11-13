@@ -702,7 +702,8 @@ def agent_markdown(header: dict, scores: dict) -> str:
         lines += [
             "",
             "Scoring rules version 2 (ADR 0008): a criterion about a file the run never wrote "
-            "at its exact path fails without a judge call.",
+            "at its exact path fails without a judge call, and a `code_exec` run that exits "
+            "non-zero counts in the error rate.",
         ]
     if pair := scores["cross_vs_same"]:
         only_cross = ", ".join(pair["only_first"]) or "none"

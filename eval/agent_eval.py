@@ -24,7 +24,8 @@ skipped, and a completed task without a verdict is judged again without running 
 Scoring rules are versioned (``metrics``): ``run`` stamps each record with
 ``SCORING_VERSION``, and a record without the stamp is scored by version 1, the rules
 the first published run used. Under version 2 a criterion about a file the run never
-wrote fails without being sent to the judge.
+wrote fails without being sent to the judge, and a ``code_exec`` run that exits
+non-zero is a tool error.
 
 ``score`` never calls anything. It turns the run into compact records (each holding the
 task it ran, so the records file alone is enough to re-score), computes every number
@@ -511,7 +512,8 @@ def task_scores(record: dict) -> dict:
     criteria passed; a completed task the judge never saw has success None."""
     task = AgentTask.model_validate(record["task"])
     calls = [ToolCall.model_validate(c) for c in record["calls"]]
-    tool = metrics.tool_call_scores(calls, task)
+    version = scoring_version(record)
+    tool = metrics.tool_call_scores(calls, task, exit_codes=version >= 2)
     verdict = _verdict(record)
     if verdict is not None:
         verdict = metrics.overrule(verdict, decided_criteria(task, record))

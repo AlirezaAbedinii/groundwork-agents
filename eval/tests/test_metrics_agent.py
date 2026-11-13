@@ -328,6 +328,37 @@ def test_artifact_at_path_lists_every_required_file_and_only_those():
 # --- scoring rules version 2 --------------------------------------------------------
 
 
+def code_run(exit_code, status: str = "success") -> ToolCall:
+    return ToolCall(
+        tool_name="code_exec",
+        specialist="code",
+        arguments={"code": "print(1)"},
+        status=status,
+        exit_code=exit_code,
+    )
+
+
+def test_a_non_zero_exit_is_an_error_only_under_version_2():
+    calls = [code_run(0), code_run(1), code_run(None), code_run(None, status="rate_limited")]
+    # version 1: only the rate-limited call; version 2: the exit-1 run too. A run with no
+    # recorded exit code keeps the status rule.
+    assert metrics.tool_call_scores(calls, task()).error_rate == 0.25
+    assert metrics.tool_call_scores(calls, task(), exit_codes=True).error_rate == 0.5
+    # the rule is about code runs: another tool's exit_code field means nothing
+    odd = ToolCall(
+        tool_name="db_query", specialist="a", arguments={}, status="success", exit_code=2
+    )
+    assert metrics.tool_call_scores([odd], task(), exit_codes=True).error_rate == 0.0
+
+
+def test_a_non_zero_exit_changes_nothing_but_the_error_rate():
+    calls = [code_run(1), call("rag_search"), call("file_write", path="notes.md")]
+    v1 = metrics.tool_call_scores(calls, task())
+    v2 = metrics.tool_call_scores(calls, task(), exit_codes=True)
+    assert (v1.must_call_recall, v1.precision) == (v2.must_call_recall, v2.precision)
+    assert (v1.error_rate, v2.error_rate) == (0.0, pytest.approx(1 / 3))
+
+
 def test_criteria_about_an_unwritten_file_fail():
     subjects = {"c1": "notes.md", "c3": "plan.md"}
     calls = [
