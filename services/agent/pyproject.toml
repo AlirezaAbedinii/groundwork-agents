@@ -23,7 +23,7 @@ dependencies = [
     "pgvector>=0.4",
     "pydantic-settings>=2.4",
     "opentelemetry-sdk>=1.27",
-    "azure-monitor-opentelemetry-exporter==1.0.0b58",  # traces to Application Insights; a beta series, pinned exactly
+    "azure-monitor-opentelemetry-exporter==1.0.0b59",  # traces to Application Insights; a beta series, pinned exactly
     "numpy>=1.26",  # memory consolidation's similarity math (memory/management.py)
     "mcp>=2.2,<3",  # 2.x Client; RAG retrieval tools reach the registry over MCP
 ]
