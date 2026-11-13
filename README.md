@@ -97,6 +97,7 @@ and a two-hour session with real models cost $0.06 in API calls. See
 | 2 | Retrieval service exposed as an MCP server; the agents consume it as a client | done |
 | 3 | Real corpus in pgvector; retrieval, answer and agent evaluation with published metrics | done |
 | 4 | Azure deployment with Terraform: Container Apps, Postgres, Key Vault, Application Insights | done |
+| 4b | Agent reliability and retrieval tuning: bounded retries, tool contracts, capability-aware planning, evidence-aware review; a larger golden set and a hybrid-search ablation ([ADR 0014](docs/decisions/0014-an-agent-reliability-phase-before-presentation.md)) | planned |
 | 5 | Results, screenshots and a recorded demo | planned |
 
 ## License

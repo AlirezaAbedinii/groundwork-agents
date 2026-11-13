@@ -19,6 +19,7 @@ supersedes it.
 | [0011](0011-terraform-state-identity-and-secrets.md) | Two Terraform configurations, secrets only in Key Vault, and OIDC for CI | accepted |
 | [0012](0012-traces-to-application-insights.md) | Traces to Application Insights beside the agent's own store | accepted |
 | [0013](0013-a-hard-time-limit-on-the-stack.md) | A hard time limit on the stack instead of a spending cap | accepted |
+| [0014](0014-an-agent-reliability-phase-before-presentation.md) | An agent reliability phase before presentation | accepted |
 
 ## Format
 
