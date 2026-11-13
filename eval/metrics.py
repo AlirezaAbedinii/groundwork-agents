@@ -17,8 +17,9 @@ Conventions every function follows:
 
 from __future__ import annotations
 
+import json
 import math
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from schemas import (
     PRF,
@@ -26,6 +27,8 @@ from schemas import (
     CorrectnessVerdict,
     ExpectedCall,
     FaithfulnessVerdict,
+    PlannedSubtask,
+    Share,
     SweepPoint,
     TaskVerdict,
     ToolCall,
@@ -331,3 +334,115 @@ def task_success(verdict: TaskVerdict, task: AgentTask) -> bool:
         raise ValueError(f"task {task.id} has no critical criterion, so it can't be scored")
     passed = criteria_passed(verdict, task)
     return all(passed[cid] for cid in critical)
+
+
+# --- agent diagnostics --------------------------------------------------------------
+# Counts read from the records alone, never from a model. They don't score a run; they
+# say where in it the work went missing, so a change upstream of the outcome (a plan, a
+# tool result, a retry) can be checked without a paid run. Each returns k of n as a
+# Share, or None when the record predates the field it needs: "not recorded" is never
+# reported as 0.
+
+# What the specialist's tool loop shows the model of one result: json.dumps(output)[:2000].
+RESULT_BUDGET_CHARS = 2000
+
+
+def plan_size(plan: Sequence[PlannedSubtask] | None) -> int | None:
+    """The number of subtasks in the supervisor's plan; None when the record has no plan."""
+    return None if plan is None else len(plan)
+
+
+def starts_with_research(plan: Sequence[PlannedSubtask] | None) -> bool | None:
+    """Whether the plan's first subtask goes to the research specialist.
+
+    A plan that opens with research for a task that needs no documents (a query, a
+    calculation) spends its first subtask on work the request didn't ask for. An empty
+    plan doesn't start with research; None when the record has no plan.
+    """
+    if plan is None:
+        return None
+    return bool(plan) and plan[0].specialist == "research"
+
+
+def toolless_completed(subtasks: Sequence[Mapping], calls: Sequence[ToolCall]) -> Share | None:
+    """Of the subtasks that completed, those with no tool call at any status.
+
+    ``subtasks`` are the run's subtasks with their ``sid`` and final ``status``. Such a
+    subtask finished on the model's text alone. That is right for some (a writing step
+    working from its inputs) and wrong for any that had to look something up, so the
+    share is a pointer to read the subtasks, not a count of failures. A rate-limited or
+    failed call still counts as a call: the specialist tried. None when a call has no
+    ``sid`` (an older record), because the calls can't be attributed to subtasks.
+    """
+    if any(c.sid is None for c in calls):
+        return None
+    called = {c.sid for c in calls}
+    completed = [s["sid"] for s in subtasks if s["status"] == "completed"]
+    return Share(k=sum(sid not in called for sid in completed), n=len(completed))
+
+
+def repeat_call_share(calls: Sequence[ToolCall]) -> Share:
+    """Of the run's calls, those that repeat an earlier call of the same run exactly.
+
+    Same tool and equal arguments, at any status: a repeat after a rate limit is still
+    a call that could not tell the model anything new. Arguments are compared as the
+    records hold them, where a long string is cut to its first 200 characters plus its
+    length, so two calls that agree on both count as one call made twice.
+    """
+    seen: set[tuple[str, str]] = set()
+    repeats = 0
+    for call in calls:
+        key = (call.tool_name, json.dumps(call.arguments, sort_keys=True, default=str))
+        repeats += key in seen
+        seen.add(key)
+    return Share(k=repeats, n=len(calls))
+
+
+def rate_limited_share(calls: Sequence[ToolCall]) -> Share:
+    """Of the run's calls, those the registry refused because the tool's per-task limit
+    was spent. Such a call returns an error, not a result."""
+    return Share(k=sum(c.status == "rate_limited" for c in calls), n=len(calls))
+
+
+def cut_result_share(calls: Sequence[ToolCall], budget: int = RESULT_BUDGET_CHARS) -> Share:
+    """Of the successful calls with a recorded result size, those whose result is longer
+    than ``budget`` characters: the model saw only the first ``budget`` of them.
+
+    The loop cuts the serialized JSON without a marker, so a result over the budget
+    reaches the model as invalid JSON missing its end. Calls without ``result_chars``
+    (failed calls, older records) are left out; with none recorded, n is 0.
+    """
+    if budget < 1:
+        raise ValueError(f"budget must be >= 1, got {budget}")
+    sizes = [c.result_chars for c in calls if c.result_chars is not None]
+    return Share(k=sum(size > budget for size in sizes), n=len(sizes))
+
+
+def critical_pass_share(verdict: TaskVerdict, task: AgentTask) -> Share:
+    """How many of the task's critical criteria passed, failing closed as ``task_success``
+    does. Success needs all of them; this shows how close a failed run came."""
+    passed = criteria_passed(verdict, task)
+    critical = [c.id for c in task.rubric if c.critical]
+    return Share(k=sum(passed[cid] for cid in critical), n=len(critical))
+
+
+def artifact_at_path(calls: Sequence[ToolCall], task: AgentTask) -> dict[str, bool]:
+    """Each file the task requires, and whether a successful ``file_write`` wrote it at
+    exactly that path.
+
+    A required file is the ``path`` of a ``must_call`` entry that ``file_write`` can
+    satisfy. The path must match character for character: the same content under
+    another name or in a subdirectory is not the file the request asked for. Empty
+    when the task requires no file.
+    """
+    written = {
+        c.arguments.get("path")
+        for c in calls
+        if c.tool_name == "file_write" and c.status == "success"
+    }
+    required = [
+        path
+        for entry in task.must_call
+        if "file_write" in entry.tools and isinstance(path := entry.args.get("path"), str)
+    ]
+    return {path: path in written for path in required}
