@@ -13,9 +13,11 @@ per label in ``runs/<id>/agent-run.json`` and refuses a label the agent doesn't 
 MOCK_LLM. Tasks run one at a time, each under its own user id, so no task's memories
 reach another's plan: ``POST /tasks``, then ``GET /tasks/{id}`` every 2 s, approving each
 pending approval (counted, at most 5 per task) until the task completes, fails or runs
-out of time (600 s). Then the task's costs, invocation log and bundle are fetched, and a
-completed task goes to the rubric judge, which sees the final output, the files the run
-wrote and, only when a criterion needs them, the subtasks' outputs. ``--max-cost-usd``
+out of time (600 s). Then the task's costs are polled until its LLM-call count holds
+still (the agent extracts memories after a task completes), its invocation log and
+bundle are fetched, and a completed task goes to the rubric judge, which sees the final
+output, the files the run wrote and, only when a criterion needs them, the subtasks'
+outputs. ``--max-cost-usd``
 caps the agent's spend and the judge's together: a task starts only if its reserve
 (``--task-reserve-usd``, 0 on MOCK_LLM) fits, and its real cost, the LLM total plus every
 ``rag_ask``'s ``cost_usd``, is recorded when it ends. Runs resume: a recorded task is
@@ -78,6 +80,9 @@ PLAN_DESCRIPTION_CHARS = 200  # each planned subtask's description, in the recor
 MAX_USER_ID = 64  # the agent's user_id columns
 # The scoring rules new records are collected under; a record without "scoring" is 1.
 SCORING_VERSION = 2
+# After a task ends, its costs are polled until the LLM-call count is the same on two
+# polls in a row, for at most this long: the memory step runs after the task completes.
+COST_SETTLE_S = 10.0
 
 
 def load_tasks(path: Path) -> list[AgentTask]:
@@ -207,14 +212,36 @@ def run_task(
             outcome = "timeout"
         if outcome is None:
             sleep(poll_s)
+    costs = settled_costs(agent, tid, poll_s=poll_s, sleep=sleep, clock=clock)
     return {
         "agent_task_id": tid,
         "outcome": outcome,
         "approvals": approvals,
         "bundle": agent.get(f"/tasks/{tid}").raise_for_status().json(),
-        "costs": agent.get(f"/traces/{tid}/costs").raise_for_status().json(),
+        "costs": costs,
         "calls": agent.get(f"/traces/{tid}/tools").raise_for_status().json()["calls"],
     }
+
+
+def settled_costs(
+    agent: httpx.Client,
+    tid: str,
+    *,
+    poll_s: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> dict:
+    """The task's costs once its LLM-call count stops changing: the same on two polls in
+    a row, ``poll_s`` apart, or whatever the last poll says after ``COST_SETTLE_S``."""
+    start = clock()
+    costs = agent.get(f"/traces/{tid}/costs").raise_for_status().json()
+    while clock() - start < COST_SETTLE_S:
+        sleep(poll_s)
+        again = agent.get(f"/traces/{tid}/costs").raise_for_status().json()
+        if again["llm"]["total_calls"] == costs["llm"]["total_calls"]:
+            return again
+        costs = again
+    return costs
 
 
 def rag_ask_cost(calls: Sequence[dict]) -> float:

@@ -107,6 +107,9 @@ class Script:
     wall_clock_s: float = 10.0
     escalations: int = 0
     plan: dict | None = None  # the supervisor's plan, as GET /tasks/{id} returns it
+    # (LLM calls, LLM spend) on each costs poll in turn, the last repeating: a late call
+    # is the memory step. Empty: 3 calls and llm_usd on every poll.
+    cost_polls: list[tuple[int, float]] = field(default_factory=list)
 
 
 def planned(sid, specialist, depends_on=(), description=None) -> dict:
@@ -184,6 +187,7 @@ class FakeAgent:
         self.approvals: dict[str, dict] = {}
         self.posts: list[dict] = []
         self.resolved: list[str] = []
+        self.cost_polls: dict[str, int] = {}
 
     def status(self, tid: str) -> str:
         state = self.tasks[tid]
@@ -220,14 +224,18 @@ class FakeAgent:
         tid, what = parts[1], parts[2]
         script = self.tasks[tid]["script"]
         if what == "costs":
+            polled = self.cost_polls[tid] = self.cost_polls.get(tid, 0) + 1
+            calls, usd = (3, script.llm_usd)
+            if script.cost_polls:
+                calls, usd = script.cost_polls[min(polled, len(script.cost_polls)) - 1]
             return httpx.Response(
                 200,
                 json={
                     "task_id": tid,
-                    "llm": {"total_calls": 3},
+                    "llm": {"total_calls": calls},
                     "wall_clock_s": script.wall_clock_s,
                     "escalations": script.escalations,
-                    "total_usd": script.llm_usd,
+                    "total_usd": usd,
                 },
             )
         return httpx.Response(200, json={"task_id": tid, "calls": script.calls})
@@ -737,6 +745,28 @@ def test_diagnose_needs_a_run(tmp_path):
 
 
 # --- scoring rules ------------------------------------------------------------------
+
+
+def test_costs_are_recorded_once_the_llm_call_count_holds_still(tmp_path, tasks_file):
+    late = scripts()
+    # the memory step's call lands after the first poll; two polls agree on 4 calls
+    late[TASKS[0]["request"]].cost_polls = [(3, 0.02), (4, 0.021), (4, 0.021)]
+    fake = FakeAgent(late)
+    run(tmp_path, tasks_file, fake)
+    t01 = raw(tmp_path)["t01"]
+    assert (t01["costs"]["llm"]["total_calls"], t01["costs"]["total_usd"]) == (4, 0.021)
+    assert fake.cost_polls["task-1"] == 3
+    assert fake.cost_polls["task-2"] == 2  # settled at once: two equal polls
+
+
+def test_costs_are_recorded_after_ten_seconds_if_the_count_never_settles(tmp_path, tasks_file):
+    busy = scripts()
+    busy[TASKS[0]["request"]].cost_polls = [(n, n / 100) for n in range(3, 12)]
+    fake = FakeAgent(busy)
+    run(tmp_path, tasks_file, fake)
+    # polls at 0, 2, 4, 6, 8 and 10 s: the sixth is the last and is recorded
+    assert fake.cost_polls["task-1"] == 6
+    assert raw(tmp_path)["t01"]["costs"]["llm"]["total_calls"] == 8
 
 
 MIXED_T01 = TASKS[0] | {
