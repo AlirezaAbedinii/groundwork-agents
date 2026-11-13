@@ -88,6 +88,14 @@ counts the demo database doesn't hold; under `cross`, the same failure was rejec
   the deliverables, tool-call recall, precision and error rate from the agent's
   invocation log, cost (LLM plus `rag_ask`) and wall-clock, escalations, the
   reviewer's scores and the rework rate ([ADR 0008](../docs/decisions/0008-agent-evaluation.md)).
+- **Agent diagnostics**, read from the same records with no model call and kept beside
+  the run, not in the report: plan size and specialist order, whether the plan starts
+  with research, completed subtasks with no tool call, calls that repeat an earlier
+  call exactly, calls refused by a rate limit, tool results longer than the 2,000
+  characters a specialist is shown, critical criteria passed, and whether each
+  required file was written at its exact path. They locate where a run's work went
+  missing; they don't change how a run is scored. Records collected before a field
+  existed show `n/a` for what needs it.
 
 ## The corpus and the golden set
 
@@ -154,6 +162,9 @@ runs resume, and a recorded verdict is never paid for twice:
 .venv/bin/python -m agent_eval run --label cross --run-id my-run --max-cost-usd 1.50
 .venv/bin/python -m agent_eval score --run-id my-run --out reports   # publish
 ```
+
+`agent_eval diagnose --run-id my-run` writes `diagnostics.md` and `diagnostics.json`
+into `runs/my-run/`, from the run's records alone ($0, no services).
 
 The published runs cost $2.31 in all: indexing $0.01, synthetic drafts $0.004, the
 judge's sanity checks $0.13, the answer run $0.58, and the agent runs $1.58.
@@ -254,6 +265,6 @@ characters: 5 of 150 lost 8 points of recall.
 | `judge.py`, `judge_prompts.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
 | `judge_fake.py` | A scripted judge for tests and keyless runs |
 | `rag_eval.py` | Collects searches and answers from the RAG API into `runs/` and scores them |
-| `agent_eval.py` | Runs agent tasks through the agent API into `runs/` and scores them |
-| `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, and the refusal curves |
+| `agent_eval.py` | Runs agent tasks through the agent API into `runs/`, scores them, and diagnoses them |
+| `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, the agent diagnostics, and the refusal curves |
 | `reports/` | The published reports and their records |

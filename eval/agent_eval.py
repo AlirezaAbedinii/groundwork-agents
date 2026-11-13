@@ -5,6 +5,7 @@
     python -m agent_eval score --run-id my-run                        # -> runs/my-run/report/
     python -m agent_eval score --run-id my-run --out reports          # publish
     python -m agent_eval score --records reports/agent-records.jsonl  # re-score in place
+    python -m agent_eval diagnose --run-id my-run                     # -> runs/my-run/
 
 ``run`` is the only step that talks to the agent or a judge. It records ``GET /config``
 per label in ``runs/<id>/agent-run.json`` and refuses a label the agent doesn't match:
@@ -23,6 +24,12 @@ skipped, and a completed task without a verdict is judged again without running 
 ``score`` never calls anything. It turns the run into compact records (each holding the
 task it ran, so the records file alone is enough to re-score), computes every number
 from them with ``metrics``, and writes the report.
+
+``diagnose`` never calls anything either. From the same compact records it counts where
+each run's work went missing (plan shape, subtasks finished without a tool, repeated and
+rate-limited calls, results longer than the tool loop shows, required files) and writes
+``diagnostics.md`` and ``diagnostics.json`` beside the run. Records collected before
+these fields existed still diagnose, with ``n/a`` for what they don't hold.
 """
 
 from __future__ import annotations
@@ -47,7 +54,7 @@ import report
 from budget import Budget, BudgetExceeded
 from judge import SubtaskOutput, render_task_outputs
 from llm import LLMError, load_env
-from schemas import AgentTask, CriterionVerdict, TaskVerdict, ToolCall
+from schemas import AgentTask, CriterionVerdict, PlannedSubtask, Share, TaskVerdict, ToolCall
 
 LABELS = ("cross", "same", "smoke")
 POLL_S = 2.0
@@ -461,20 +468,24 @@ def _rate(flags: Sequence[bool]) -> dict:
     return {"k": k, "n": n, "rate": k / n if n else None, "ci": metrics.wilson_interval(k, n)}
 
 
+def _verdict(record: dict) -> TaskVerdict | None:
+    if record["criteria"] is None:
+        return None
+    return TaskVerdict(
+        criteria=[
+            CriterionVerdict(id=c["id"], reasoning="", passed=c["passed"])
+            for c in record["criteria"]
+        ]
+    )
+
+
 def task_scores(record: dict) -> dict:
     """One task run's numbers. A task succeeds only if it completed and its critical
     criteria passed; a completed task the judge never saw has success None."""
     task = AgentTask.model_validate(record["task"])
     calls = [ToolCall.model_validate(c) for c in record["calls"]]
     tool = metrics.tool_call_scores(calls, task)
-    verdict = None
-    if record["criteria"] is not None:
-        verdict = TaskVerdict(
-            criteria=[
-                CriterionVerdict(id=c["id"], reasoning="", passed=c["passed"])
-                for c in record["criteria"]
-            ]
-        )
+    verdict = _verdict(record)
     completed = record["outcome"] == "completed"
     if not completed:
         success = False
@@ -581,6 +592,111 @@ def score_records(records: list[dict]) -> dict:
     return scores
 
 
+# --- diagnose -----------------------------------------------------------------------
+
+
+def _share(share: Share | None) -> dict | None:
+    return None if share is None else {"k": share.k, "n": share.n}
+
+
+def task_diagnostics(record: dict) -> dict:
+    """One task run's diagnostics (``metrics``' agent diagnostics), JSON-ready. Shares are
+    ``{"k", "n"}``; None marks what the record doesn't hold. Critical criteria are counted
+    for a run the judge saw, which only a completed run is."""
+    task = AgentTask.model_validate(record["task"])
+    calls = [ToolCall.model_validate(c) for c in record["calls"]]
+    plan = None
+    if record.get("plan") is not None:
+        plan = [PlannedSubtask.model_validate(s) for s in record["plan"]]
+    verdict = _verdict(record)
+    by_tool = {}
+    for tool in sorted({c.tool_name for c in calls}):
+        mine = [c for c in calls if c.tool_name == tool]
+        by_tool[tool] = {
+            "calls": len(mine),
+            "rate_limited": metrics.rate_limited_share(mine).k,
+            "over_budget": _share(metrics.cut_result_share(mine)),
+        }
+    return {
+        "id": record["id"],
+        "label": record["label"],
+        "outcome": record["outcome"],
+        "plan_size": metrics.plan_size(plan),
+        "specialists": None if plan is None else [s.specialist for s in plan],
+        "starts_with_research": metrics.starts_with_research(plan),
+        "toolless_completed": _share(metrics.toolless_completed(record["subtasks"], calls)),
+        "repeats": _share(metrics.repeat_call_share(calls)),
+        "rate_limited": _share(metrics.rate_limited_share(calls)),
+        "over_budget": _share(metrics.cut_result_share(calls)),
+        "critical": None if verdict is None else _share(metrics.critical_pass_share(verdict, task)),
+        "files": metrics.artifact_at_path(calls, task),
+        "by_tool": by_tool,
+    }
+
+
+def _total(shares: Sequence[dict | None]) -> dict | None:
+    """Shares added up over runs (k and n summed); None when no run has the share."""
+    known = [s for s in shares if s is not None]
+    if not known:
+        return None
+    return {"k": sum(s["k"] for s in known), "n": sum(s["n"] for s in known)}
+
+
+def label_diagnostics(per: Sequence[dict]) -> dict:
+    """Diagnostics added up over runs: every share is the sum of the runs' counts, so a
+    run with many calls weighs more than one with few (unlike the report's tool-call
+    ratios, which are means over tasks)."""
+    sizes = [p["plan_size"] for p in per if p["plan_size"] is not None]
+    research = [p["starts_with_research"] for p in per if p["starts_with_research"] is not None]
+    files = [ok for p in per for ok in p["files"].values()]
+    by_tool: dict[str, dict] = {}
+    for tool in sorted({t for p in per for t in p["by_tool"]}):
+        rows = [p["by_tool"][tool] for p in per if tool in p["by_tool"]]
+        by_tool[tool] = {
+            "calls": sum(r["calls"] for r in rows),
+            "rate_limited": sum(r["rate_limited"] for r in rows),
+            "over_budget": _total([r["over_budget"] for r in rows]),
+        }
+    return {
+        "runs": len(per),
+        "plan_size": {
+            "mean": _mean(sizes),
+            "min": min(sizes, default=None),
+            "max": max(sizes, default=None),
+        },
+        "starts_with_research": {"k": sum(research), "n": len(research)} if research else None,
+        "toolless_completed": _total([p["toolless_completed"] for p in per]),
+        "repeats": _total([p["repeats"] for p in per]),
+        "rate_limited": _total([p["rate_limited"] for p in per]),
+        "over_budget": _total([p["over_budget"] for p in per]),
+        "critical": _total([p["critical"] for p in per]),
+        "files": {"k": sum(files), "n": len(files)} if files else None,
+        "completed_without_file": sorted(
+            f"{p['label']} {p['id']}"
+            for p in per
+            if p["outcome"] == "completed" and not all(p["files"].values())
+        ),
+        "by_tool": by_tool,
+    }
+
+
+def diagnose_records(records: list[dict]) -> dict:
+    """Every run's diagnostics, each label's totals, and the totals over all labels."""
+    header, rows = records[0], records[1:]
+    per = {
+        label: [task_diagnostics(r) for r in rows if r["label"] == label]
+        for label in header["labels"]
+    }
+    every = [p for runs in per.values() for p in runs]
+    return {
+        "run_id": header["run_id"],
+        "result_budget_chars": metrics.RESULT_BUDGET_CHARS,
+        "labels": {label: label_diagnostics(runs) for label, runs in per.items()},
+        "all": label_diagnostics(every),
+        "tasks": per,
+    }
+
+
 # --- CLI ----------------------------------------------------------------------------
 
 
@@ -637,7 +753,22 @@ def main(
     score.add_argument(
         "--out", type=Path, help="report directory (default: runs/<id>/report, or the records' own)"
     )
+    diagnose = sub.add_parser(
+        "diagnose",
+        help="write diagnostics.md and diagnostics.json into runs/<id>/; never calls anything",
+    )
+    diagnose.add_argument("--run-id", required=True)
+    diagnose.add_argument("--runs", type=Path, default=Path("runs"))
     args = parser.parse_args(argv)
+
+    if args.command == "diagnose":
+        run_dir = args.runs / args.run_id
+        if not (run_dir / "agent-run.json").is_file():
+            parser.error(f"{run_dir} holds no agent run (agent-run.json)")
+        records = build_records(run_dir)
+        written = report.write_diagnostics(diagnose_records(records), run_dir)
+        print("\n".join(f"wrote {path}" for path in written))
+        return 0
 
     if args.command == "run":
         load_env(Path(".env"))

@@ -747,3 +747,145 @@ def write_agent(records: list[dict], scores: dict, out: Path, *, with_records: b
         path.write_text(text, encoding="utf-8")
         written.append(path)
     return written
+
+
+# --- agent diagnostics --------------------------------------------------------------
+
+
+def _share_text(share: dict | None) -> str:
+    """k/n with its percentage; n/a when the records don't hold it or n is 0."""
+    if share is None or share["n"] == 0:
+        return "n/a"
+    return f"{share['k']}/{share['n']} ({100 * share['k'] / share['n']:.0f} %)"
+
+
+def _plan_text(plan: dict) -> str:
+    if plan["mean"] is None:
+        return "n/a"
+    return f"{plan['mean']:.1f} ({plan['min']} to {plan['max']})"
+
+
+SPECIALIST_ABBREVIATIONS = {"research": "R", "analysis": "A", "writing": "W", "code": "C"}
+
+
+def _sequence(specialists: list[str] | None) -> str:
+    if specialists is None:
+        return "n/a"
+    return " ".join(SPECIALIST_ABBREVIATIONS.get(s, s) for s in specialists) or "none"
+
+
+def _files_text(files: dict[str, bool]) -> str:
+    return ", ".join(f"`{path}` {_yes(ok)}" for path, ok in files.items()) or "none required"
+
+
+def diagnostics_markdown(diagnostics: dict) -> str:
+    labels = list(diagnostics["labels"])
+    columns = {**diagnostics["labels"], "all": diagnostics["all"]}
+    budget = diagnostics["result_budget_chars"]
+
+    def row(name: str, value) -> list[str]:
+        return [name, *(value(d) for d in columns.values())]
+
+    totals = [
+        row("runs", lambda d: str(d["runs"])),
+        row("plan size: mean (min to max)", lambda d: _plan_text(d["plan_size"])),
+        row("plans that start with research", lambda d: _share_text(d["starts_with_research"])),
+        row(
+            "completed subtasks with no tool call",
+            lambda d: _share_text(d["toolless_completed"]),
+        ),
+        row("calls that repeat an earlier call exactly", lambda d: _share_text(d["repeats"])),
+        row("calls refused by a rate limit", lambda d: _share_text(d["rate_limited"])),
+        row(
+            f"results longer than {budget:,} characters",
+            lambda d: _share_text(d["over_budget"]),
+        ),
+        row(
+            "critical criteria passed (judged runs)",
+            lambda d: _share_text(d["critical"]),
+        ),
+        row("required files at the exact path", lambda d: _share_text(d["files"])),
+        row(
+            "completed runs missing a required file",
+            lambda d: ", ".join(d["completed_without_file"]) or "none",
+        ),
+    ]
+    tools = [
+        [
+            f"`{tool}`",
+            str(t["calls"]),
+            str(t["rate_limited"]),
+            _share_text(t["over_budget"]),
+        ]
+        for tool, t in diagnostics["all"]["by_tool"].items()
+    ]
+    runs = [
+        [
+            p["label"],
+            p["id"],
+            p["outcome"],
+            _sequence(p["specialists"]),
+            _share_text(p["toolless_completed"]),
+            _share_text(p["repeats"]),
+            _share_text(p["rate_limited"]),
+            _share_text(p["over_budget"]),
+            _share_text(p["critical"]),
+            _files_text(p["files"]),
+        ]
+        for label in labels
+        for p in diagnostics["tasks"][label]
+    ]
+    lines = [
+        "# Agent diagnostics",
+        "",
+        f"Run `{diagnostics['run_id']}`. Counts read from the run's compact records, with no "
+        "model call. They show where in a run the work went missing; they are not scores, "
+        "and the report's definitions of success and of the tool-call ratios are unchanged. "
+        "Shares are added up over runs (k of n). n/a: the records predate the field, or "
+        "there was nothing to count.",
+        "",
+        "## Totals",
+        "",
+        *_table(["", *labels, "all"], totals),
+        "",
+        f"## By tool (all labels; a result over budget is longer than {budget:,} characters)",
+        "",
+        *_table(["tool", "calls", "rate-limited", "results over budget"], tools),
+        "",
+        "## Runs",
+        "",
+        "Plan: the specialists in plan order (R research, A analysis, W writing, C code).",
+        "",
+        *_table(
+            [
+                "label",
+                "task",
+                "outcome",
+                "plan",
+                "no-tool subtasks",
+                "repeats",
+                "rate-limited",
+                "over budget",
+                "critical passed",
+                "required files",
+            ],
+            runs,
+        ),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+def write_diagnostics(diagnostics: dict, out: Path) -> list[Path]:
+    """Write diagnostics.md and diagnostics.json into ``out`` (the run's directory)."""
+    out.mkdir(parents=True, exist_ok=True)
+    files = {
+        "diagnostics.md": diagnostics_markdown(diagnostics),
+        "diagnostics.json": json.dumps(_rounded(diagnostics), indent=2, sort_keys=True) + "\n",
+    }
+    written = []
+    for name, text in files.items():
+        path = out / name
+        path.write_text(text, encoding="utf-8")
+        written.append(path)
+    return written

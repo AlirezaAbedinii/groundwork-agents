@@ -15,6 +15,7 @@ import httpx
 import pytest
 
 import agent_eval
+import report
 from judge_fake import FakeJudge
 from llm import LLMError
 from schemas import CriterionVerdict, TaskVerdict
@@ -534,6 +535,8 @@ def test_score_from_records_reproduces_score_from_the_run(tmp_path, tasks_file):
 
 # --- diagnose -----------------------------------------------------------------------
 
+NEW_CALL_FIELDS = ("sid", "exit_code", "result_chars")
+
 
 def test_exit_code_is_kept_for_a_code_exec_run_only():
     ran = call("code_exec", "code", output={"stdout": "", "stderr": "", "exit_code": 1})
@@ -582,3 +585,152 @@ def test_records_keep_each_calls_subtask_and_result_size_and_the_plan(tmp_path, 
         ("s2", "writing", ["s1"]),
     ]
     assert t03["plan"] == []  # timed out before a plan
+
+
+def test_task_diagnostics(tmp_path, tasks_file):
+    run(tmp_path, tasks_file, FakeAgent(scripts()))
+    t01, t02, t03 = (
+        agent_eval.task_diagnostics(r)
+        for r in agent_eval.build_records(tmp_path / "runs" / "run1")[1:]
+    )
+    assert (t01["plan_size"], t01["specialists"], t01["starts_with_research"]) == (
+        2,
+        ["research", "writing"],
+        True,
+    )
+    # s1 made the rag_ask and web_search calls, s2 the two writes: none is tool-less
+    assert t01["toolless_completed"] == {"k": 0, "n": 2}
+    assert t01["repeats"] == {"k": 0, "n": 4}  # the second write has other content
+    assert t01["rate_limited"] == {"k": 0, "n": 4}
+    # results recorded for rag_ask and web_search; only web_search's passes 2,000
+    assert t01["over_budget"] == {"k": 1, "n": 2}
+    assert t01["critical"] == {"k": 1, "n": 1}  # c1 passed; c2 isn't critical
+    assert t01["files"] == {"notes.md": True}
+    assert t01["by_tool"]["web_search"] == {
+        "calls": 1,
+        "rate_limited": 0,
+        "over_budget": {"k": 1, "n": 1},
+    }
+    assert (t02["starts_with_research"], t02["critical"]) == (False, {"k": 0, "n": 1})
+    assert t02["files"] == {}  # t02 requires no file
+    # t03 timed out: no plan, no calls, no subtasks, no verdict
+    assert (t03["plan_size"], t03["starts_with_research"], t03["critical"]) == (0, False, None)
+    assert (t03["toolless_completed"], t03["over_budget"]) == ({"k": 0, "n": 0}, {"k": 0, "n": 0})
+
+
+def test_label_diagnostics_add_up_the_runs():
+    def run_diag(**overrides) -> dict:
+        base = {
+            "id": "t01",
+            "label": "cross",
+            "outcome": "completed",
+            "plan_size": 4,
+            "starts_with_research": True,
+            "toolless_completed": {"k": 1, "n": 3},
+            "repeats": {"k": 2, "n": 10},
+            "rate_limited": {"k": 1, "n": 10},
+            "over_budget": {"k": 1, "n": 4},
+            "critical": {"k": 1, "n": 2},
+            "files": {"a.md": True},
+            "by_tool": {"rag_search": {"calls": 10, "rate_limited": 1, "over_budget": None}},
+        }
+        return base | overrides
+
+    per = [
+        run_diag(),
+        run_diag(
+            id="t02",
+            plan_size=6,
+            starts_with_research=False,
+            repeats={"k": 0, "n": 2},
+            critical=None,  # not judged
+            files={"b.md": False},
+            outcome="approval_limit",
+        ),
+        run_diag(id="t03", plan_size=None, starts_with_research=None, files={"c.md": False}),
+    ]
+    totals = agent_eval.label_diagnostics(per)
+    assert totals["runs"] == 3
+    assert totals["plan_size"] == {"mean": 5.0, "min": 4, "max": 6}  # t03 has no plan
+    assert totals["starts_with_research"] == {"k": 1, "n": 2}
+    assert totals["toolless_completed"] == {"k": 3, "n": 9}
+    assert totals["repeats"] == {"k": 4, "n": 22}  # summed, not averaged: 2 + 0 + 2
+    assert totals["critical"] == {"k": 2, "n": 4}  # t02 has no verdict
+    assert totals["files"] == {"k": 1, "n": 3}
+    assert totals["completed_without_file"] == ["cross t03"]  # t02 didn't complete
+    assert totals["by_tool"]["rag_search"] == {"calls": 30, "rate_limited": 3, "over_budget": None}
+    empty = agent_eval.label_diagnostics([])
+    assert (empty["plan_size"]["mean"], empty["repeats"], empty["files"]) == (None, None, None)
+
+
+def strip_new_fields(records: list[dict]) -> list[dict]:
+    """Records as score wrote them before the diagnostics' fields existed."""
+    old = [records[0]]
+    for r in records[1:]:
+        r = {k: v for k, v in r.items() if k != "plan"}
+        r["calls"] = [{k: v for k, v in c.items() if k not in NEW_CALL_FIELDS} for c in r["calls"]]
+        old.append(r)
+    return old
+
+
+def test_records_without_the_new_fields_still_score_and_diagnose(tmp_path, tasks_file):
+    run(tmp_path, tasks_file, FakeAgent(scripts()))
+    records = agent_eval.build_records(tmp_path / "runs" / "run1")
+    old = strip_new_fields(records)
+    assert agent_eval.score_records(old) == agent_eval.score_records(records)
+    path = tmp_path / "old" / "agent-records.jsonl"
+    path.parent.mkdir()
+    path.write_text("".join(json.dumps(r) + "\n" for r in old), encoding="utf-8")
+    assert agent_eval.main(["score", "--records", str(path)]) == 0
+
+    diagnostics = agent_eval.diagnose_records(old)
+    t01 = diagnostics["tasks"]["cross"][0]
+    assert (t01["plan_size"], t01["specialists"], t01["starts_with_research"]) == (None,) * 3
+    assert t01["toolless_completed"] is None  # calls can't be put in their subtasks
+    assert t01["over_budget"] == {"k": 0, "n": 0}  # no sizes recorded
+    assert t01["repeats"] == {"k": 0, "n": 4}  # needs only what was always recorded
+    cross = diagnostics["labels"]["cross"]
+    assert cross["starts_with_research"] is None
+    # only t03, with no calls and no subtasks, can be counted: 0 of 0, printed as n/a
+    assert cross["toolless_completed"] == {"k": 0, "n": 0}
+    md = report.diagnostics_markdown(diagnostics)
+    assert "| completed subtasks with no tool call | n/a | n/a |" in md
+    assert "| results longer than 2,000 characters | n/a | n/a |" in md
+
+
+def test_share_text():
+    assert report._share_text({"k": 1, "n": 4}) == "1/4 (25 %)"
+    assert report._share_text({"k": 0, "n": 0}) == "n/a"
+    assert report._share_text(None) == "n/a"
+
+
+def test_diagnose_writes_into_the_run_directory(tmp_path, tasks_file, capsys):
+    run(tmp_path, tasks_file, FakeAgent(scripts()))
+    same = FakeAgent(scripts(), config=CONFIG | {"reviewer_provider": "same"})
+    run(tmp_path, tasks_file, same, label="same")
+    run_dir = tmp_path / "runs" / "run1"
+    assert agent_eval.main(["diagnose", "--run-id", "run1", "--runs", str(tmp_path / "runs")]) == 0
+    assert "diagnostics.md" in capsys.readouterr().out
+    saved = json.loads((run_dir / "diagnostics.json").read_text())
+    assert saved["run_id"] == "run1" and saved["result_budget_chars"] == 2000
+    # each label: t01's 4 calls and t02's 2; all labels: twice that
+    assert saved["labels"]["cross"]["repeats"] == {"k": 0, "n": 6}
+    assert saved["all"]["repeats"] == {"k": 0, "n": 12}
+    assert saved["all"]["files"] == {"k": 2, "n": 2}  # t01's notes.md, in each label
+    md = (run_dir / "diagnostics.md").read_text()
+    assert "|  | cross | same | all |" in md
+    assert "| plans that start with research | 1/3 (33 %) | 1/3 (33 %) | 2/6 (33 %) |" in md
+    assert "| cross | t01 | completed | R W |" in md
+    # diagnosing never touches the run's records or its report
+    assert sorted(p.name for p in run_dir.iterdir()) == [
+        "agent-cross.jsonl",
+        "agent-run.json",
+        "agent-same.jsonl",
+        "diagnostics.json",
+        "diagnostics.md",
+    ]
+
+
+def test_diagnose_needs_a_run(tmp_path):
+    with pytest.raises(SystemExit):
+        agent_eval.main(["diagnose", "--run-id", "nope", "--runs", str(tmp_path)])
