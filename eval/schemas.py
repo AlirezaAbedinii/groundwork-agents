@@ -193,12 +193,31 @@ class TaskVerdict(_Strict):
 
 
 class ToolCall(BaseModel):
-    """A row of the agent's invocation log (``GET /traces/{id}/tools``), minus the other fields."""
+    """A row of the agent's invocation log (``GET /traces/{id}/tools``), minus the other fields.
+
+    The last three are recorded for runs collected after the diagnostics were added and
+    are None in older records: ``sid`` is the subtask that made the call, ``exit_code``
+    the exit status of a ``code_exec`` run that succeeded, and ``result_chars`` the
+    length of a successful call's output as the specialist's tool loop serializes it
+    (``json.dumps``), before that loop cuts it to its budget.
+    """
 
     tool_name: str
     specialist: str
     arguments: dict
     status: ToolStatus
+    sid: str | None = None
+    exit_code: int | None = None
+    result_chars: int | None = None
+
+
+class PlannedSubtask(BaseModel):
+    """One subtask of the supervisor's plan as the records keep it (description cut short)."""
+
+    sid: str
+    specialist: str
+    depends_on: list[str] = []
+    description: str = ""
 
 
 # --- metric results -----------------------------------------------------------------
@@ -221,6 +240,18 @@ class PRF:
 class SweepPoint:
     threshold: float
     prf: PRF
+
+
+@dataclass(frozen=True)
+class Share:
+    """k of n, with the ratio None when n is 0."""
+
+    k: int
+    n: int
+
+    @property
+    def rate(self) -> float | None:
+        return self.k / self.n if self.n else None
 
 
 @dataclass(frozen=True)

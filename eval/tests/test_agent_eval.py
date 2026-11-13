@@ -66,10 +66,10 @@ TASKS = [
 ]
 
 
-def call(tool, specialist, status="success", output=None, **arguments) -> dict:
+def call(tool, specialist, status="success", output=None, sid="s1", **arguments) -> dict:
     return {
         "created_at": "2026-10-13T10:00:00+00:00",
-        "subtask_sid": "s1",
+        "subtask_sid": sid,
         "specialist": specialist,
         "tool_name": tool,
         "status": status,
@@ -105,6 +105,23 @@ class Script:
     llm_usd: float = 0.0
     wall_clock_s: float = 10.0
     escalations: int = 0
+    plan: dict | None = None  # the supervisor's plan, as GET /tasks/{id} returns it
+
+
+def planned(sid, specialist, depends_on=(), description=None) -> dict:
+    return {
+        "id": sid,
+        "description": description or f"subtask {sid}",
+        "specialist": specialist,
+        "required_inputs": [],
+        "expected_output_format": "text",
+        "estimated_complexity": "low",
+        "depends_on": list(depends_on),
+    }
+
+
+# t01's web search returns more than the specialist's tool loop shows (2,000 characters)
+LONG_RESULT = {"results": "x" * 2100}
 
 
 def scripts() -> dict[str, Script]:
@@ -117,10 +134,21 @@ def scripts() -> dict[str, Script]:
                 call(
                     "rag_ask", "research", output={"content": {"answer": "a", "cost_usd": 0.0004}}
                 ),
-                call("file_write", "writing", path="notes.md", content="first draft"),
-                call("web_search", "research", query="uv cache"),
-                call("file_write", "writing", path="notes.md", content="UV_CACHE_DIR moves it."),
+                call("file_write", "writing", sid="s2", path="notes.md", content="first draft"),
+                call("web_search", "research", output=LONG_RESULT, query="uv cache"),
+                call(
+                    "file_write",
+                    "writing",
+                    sid="s2",
+                    path="notes.md",
+                    content="UV_CACHE_DIR moves it.",
+                ),
             ],
+            plan={
+                "task_summary": "notes on the cache",
+                "subtasks": [planned("s1", "research"), planned("s2", "writing", ["s1"])],
+                "confidence": 0.8,
+            },
             subtasks=[
                 subtask("s1", "research", review_score=4, output="research note"),
                 subtask("s2", "writing", attempts=2, review_score=3, output="Saved notes.md."),
@@ -136,6 +164,7 @@ def scripts() -> dict[str, Script]:
                 call("code_exec", "analysis", status="failure", code="print(1)"),
             ],
             subtasks=[subtask("s1", "analysis", review_score=5)],
+            plan={"task_summary": "rank", "subtasks": [planned("s1", "analysis")]},
             llm_usd=0.01,
             wall_clock_s=20.0,
             escalations=1,
@@ -214,6 +243,7 @@ class FakeAgent:
             "task_id": tid,
             "request": state["body"]["request"],
             "status": status,
+            "plan": script.plan,
             "subtasks": script.subtasks,
             "final_output": script.final_output if status == "completed" else None,
             "error": None,
@@ -500,3 +530,55 @@ def test_score_from_records_reproduces_score_from_the_run(tmp_path, tasks_file):
     agent_eval.main(["score", "--records", str(first / "agent-records.jsonl"), "--out", str(again)])
     for name in ("agent.md", "agent.json"):
         assert (again / name).read_bytes() == (first / name).read_bytes()
+
+
+# --- diagnose -----------------------------------------------------------------------
+
+
+def test_exit_code_is_kept_for_a_code_exec_run_only():
+    ran = call("code_exec", "code", output={"stdout": "", "stderr": "", "exit_code": 1})
+    assert agent_eval._exit_code(ran) == 1
+    assert agent_eval._exit_code(ran | {"status": "failure", "output": None}) is None
+    assert agent_eval._exit_code(ran | {"tool_name": "db_query"}) is None  # not a code run
+    assert agent_eval._exit_code(ran | {"output": {"exit_code": True}}) is None  # not a status
+    assert agent_eval._exit_code(ran | {"output": {"stdout": "1"}}) is None  # none reported
+
+
+def test_result_chars_is_the_serialized_output_length_of_a_successful_call():
+    ok = call("db_query", "analysis", output={"rows": [[1, "é"]]})
+    # json.dumps escapes non-ASCII, as the tool loop does: {"rows": [[1, "\u00e9"]]}
+    assert agent_eval._result_chars(ok) == len('{"rows": [[1, "\\u00e9"]]}') == 25
+    assert agent_eval._result_chars(ok | {"status": "rate_limited"}) is None
+    assert agent_eval._result_chars(ok | {"output": None}) is None
+
+
+def test_plan_keeps_each_subtask_in_order_with_a_short_description():
+    bundle = {
+        "plan": {
+            "subtasks": [
+                planned("s1", "research", description="d" * 300),
+                planned("s2", "writing", ["s1"]),
+            ]
+        }
+    }
+    assert agent_eval._plan(bundle) == [
+        {"sid": "s1", "specialist": "research", "depends_on": [], "description": "d" * 200},
+        {"sid": "s2", "specialist": "writing", "depends_on": ["s1"], "description": "subtask s2"},
+    ]
+    assert agent_eval._plan({"plan": None}) == agent_eval._plan({}) == []  # never planned
+
+
+def test_records_keep_each_calls_subtask_and_result_size_and_the_plan(tmp_path, tasks_file):
+    run(tmp_path, tasks_file, FakeAgent(scripts()))
+    t01, t02, t03 = agent_eval.build_records(tmp_path / "runs" / "run1")[1:]
+    rag_ask, write, web, _ = t01["calls"]
+    assert (rag_ask["sid"], write["sid"], web["sid"]) == ("s1", "s2", "s1")
+    assert web["result_chars"] == len(json.dumps(LONG_RESULT)) == 2115
+    assert write["result_chars"] is None  # the fake's write returns no output
+    assert all(c["exit_code"] is None for c in t01["calls"])  # no code_exec
+    assert t02["calls"][1]["exit_code"] is None  # code_exec failed: it never ran
+    assert [(s["sid"], s["specialist"], s["depends_on"]) for s in t01["plan"]] == [
+        ("s1", "research", []),
+        ("s2", "writing", ["s1"]),
+    ]
+    assert t03["plan"] == []  # timed out before a plan

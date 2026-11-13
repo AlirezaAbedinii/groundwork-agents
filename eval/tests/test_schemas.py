@@ -197,6 +197,10 @@ def test_tool_call_keeps_the_log_fields_it_needs():
         "specialist": "researcher",
         "arguments": {"query": "cache"},
         "status": "rate_limited",
+        # the compact records' own fields; a raw log row (subtask_sid) doesn't fill them
+        "sid": None,
+        "exit_code": None,
+        "result_chars": None,
     }
     with pytest.raises(ValidationError):
         ToolCall.model_validate(logged | {"status": "timeout"})

@@ -61,6 +61,7 @@ TERMINAL = ("completed", "failed", "rejected", "escalated")
 # Tool-call arguments go into the records cut to this many characters (file contents
 # and code are long); must_call args are short, so scoring never needs more.
 ARG_CHARS = 200
+PLAN_DESCRIPTION_CHARS = 200  # each planned subtask's description, in the records
 MAX_USER_ID = 64  # the agent's user_id columns
 
 
@@ -355,6 +356,45 @@ def _judge_id(verdict: dict) -> str:
     return f"{verdict['provider']}:{verdict['model']} prompts {verdict['prompt_version']}"
 
 
+def _exit_code(call: dict) -> int | None:
+    """A successful ``code_exec`` call's exit status; None for any other call."""
+    if call["tool_name"] != "code_exec" or call["status"] != "success":
+        return None
+    output = call.get("output")
+    code = output.get("exit_code") if isinstance(output, dict) else None
+    return code if isinstance(code, int) and not isinstance(code, bool) else None
+
+
+def _result_chars(call: dict) -> int | None:
+    """The length of a successful call's output as the specialist's tool loop serializes
+    it (``json.dumps``, before the loop cuts it); None for a call without a result."""
+    if call["status"] != "success" or call.get("output") is None:
+        return None
+    return len(json.dumps(call["output"]))
+
+
+def _call(call: dict) -> dict:
+    kept = {k: _cut(call[k]) for k in ("tool_name", "specialist", "status", "arguments")}
+    return kept | {
+        "sid": call.get("subtask_sid"),
+        "exit_code": _exit_code(call),
+        "result_chars": _result_chars(call),
+    }
+
+
+def _plan(bundle: dict) -> list[dict]:
+    """The supervisor's plan in order; [] when the task never got one."""
+    return [
+        {
+            "sid": s["id"],
+            "specialist": s["specialist"],
+            "depends_on": s.get("depends_on") or [],
+            "description": (s.get("description") or "")[:PLAN_DESCRIPTION_CHARS],
+        }
+        for s in (bundle.get("plan") or {}).get("subtasks", [])
+    ]
+
+
 def _record(label: str, raw: dict) -> dict:
     task, bundle, costs, verdict = raw["task"], raw["bundle"], raw["costs"], raw["verdict"]
     return {
@@ -366,10 +406,8 @@ def _record(label: str, raw: dict) -> dict:
         "agent_task_id": raw["agent_task_id"],
         "outcome": raw["outcome"],
         "error": (bundle.get("error") or "")[:300] or None,
-        "calls": [
-            {k: _cut(c[k]) for k in ("tool_name", "specialist", "status", "arguments")}
-            for c in raw["calls"]
-        ],
+        "calls": [_call(c) for c in raw["calls"]],
+        "plan": _plan(bundle),
         "subtasks": [
             {k: s[k] for k in ("sid", "specialist", "status", "attempts", "review_score")}
             for s in bundle.get("subtasks", [])
