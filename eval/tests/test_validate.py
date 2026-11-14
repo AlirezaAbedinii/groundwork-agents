@@ -495,5 +495,6 @@ def test_candidates_mode_rejects_options_that_dont_fit(tmp_path, extra):
 def test_the_committed_files_are_valid(capsys):
     root = Path(__file__).parent.parent
     assert main([str(root / "golden" / "golden_set.jsonl")]) == 0
+    assert main([str(root / "golden" / "candidates_targeted.jsonl"), "--candidates"]) == 0
     assert main([str(root / "tasks" / "agent_tasks.jsonl"), "--tasks"]) == 0
     assert main([str(root / "tasks" / "smoke_tasks.jsonl"), "--tasks"]) == 0
