@@ -112,8 +112,9 @@ variables, flags, config keys) and vocabulary shared across the three projects
 ("dependencies" means two things) keep the dense-vs-hybrid question meaningful.
 
 The [golden set](golden/golden_set.jsonl) ([schema and rules](golden/SCHEMA.md)) has
-75 questions: 37 lookup, 14 multi-hop, 18 with no answer in the docs, and 6 ambiguous,
-split 40/60 into dev and test within each category. Fifty are targeted: written from
+197 questions. The published RAG results use its first 75: 37 lookup, 14 multi-hop, 18
+with no answer in the docs, and 6 ambiguous, split 40/60 into dev and test within each
+category. Fifty are targeted: written from
 the docs to a coverage spec (exact-token lookups, paraphrases, cross-project
 multi-hops, near-miss and out-of-scope refusals) and checked by hand. The other 25 are
 synthetic: drafted by `gpt-4o-mini` from a single chunk, then verified by hand. Of 40
@@ -122,6 +123,12 @@ only in the chunk's own example, 1 partial), and every accepted question and ans
 was rewritten, because the drafts copied their chunk's wording or answered beyond
 their quote. Synthetic questions still flatter retrieval: R@10 0.800 against 0.733
 for targeted ones (dense), 0.840 against 0.699 (hybrid).
+
+The other 122 are targeted rows added on 2026-11-14 and not yet in a published result:
+61 lookup and 29 multi-hop, each marked exact-token or paraphrase, 9 ambiguous and 23
+no-answer, written from the corpus files without running retrieval, checked by hand,
+and split 40/60 inside each category × phrasing stratum
+([ADR 0006](../docs/decisions/0006-evaluation-harness-and-judge.md), addendum).
 
 The [agent tasks](tasks/agent_tasks.jsonl) are 18 requests: 6 docs answers saved to
 files, 3 analyses of the demo database, 2 code tasks, 4 that combine docs with data
@@ -146,6 +153,7 @@ make -C .. eval-score                  # re-score every published report: $0, no
 .venv/bin/python -m dataset.validate golden/candidates_targeted.jsonl --candidates \
   --corpus ../services/rag/data/raw/toolchain_docs
 .venv/bin/python -m dataset.review --targeted   # check the targeted candidates by hand
+.venv/bin/python -m dataset.promote              # move the checked ones into the golden set
 ```
 
 **Free, keyless:** seed the corpus with local embeddings (the `.env.example` in

@@ -16,7 +16,7 @@ checks every rule below that a program can check.
 | `category` | string | `lookup`, `multi_hop`, `no_answer` or `ambiguous` (below). |
 | `evidence` | list of items | The facts the answer needs; each item is `{"quotes": [...]}`. `[]` for `no_answer`. |
 | `origin` | string | `targeted` or `synthetic` (below). |
-| `split` | string | `dev` or `test`; filled in by `--assign-splits`. |
+| `split` | string | `dev` or `test`; filled in by `--assign-splits`, or by `dataset.promote` for promoted candidates. |
 | `verified` | bool | `true` on every row in the set. |
 | `notes` | string | What the row tests and, for `no_answer`, how the absence was checked. |
 | `phrasing` | string | `exact_token` or `paraphrase`; set on the `lookup` and `multi_hop` rows from `q051` (below), absent elsewhere. |
@@ -86,16 +86,20 @@ the readings.
 - **`split`**: about 40 % `dev` and 60 % `test` within each category. `dev` is used
   only to choose the refusal thresholds; numbers that depend on a threshold are
   reported on `test`. `--assign-splits` fills in missing splits in an order fixed by
-  a hash of the ids, so the dev rows aren't simply the first ones written.
+  a hash of the ids, so the dev rows aren't simply the first ones written. Promoted
+  targeted candidates are split by `python -m dataset.promote` instead, 40/60 inside
+  each stratum of the promoted rows (below).
 - **`verified: true`** on every row: unreviewed rows don't belong in this file.
 
-Target composition (75 rows; the validator reports the gaps as warnings):
+Target composition (200 rows: the first 75 and the 125 of the expansion below; the
+validator reports the gaps as warnings):
 
 | | lookup | multi_hop | no_answer | ambiguous | total |
 |---|---|---|---|---|---|
-| targeted | 12 | 14 | 18 | 6 | 50 |
+| targeted, first 50 | 12 | 14 | 18 | 6 | 50 |
 | synthetic | 25 | | | | 25 |
-| total | 37 | 14 | 18 | 6 | 75 |
+| targeted, expansion | 60 | 30 | 25 | 10 | 125 |
+| total | 97 | 44 | 43 | 16 | 200 |
 
 ## Expansion: 125 targeted candidates
 
@@ -150,6 +154,29 @@ the table above. `python -m dataset.review --targeted` walks through the unverif
 ones for the owner's check: accepting sets `verified: true` in place, editing saves
 only a row that still validates, and rejecting moves the row, with its reason, to
 `targeted_rejects.jsonl`. Nothing is promoted into the golden set by the review.
+
+### Promotion (2026-11-14)
+
+Of the 125, 3 were rejected (in `targeted_rejects.jsonl` with their reasons) and 3
+changed category during the check. The 122 verified rows were promoted with
+`python -m dataset.promote`, which moves only `verified: true` rows to the end of
+`golden_set.jsonl` and leaves the lines before them untouched. Each stratum of the
+promoted rows is split on its own: its rows are ordered by the SHA-256 of
+`SPLIT_SEED` and the id, the first round(0.4 × n) (halves round up) go to `dev`, the
+rest to `test`. The split depends only on the ids, strata and seed.
+
+| stratum | rows | target | dev | test |
+|---|---|---|---|---|
+| lookup × exact_token | 30 | 30 | 12 | 18 |
+| lookup × paraphrase | 31 | 30 | 12 | 19 |
+| multi_hop × exact_token | 15 | 15 | 6 | 9 |
+| multi_hop × paraphrase | 14 | 15 | 6 | 8 |
+| ambiguous | 9 | 10 | 4 | 5 |
+| no_answer | 23 | 25 | 9 | 14 |
+| total | 122 | 125 | 49 | 73 |
+
+The gaps are left open: no unchecked row fills them. Run `--rag` against the served
+chunks before these rows are first scored.
 
 ## Rules
 

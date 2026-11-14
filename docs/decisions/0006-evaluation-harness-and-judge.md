@@ -70,3 +70,41 @@ their HTTP APIs and nothing else. For the retrieval service:
   overlapping windows "which of the two chunks holds the fact" is arbitrary.
 - **A judge from the generator's provider.** Cheaper to set up (one key), but a
   model grading its own family's answers is the bias the change exists to remove.
+
+## Addendum, 2026-11-14: the golden set grows to 197 rows
+
+With 75 rows, each question type has a dozen or so rows and wide intervals, so 125
+targeted rows were written to strata fixed before any
+question was written, checked one by one against their quotes and pages, and the
+122 that passed were added (`eval/golden/SCHEMA.md`, "Expansion").
+
+- **Strata.** A stratum is category × phrasing. `phrasing` is new and set only on
+  lookup and multi-hop rows: `exact_token` when the question names the flag,
+  variable, function or setting the evidence is about, `paraphrase` when it avoids
+  the passage's key term. The plan was 60 lookup, 30 multi-hop, 10 ambiguous and 25
+  no-answer rows, half of each answerable category in each phrasing, spread over uv,
+  Pydantic and FastAPI by their share of the corpus's chunks. The check rejected 3
+  and moved 3 between categories, so the added rows are lookup 30 exact-token and 31
+  paraphrase, multi-hop 15 and 14, 9 ambiguous and 23 no-answer. The gaps are left
+  open rather than filled with unchecked rows; the rejects and their reasons are in
+  `targeted_rejects.jsonl`.
+- **Written without running retrieval.** The questions, quotes and answers come from
+  the corpus files alone: no retrieval service, index, retrieval record or report was
+  consulted while choosing or writing them, so no question is in the set because one
+  mode finds it. This replaces the pooling step for these rows: every passage a
+  search of the whole corpus finds stating a fact is an alternative quote for it.
+  Labels written this way don't lean toward either retriever, but a chunk that states
+  a fact in words the search missed counts as irrelevant; the `--rag` check against
+  the served chunks is still to run.
+- **Split rule.** The 75 rows keep their ids, text and splits, byte for byte, and a
+  test pins them. `python -m dataset.promote` moves only rows marked verified and
+  splits them inside each stratum of the promoted rows: ordered by the SHA-256 of a
+  fixed seed and the id, the first round(0.4 × n) go to dev and the rest to test
+  (49 dev, 73 test). The split depends only on the ids, strata and seed, so it is
+  reproducible, independent of the order the rows were written in, and a row never
+  moves once split. Splitting per stratum rather than per category keeps
+  exact-token and paraphrase questions in the same proportion on both sides of the
+  threshold choice.
+
+The published RAG report is unchanged: it is scored from its committed records, which
+cover the first 75 rows. The new rows enter a report only with a new paid run.
