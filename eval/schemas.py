@@ -19,6 +19,9 @@ from textnorm import normalize_ws
 Category = Literal["lookup", "multi_hop", "no_answer", "ambiguous"]
 Origin = Literal["targeted", "synthetic"]
 Split = Literal["dev", "test"]
+# How a lookup or multi_hop question words its fact: naming the flag, variable,
+# function or setting (exact_token), or avoiding the passage's key term (paraphrase).
+Phrasing = Literal["exact_token", "paraphrase"]
 ToolStatus = Literal["success", "failure", "rejected", "rate_limited"]
 
 # Each origin's id prefix: q001… written to the coverage spec, s001… drafted from one
@@ -72,10 +75,13 @@ class GoldenQuestion(_Strict):
     split: Split
     verified: bool
     notes: str = ""
+    phrasing: Phrasing | None = None  # set on the targeted rows added from q051 (SCHEMA.md)
 
     @model_validator(mode="after")
     def _evidence_fits_category(self) -> Self:
         n = len(self.evidence)
+        if self.phrasing is not None and self.category not in ("lookup", "multi_hop"):
+            raise ValueError(f"phrasing applies to lookup and multi_hop rows, not {self.category}")
         if self.category == "no_answer" and n:
             raise ValueError("a no_answer question has no evidence (evidence: [])")
         if self.category == "lookup" and not n:

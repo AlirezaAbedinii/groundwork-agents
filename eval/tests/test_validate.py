@@ -427,6 +427,71 @@ def test_tasks_mode_takes_no_golden_options(tmp_path):
     assert exc.value.code == 2
 
 
+# --- candidates ---------------------------------------------------------------------
+
+
+def candidate_rows() -> list[dict]:
+    """The fixture's rows as unverified candidates with new ids and no split."""
+    rows = []
+    for n, r in enumerate(golden_rows(), start=51):
+        c = {k: v for k, v in r.items() if k != "split"} | {"id": f"q{n:03}", "verified": False}
+        if c["category"] in ("lookup", "multi_hop"):
+            c["phrasing"] = "exact_token"
+        rows.append(c)
+    return rows
+
+
+def test_candidates_mode_allows_unverified_rows_without_a_split(tmp_path, capsys):
+    path = write_rows(tmp_path / "c.jsonl", candidate_rows())
+    code, out = run(capsys, path, "--candidates", "--golden", GOLDEN, "--corpus", CORPUS)
+    assert code == 0, out
+    assert "3 candidates · 0 verified, 3 to check" in out
+    assert "corpus: 3 quotes in 2 files, all found" in out
+    assert "  lookup × exact_token       1      30" in out
+    assert "rows with evidence by first source: tool 2" in out
+    assert "WARN  strata: lookup × exact_token 1/30" in out
+    assert out.rstrip().endswith("0 errors, 1 warning")
+
+
+def test_candidates_mode_checks_its_own_rules(tmp_path, capsys):
+    rows = candidate_rows()
+    rows[0].pop("phrasing")
+    rows[1]["split"] = "dev"
+    rows[2]["id"] = "q003"  # taken by the golden set
+    synthetic = candidate_rows()[0] | {"id": "s051", "origin": "synthetic"}
+    path = write_rows(tmp_path / "c.jsonl", [*rows, synthetic])
+    code, out = run(capsys, path, "--candidates", "--golden", GOLDEN)
+    assert code == 1
+    assert "ERROR q051: phrasing is missing (exact_token or paraphrase)" in out
+    assert "ERROR q052 (line 2): a candidate has no split; it gets one when promoted" in out
+    assert "ERROR q003: id is already in golden_3rows.jsonl; ids are never reused" in out
+    assert "ERROR s051: candidates are targeted rows (origin: targeted)" in out
+
+
+def test_candidates_mode_still_applies_the_schema(tmp_path, capsys):
+    bad = candidate_rows()[2] | {"phrasing": "paraphrase"}  # a no_answer row
+    path = write_rows(tmp_path / "c.jsonl", [bad])
+    code, out = run(capsys, path, "--candidates", "--golden", GOLDEN)
+    assert code == 1
+    assert "phrasing applies to lookup and multi_hop rows, not no_answer" in out
+
+
+def test_without_the_flag_candidates_fail_as_before(tmp_path, capsys):
+    path = write_rows(tmp_path / "c.jsonl", candidate_rows())
+    code, out = run(capsys, path)
+    assert code == 1
+    assert "ERROR q051 (line 1): split is missing (run with --assign-splits)" in out
+
+
+@pytest.mark.parametrize("extra", [["--assign-splits"], ["--tasks"], ["--golden", "g.jsonl"]])
+def test_candidates_mode_rejects_options_that_dont_fit(tmp_path, extra):
+    path = write_rows(tmp_path / "c.jsonl", candidate_rows())
+    args = [str(path), *extra] if extra[0] == "--golden" else [str(path), "--candidates", *extra]
+    with pytest.raises(SystemExit) as exc:
+        main(args)
+    assert exc.value.code == 2
+
+
 def test_the_committed_files_are_valid(capsys):
     root = Path(__file__).parent.parent
     assert main([str(root / "golden" / "golden_set.jsonl")]) == 0

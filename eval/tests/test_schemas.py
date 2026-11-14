@@ -105,6 +105,28 @@ def test_id_prefix_matches_origin(rid, origin):
         GoldenQuestion.model_validate(row(id=rid, origin=origin))
 
 
+@pytest.mark.parametrize(
+    ("category", "n_items", "phrasing", "ok"),
+    [
+        ("lookup", 1, None, True),
+        ("lookup", 1, "exact_token", True),
+        ("multi_hop", 2, "paraphrase", True),
+        ("no_answer", 0, "paraphrase", False),
+        ("ambiguous", 2, "exact_token", False),
+        ("lookup", 1, "verbatim", False),
+    ],
+)
+def test_phrasing_is_optional_and_only_on_lookup_and_multi_hop(category, n_items, phrasing, ok):
+    data = row(category=category, evidence=[item(f"fact number {i} here") for i in range(n_items)])
+    if phrasing is not None:
+        data["phrasing"] = phrasing
+    if ok:
+        assert GoldenQuestion.model_validate(data).phrasing == phrasing
+    else:
+        with pytest.raises(ValidationError):
+            GoldenQuestion.model_validate(data)
+
+
 def test_a_synthetic_row_parses():
     q = GoldenQuestion.model_validate(row(id="s001", origin="synthetic"))
     assert q.origin == "synthetic"

@@ -3,6 +3,8 @@
     python -m dataset.validate golden/golden_set.jsonl \\
         [--corpus ../services/rag/data/raw/toolchain_docs] [--rag http://localhost:8000] \\
         [--assign-splits]
+    python -m dataset.validate golden/candidates_targeted.jsonl --candidates \\
+        [--corpus ../services/rag/data/raw/toolchain_docs]
     python -m dataset.validate tasks/agent_tasks.jsonl --tasks
 
 Always, offline: every row against the schema (``schemas.GoldenQuestion``), unique
@@ -18,6 +20,11 @@ against the target composition (warnings).
                  not specific enough: every chunk containing it counts as relevant.
 --assign-splits  gives each row without a split one, per category toward 40 % dev
                  and 60 % test, and rewrites only those lines; assigned rows never move.
+--candidates     the file holds targeted candidates awaiting the owner's check: rows
+                 may have ``verified: false`` and must have no split yet, lookup and
+                 multi_hop rows need ``phrasing``, no id may already be in the
+                 golden set (``--golden``, default ``golden_set.jsonl`` beside the
+                 file), and the counts are compared with the 125-row strata.
 --tasks          the file holds agent tasks (``schemas.AgentTask``): every tool named
                  is one of the agent's, `args` keys are arguments of their tool, no
                  tool is both allowed and forbidden, no task requires a tool that
@@ -55,6 +62,18 @@ ORIGINS: tuple[str, ...] = get_args(Origin)
 TARGET_CATEGORIES = {"lookup": 37, "multi_hop": 14, "no_answer": 18, "ambiguous": 6}
 TARGET_ORIGINS = {"targeted": 50, "synthetic": 25}
 DEV_SHARE = 0.4
+
+# The 125 targeted candidates (SCHEMA.md, "Expansion"): a stratum is category x phrasing,
+# and phrasing applies to lookup and multi_hop only.
+CANDIDATE_STRATA: dict[tuple[str, str | None], int] = {
+    ("lookup", "exact_token"): 30,
+    ("lookup", "paraphrase"): 30,
+    ("multi_hop", "exact_token"): 15,
+    ("multi_hop", "paraphrase"): 15,
+    ("ambiguous", None): 10,
+    ("no_answer", None): 25,
+}
+PHRASED = ("lookup", "multi_hop")
 MAX_CHUNKS_PER_QUOTE = 2
 
 # Tools whose results come from outside services and change between runs, so no task
@@ -152,6 +171,33 @@ def check_golden(rows: list[Row], findings: Findings) -> list[GoldenQuestion]:
     for q in questions:
         if not q.verified:
             findings.error(q.id, "verified is false: only checked rows belong in the set")
+    return questions
+
+
+def check_candidates(rows: list[Row], golden: Path, findings: Findings) -> list[GoldenQuestion]:
+    """Candidates before the owner's check: unverified and without a split.
+
+    Each row is validated as a golden row with a placeholder split, so every other
+    rule of the schema still applies.
+    """
+    staged = []
+    for row in rows:
+        if row.data is not None and "split" in row.data:
+            findings.error(row.where(), "a candidate has no split; it gets one when promoted")
+        data = None if row.data is None else {"split": "test"} | row.data
+        staged.append(Row(line=row.line, data=data))
+    questions = parse_rows(staged, GoldenQuestion, findings)
+    taken = set()
+    if golden.is_file():
+        lines = golden.read_text(encoding="utf-8").splitlines()
+        taken = {r.data.get("id") for r in read_rows(lines, Findings()) if r.data is not None}
+    for q in questions:
+        if q.id in taken:
+            findings.error(q.id, f"id is already in {golden.name}; ids are never reused")
+        if q.origin != "targeted":
+            findings.error(q.id, "candidates are targeted rows (origin: targeted)")
+        if q.category in PHRASED and q.phrasing is None:
+            findings.error(q.id, "phrasing is missing (exact_token or paraphrase)")
     return questions
 
 
@@ -456,6 +502,38 @@ def summarize_tasks(path: Path, n_rows: int, tasks: list[AgentTask], findings: F
         findings.summary.append(rubrics)
 
 
+def _tool(q: GoldenQuestion) -> str | None:
+    """The tool a row counts for: the top directory of its first quote's source."""
+    return q.evidence[0].quotes[0].source.split("/", 1)[0] if q.evidence else None
+
+
+def summarize_candidates(
+    path: Path, n_rows: int, questions: list[GoldenQuestion], findings: Findings
+) -> None:
+    n_verified = sum(q.verified for q in questions)
+    parsed = f" ({len(questions)} parsed)" if len(questions) != n_rows else ""
+    to_check = len(questions) - n_verified
+    line = f"{path}: {n_rows} candidates{parsed} · {n_verified} verified, {to_check} to check"
+    findings.summary.insert(0, line)
+    strata = Counter((q.category, q.phrasing) for q in questions)
+    table = [f"  {'stratum':<23}{'rows':>5}{'target':>8}"]
+    for (category, phrasing), target in CANDIDATE_STRATA.items():
+        name = f"{category} × {phrasing}" if phrasing else category
+        table.append(f"  {name:<23}{strata[category, phrasing]:>5}{target:>8}")
+    findings.summary[1:1] = table
+    tools = Counter(t for q in questions if (t := _tool(q)))
+    if tools:
+        listed = ", ".join(f"{t} {n}" for t, n in sorted(tools.items()))
+        findings.summary.append(f"  rows with evidence by first source: {listed}")
+    gaps = [
+        f"{c}{f' × {p}' if p else ''} {strata[c, p]}/{n}"
+        for (c, p), n in CANDIDATE_STRATA.items()
+        if strata[c, p] != n
+    ]
+    if gaps:
+        findings.warn("strata", f"{', '.join(gaps)} (rows/target; the target is 125 rows)")
+
+
 def _grouped(entries: list[tuple[str, str]]) -> list[str]:
     """Messages about the same place together (a quote's corpus and RAG findings),
     places in the order they first came up."""
@@ -491,9 +569,21 @@ def main(argv: Sequence[str] | None = None, *, rag_client: httpx.Client | None =
         "--assign-splits", action="store_true", help="fill in missing splits, then check"
     )
     parser.add_argument("--tasks", action="store_true", help="the file holds agent tasks")
+    parser.add_argument(
+        "--candidates", action="store_true", help="the file holds unverified targeted candidates"
+    )
+    parser.add_argument(
+        "--golden", type=Path, help="with --candidates: the golden set whose ids are taken"
+    )
     args = parser.parse_args(argv)
-    if args.tasks and (args.corpus or args.rag or args.assign_splits):
-        parser.error("--tasks can't be combined with --corpus, --rag or --assign-splits")
+    if args.tasks and (args.corpus or args.rag or args.assign_splits or args.candidates):
+        parser.error(
+            "--tasks can't be combined with --corpus, --rag, --assign-splits or --candidates"
+        )
+    if args.candidates and args.assign_splits:
+        parser.error("--candidates can't be combined with --assign-splits")
+    if args.golden and not args.candidates:
+        parser.error("--golden goes with --candidates")
     if not args.file.is_file():
         parser.error(f"no such file: {args.file}")
     if args.corpus and not args.corpus.is_dir():
@@ -515,14 +605,21 @@ def main(argv: Sequence[str] | None = None, *, rag_client: httpx.Client | None =
             ids = ", ".join(sorted(f"{r.data['id']} {r.data['split']}" for r in assigned))
             print(f"assigned splits to {len(assigned)} rows: {ids}")
 
-    questions = check_golden(rows, findings)
+    if args.candidates:
+        golden = args.golden or args.file.parent / "golden_set.jsonl"
+        questions = check_candidates(rows, golden, findings)
+    else:
+        questions = check_golden(rows, findings)
     if args.corpus:
         check_corpus(questions, args.corpus, findings)
     if args.rag:
         client = rag_client or httpx.Client(base_url=args.rag, timeout=30)
         with client:
             check_rag(questions, client, findings)
-    summarize_golden(args.file, len(rows), questions, findings)
+    if args.candidates:
+        summarize_candidates(args.file, len(rows), questions, findings)
+    else:
+        summarize_golden(args.file, len(rows), questions, findings)
     report(findings)
     return 1 if findings.errors else 0
 
