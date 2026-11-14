@@ -57,10 +57,10 @@ from textnorm import normalize_ws
 CATEGORIES: tuple[str, ...] = get_args(Category)
 ORIGINS: tuple[str, ...] = get_args(Origin)
 
-# The golden set's target composition: 50 targeted rows (12 lookup, 14 multi_hop,
-# 18 no_answer, 6 ambiguous) and 25 synthetic lookups.
-TARGET_CATEGORIES = {"lookup": 37, "multi_hop": 14, "no_answer": 18, "ambiguous": 6}
-TARGET_ORIGINS = {"targeted": 50, "synthetic": 25}
+# The golden set's target composition (SCHEMA.md): the first 75 rows (50 targeted, 25
+# synthetic lookups) plus the 125 targeted rows of the expansion.
+TARGET_CATEGORIES = {"lookup": 97, "multi_hop": 44, "no_answer": 43, "ambiguous": 16}
+TARGET_ORIGINS = {"targeted": 175, "synthetic": 25}
 DEV_SHARE = 0.4
 
 # The 125 targeted candidates (SCHEMA.md, "Expansion"): a stratum is category x phrasing,
@@ -479,7 +479,8 @@ def summarize_golden(
     actual = {c: by_category[c] for c in CATEGORIES} | {o: by_origin[o] for o in ORIGINS}
     if actual != targets:
         gaps = ", ".join(f"{k} {actual[k]}/{n}" for k, n in targets.items() if actual[k] != n)
-        findings.warn("composition", f"{gaps} (rows/target; the target is 75 rows)")
+        total = sum(TARGET_ORIGINS.values())
+        findings.warn("composition", f"{gaps} (rows/target; the target is {total} rows)")
 
 
 def summarize_tasks(path: Path, n_rows: int, tasks: list[AgentTask], findings: Findings) -> None:

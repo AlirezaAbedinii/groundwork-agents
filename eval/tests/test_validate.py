@@ -92,7 +92,7 @@ def test_the_fixture_passes_with_the_corpus_and_rag(capsys):
     assert "corpus: 3 quotes in 2 files, all found" in out
     assert "rag: 3 quotes checked against docs_test (fake-embedder; fixed 800/120; 5 chunks)" in out
     assert out.rstrip().endswith("0 errors, 1 warning")  # the composition warning only
-    assert "WARN  composition: lookup 1/37" in out
+    assert "WARN  composition: lookup 1/97" in out
 
 
 def test_schema_errors_are_reported_per_row(tmp_path, capsys):
