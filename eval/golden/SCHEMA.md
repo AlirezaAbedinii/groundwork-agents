@@ -19,6 +19,7 @@ checks every rule below that a program can check.
 | `split` | string | `dev` or `test`; filled in by `--assign-splits`. |
 | `verified` | bool | `true` on every row in the set. |
 | `notes` | string | What the row tests and, for `no_answer`, how the absence was checked. |
+| `phrasing` | string | `exact_token` or `paraphrase`; set on the `lookup` and `multi_hop` rows from `q051` (below), absent elsewhere. |
 
 A quote is `{"source": "uv/concepts/cache.md", "text": "..."}`, where `source` is
 the file's path relative to the corpus root (`services/rag/data/raw/toolchain_docs/`).
@@ -145,8 +146,10 @@ How the candidates were written:
 `python -m dataset.validate golden/candidates_targeted.jsonl --candidates` checks them:
 it allows `verified: false` and a missing split, requires `phrasing` where it
 applies, rejects an id already in `golden_set.jsonl`, and compares the counts with
-the table above. `python -m dataset.review --targeted` walks through them for the
-owner's check.
+the table above. `python -m dataset.review --targeted` walks through the unverified
+ones for the owner's check: accepting sets `verified: true` in place, editing saves
+only a row that still validates, and rejecting moves the row, with its reason, to
+`targeted_rejects.jsonl`. Nothing is promoted into the golden set by the review.
 
 ## Rules
 

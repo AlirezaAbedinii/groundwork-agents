@@ -143,6 +143,9 @@ make -C .. eval-score                  # re-score every published report: $0, no
 .venv/bin/python -m dataset.validate golden/golden_set.jsonl \
   --corpus ../services/rag/data/raw/toolchain_docs --rag http://localhost:8000
 .venv/bin/python -m dataset.validate tasks/agent_tasks.jsonl --tasks
+.venv/bin/python -m dataset.validate golden/candidates_targeted.jsonl --candidates \
+  --corpus ../services/rag/data/raw/toolchain_docs
+.venv/bin/python -m dataset.review --targeted   # check the targeted candidates by hand
 ```
 
 **Free, keyless:** seed the corpus with local embeddings (the `.env.example` in
@@ -261,10 +264,10 @@ characters: 5 of 150 lost 8 points of recall.
 |---|---|
 | `schemas.py` | Golden questions, agent tasks, judge verdicts and metric results |
 | `textnorm.py` | How a quote is matched against chunk text, for labels and scoring alike |
-| `golden/` | The golden set, its [schema and rules](golden/SCHEMA.md), the human grades and the rejected synthetic drafts |
+| `golden/` | The golden set, its [schema and rules](golden/SCHEMA.md), the targeted candidates awaiting review, the human grades and the rejected drafts |
 | `tasks/` | The agent tasks and the two keyless smoke tasks |
 | `dataset/validate.py` | Checks the golden set against the schema, the corpus files and the served chunks, and the agent tasks against the agent's tools |
-| `dataset/synthesize.py`, `dataset/review.py` | Draft synthetic candidates from single chunks (paid), and accept, edit or reject them by hand |
+| `dataset/synthesize.py`, `dataset/review.py` | Draft synthetic candidates from single chunks (paid), and accept, edit or reject them by hand; `review.py --targeted` checks the targeted candidates in place |
 | `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
 | `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
 | `metrics.py` | Retrieval, refusal, answer, agreement and agent metrics: pure functions over recorded runs |
