@@ -96,6 +96,58 @@ Target composition (75 rows; the validator reports the gaps as warnings):
 | synthetic | 25 | | | | 25 |
 | total | 37 | 14 | 18 | 6 | 75 |
 
+## Expansion: 125 targeted candidates
+
+The set grows to about 200 rows. The 125 new rows are written first as candidates in
+`candidates_targeted.jsonl` (committed): golden-format rows with `origin: targeted`,
+ids from `q051`, `verified: false` and no `split`. The owner checks each one; only
+verified rows are later promoted into `golden_set.jsonl`, with splits assigned 40/60
+inside each stratum. The 75 existing rows don't change.
+
+A stratum is category × phrasing. `phrasing` is set on every new `lookup` and
+`multi_hop` row and on no other:
+
+- **`exact_token`**: the question names the flag, environment variable, function,
+  class or setting that the evidence is about (`--no-sources`, `UV_CACHE_DIR`,
+  `model_validator`).
+- **`paraphrase`**: the question avoids the passage's key term and describes what the
+  user wants instead.
+
+The strata and counts were fixed before any row was written:
+
+| stratum | uv | Pydantic | FastAPI | total |
+|---|---|---|---|---|
+| lookup × exact_token | 8 | 10 | 12 | 30 |
+| lookup × paraphrase | 8 | 10 | 12 | 30 |
+| multi_hop × exact_token | 4 | 5 | 6 | 15 |
+| multi_hop × paraphrase | 4 | 5 | 6 | 15 |
+| ambiguous | 3 | 3 | 4 | 10 |
+| no_answer | 8 | 7 | 10 | 25 |
+| total | 35 | 40 | 50 | 125 |
+
+The tools are weighted by their share of the corpus's chunks (uv 27.6 %, Pydantic
+32.7 %, FastAPI 39.7 %), estimated from the files with the 800/120 windows and the
+heading split above. A row counts for the tool of its first evidence item; an
+ambiguous row for its first reading; a `no_answer` row for the tool whose topic it
+borders.
+
+How the candidates were written:
+
+- **From the corpus files alone.** No retrieval service, index, retrieval record or
+  report was consulted while choosing or writing them, so no question is there
+  because one retrieval mode finds it. The pooling step under "Evidence and
+  relevance" is replaced by a search of the whole corpus for each fact: every
+  passage found that states it is added as an alternative quote.
+- **`no_answer` rows are near misses**: the topic is in the docs, the asked fact is
+  not. Each is checked by grepping the whole corpus for its key terms, and `notes`
+  says what was searched and which page covers the nearest feature.
+
+`python -m dataset.validate golden/candidates_targeted.jsonl --candidates` checks them:
+it allows `verified: false` and a missing split, requires `phrasing` where it
+applies, rejects an id already in `golden_set.jsonl`, and compares the counts with
+the table above. `python -m dataset.review --targeted` walks through them for the
+owner's check.
+
 ## Rules
 
 1. **Every row is verified by hand.** A person checks the question, the reference
