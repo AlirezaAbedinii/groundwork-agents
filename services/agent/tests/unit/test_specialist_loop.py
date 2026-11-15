@@ -17,7 +17,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel
 
 from orchestrator.agents.specialists import ResearchSpecialist
-from orchestrator.agents.specialists.base import FEEDBACK_MARKER, SpecialistError, SpecialistResult
+from orchestrator.agents.specialists.base import FEEDBACK_MARKER, REPEAT_PREFIX, SpecialistError, SpecialistResult
 from orchestrator.config import get_settings
 from orchestrator.llm.mock import LLMResponse, ToolCall
 from orchestrator.tools.base import InMemoryInvocationStore, ToolContext, ToolExecutionError, ToolSpec
@@ -369,3 +369,62 @@ async def test_every_tool_call_is_answered_right_after_its_turn(store):
                 answers = messages[index + 1 : index + 1 + len(expected)]
                 assert all(isinstance(answer, ToolMessage) for answer in answers), messages
                 assert [answer.tool_call_id for answer in answers] == expected
+
+
+# --- 10. a repeated call is answered from the attempt's history -----------------------
+
+
+async def test_five_identical_calls_reach_the_registry_once(store):
+    # across turns and within one turn; the order of the arguments does not matter
+    same = {"msg": "a", "delay": 0.0}
+    reordered = {"delay": 0.0, "msg": "a"}
+    llm = ScriptedLLM(
+        turn(ToolCall(id="r1", name="echo", arguments=same)),
+        turn(ToolCall(id="r2", name="echo", arguments=reordered), ToolCall(id="r3", name="echo", arguments=same)),
+        turn(ToolCall(id="r4", name="echo", arguments=same), ToolCall(id="r5", name="echo", arguments=same)),
+        final("DONE"),
+    )
+
+    result = await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    assert [(r.tool_name, r.status) for r in store.records] == [("echo", "success")]
+    assert result == SpecialistResult(output="DONE", tool_calls=["echo"])  # repeats ran nothing
+    first, *repeats = tool_messages(llm.calls[3]["messages"])  # still one answer per call, in order
+    assert [m.tool_call_id for m in (first, *repeats)] == ["r1", "r2", "r3", "r4", "r5"]
+    assert json.loads(first.content) == {"msg": "a"}
+    assert all(m.content == f"{REPEAT_PREFIX} {first.content}" and m.status == "success" for m in repeats)
+
+
+async def test_a_repeated_failing_call_is_answered_with_the_same_error(store):
+    llm = ScriptedLLM(turn(call("boom", msg="x")), turn(call("boom", msg="x"), call("boom", msg="y")), final("DONE"))
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    assert [(r.arguments, r.status) for r in store.records] == [({"msg": "x"}, "failure"), ({"msg": "y"}, "failure")]
+    failed, repeated, other = tool_messages(llm.calls[2]["messages"])
+    assert (repeated.status, repeated.content) == ("error", f"{REPEAT_PREFIX} {failed.content}")
+    assert not other.content.startswith(REPEAT_PREFIX)  # other arguments are another call
+
+
+async def test_a_call_that_ran_is_reused_but_a_human_answer_is_asked_again(store):
+    gate = ScriptedGate(
+        store,
+        {"action": "approve", "payload": {}, "notes": ""},
+        {"action": "modify", "payload": {"arguments": {"msg": "edited"}}, "notes": ""},
+        {"action": "reject", "payload": {}, "notes": "no"},
+    )
+    llm = ScriptedLLM(
+        turn(call("echo", msg="danger"), call("echo", msg="danger")),  # one ruling for the pair
+        turn(call("echo", msg="danger")),  # ran as asked: reused, no ruling
+        turn(call("echo", msg="danger", delay=0.0)),  # other arguments: ruled on, run as edited
+        turn(call("echo", msg="danger", delay=0.0)),  # what ran was the edit, so: ruled on again
+        final("DONE"),
+    )
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX, gate=gate)
+
+    assert [c["iteration"] for c in gate.calls] == [0, 2, 3]
+    assert [r.arguments for r in store.records] == [{"msg": "danger"}, {"msg": "edited"}]
+    answers = tool_messages(llm.calls[4]["messages"])
+    assert [m.content.startswith(REPEAT_PREFIX) for m in answers] == [False, True, True, False, False]
+    assert answers[-1].content == "denied by human reviewer: no"

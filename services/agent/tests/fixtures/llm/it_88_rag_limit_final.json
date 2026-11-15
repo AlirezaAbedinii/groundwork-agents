@@ -1,11 +1,11 @@
 {
   "agent": "research",
   "match": [
-    "Keep listing the indexed Ferry documents",
-    "-> rag_list_sources returned:",
-    "-> rag_list_sources failed:"
+    "Keep searching the Ferry documentation until the search tool refuses",
+    "-> rag_search returned:",
+    "-> rag_search failed:"
   ],
   "response": {
-    "text": "DOCS-LISTED: the list tool refused a fourth call; the index has 7 documents."
+    "text": "DOCS-SEARCHED: the search tool refused a second call; FERRY-429 means the rate limit was exceeded."
   }
 }

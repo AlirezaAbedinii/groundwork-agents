@@ -4,6 +4,11 @@ Each turn the model either replies in plain text (the deliverable) or asks for
 one or more tool calls through the provider's tool-calling API. Every call of a
 turn is answered with exactly one ToolMessage before the model's next turn:
 
+0. A call identical to one that reached the registry earlier in this attempt
+   (same tool, same arguments), or to an earlier call of the same turn, is
+   answered with that answer again, marked as a repeat. It reaches neither the
+   gate nor the registry. Answers a human gave are not reused across turns: a
+   repeated sensitive call goes back to the reviewer.
 1. The human-approval gate rules on each sensitive call before any call of the
    turn runs. It can pause the whole run (``interrupt()``), so it is asked one
    call at a time.
@@ -20,6 +25,7 @@ batch of calls is one turn) or when something other than a ToolError escapes.
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -33,8 +39,9 @@ from orchestrator.tools.base import ToolContext, ToolError
 from orchestrator.tools.registry import ToolRegistry
 from orchestrator.tools.serialize import render_result
 
-# Stable prompt marker; mock fixtures and tests match on it.
+# Stable prompt markers; mock fixtures and tests match on them.
 FEEDBACK_MARKER = "Reviewer feedback:"
+REPEAT_PREFIX = "Identical to an earlier call in this attempt; result unchanged:"
 
 SYSTEM_PROMPT = """You are the {name} specialist in a multi-agent system. {role}
 Use the tools provided when they help. When you are finished, reply with the
@@ -61,6 +68,10 @@ class SpecialistResult:
 
 def _answer(call: ToolCall, content: str, *, error: bool = False) -> ToolMessage:
     return ToolMessage(content=content, tool_call_id=call.id, name=call.name, status="error" if error else "success")
+
+
+def _call_key(name: str, arguments: dict) -> str:
+    return name + json.dumps(arguments, sort_keys=True)
 
 
 class SpecialistAgent(BaseAgent):
@@ -92,6 +103,7 @@ class SpecialistAgent(BaseAgent):
         budget = get_settings().max_tool_iterations
         transcript: list[str] = []
         executed: list[str] = []
+        answered: dict[str, ToolMessage] = {}  # each call that reached the registry, by the arguments it ran with
         for iteration in range(budget):
             response = await self.chat(messages, tools=tools)
             if not response.tool_calls:
@@ -101,10 +113,21 @@ class SpecialistAgent(BaseAgent):
                 for call in response.tool_calls
             ]))
 
+            # 0. Repeats of an answered call, or of an earlier call of this turn, are answered from it.
+            repeats: dict[str, str] = {}  # call id -> key of the call it repeats
+            firsts: set[str] = set()
+            for call in response.tool_calls:
+                key = _call_key(call.name, call.arguments)
+                if key in answered or key in firsts:
+                    repeats[call.id] = key
+                else:
+                    firsts.add(key)
+            fresh = [call for call in response.tool_calls if call.id not in repeats]
+
             # 1. The gate rules on every sensitive call before anything of this turn runs.
             arguments = {call.id: call.arguments for call in response.tool_calls}
             decided: dict[str, tuple[ToolMessage, str | None]] = {}  # answered by a human, with the name to list
-            for call in response.tool_calls:
+            for call in fresh:
                 if gate is None or not self.registry.is_sensitive_call(call.name, call.arguments):
                     continue
                 decision = gate(call.name, call.arguments, iteration, list(transcript)) or {}
@@ -119,7 +142,7 @@ class SpecialistAgent(BaseAgent):
                     arguments[call.id] = payload.get("arguments", call.arguments)
 
             # 2. The other calls run concurrently, each in a worker thread.
-            to_run = [call for call in response.tool_calls if call.id not in decided]
+            to_run = [call for call in fresh if call.id not in decided]
             outcomes = await asyncio.gather(
                 *(asyncio.to_thread(self.registry.invoke, call.name, arguments[call.id], ctx) for call in to_run),
                 return_exceptions=True,
@@ -130,8 +153,14 @@ class SpecialistAgent(BaseAgent):
             ran = {call.id: outcome for call, outcome in zip(to_run, outcomes)}
 
             # 3. Exactly one answer per call, in call order, before the next turn.
+            this_turn: dict[str, ToolMessage] = {}  # this turn's answers, by the arguments the model asked with
             for call in response.tool_calls:
-                if call.id in decided:
+                if call.id in repeats:
+                    key = repeats[call.id]
+                    earlier = this_turn[key] if key in this_turn else answered[key]
+                    answer = _answer(call, f"{REPEAT_PREFIX} {earlier.content}", error=earlier.status == "error")
+                    listed = None  # nothing ran
+                elif call.id in decided:
                     answer, listed = decided[call.id]
                 else:
                     outcome = ran[call.id]
@@ -140,6 +169,9 @@ class SpecialistAgent(BaseAgent):
                     else:
                         answer = _answer(call, render_result(outcome, self.registry.get(call.name).result_budget_chars))
                     listed = call.name
+                    answered[_call_key(call.name, arguments[call.id])] = answer
+                if call.id not in repeats:
+                    this_turn.setdefault(_call_key(call.name, call.arguments), answer)
                 messages.append(answer)
                 if listed:
                     executed.append(listed)

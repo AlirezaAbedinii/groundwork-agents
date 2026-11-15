@@ -7,6 +7,7 @@ the registry. Fixtures it_80..it_88 script the model's side.
 """
 
 import asyncio
+import dataclasses
 import importlib.util
 import json
 import socket
@@ -23,10 +24,11 @@ import uvicorn
 from orchestrator.config import get_settings
 from orchestrator.db.session import get_engine
 from orchestrator.graph import runner
+from orchestrator.tools.defaults import RAG_MCP_POLICY
 
 MCP_DIR = Path(__file__).resolve().parents[4] / "mcp"
 REQUEST = "Using the Ferry documentation, explain what FERRY-429 means and how clients should retry."
-LIMIT_REQUEST = "TRIGGER-RAG-LIMIT: keep listing the Ferry documentation sources until the tool refuses."
+LIMIT_REQUEST = "TRIGGER-RAG-LIMIT: keep searching the Ferry documentation until the tool refuses."
 VECTOR_REQUEST = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
     "compute the GitHub star ranking from the demo database, generate a comparison "
@@ -151,23 +153,26 @@ def test_research_answers_from_the_teams_docs_over_mcp(client, mcp_on):
     assert any("04-error-codes.md" in prompt for prompt in research_prompts)  # the retrieval reached the model
 
 
-def test_the_rate_limit_applies_to_an_mcp_tool_and_the_model_sees_the_refusal(client, mcp_on):
+def test_the_rate_limit_applies_to_an_mcp_tool_and_the_model_sees_the_refusal(client, mcp_on, monkeypatch):
+    # One search per task, so the script's second search, with other arguments, is refused.
+    # (An identical one would be answered from the attempt's history, never reaching the registry.)
+    monkeypatch.setitem(RAG_MCP_POLICY, "search", dataclasses.replace(RAG_MCP_POLICY["search"], rate_limit=1))
     task_id = run(client, LIMIT_REQUEST)
 
-    listed = [row for row in invocations(task_id) if row["tool_name"] == "rag_list_sources"]
-    assert [row["status"] for row in listed] == ["success", "success", "success", "rate_limited"]
-    assert "Rate limit of 3 calls per task exceeded" in listed[-1]["error"]
+    searched = [row for row in invocations(task_id) if row["tool_name"] == "rag_search"]
+    assert [row["status"] for row in searched] == ["success", "rate_limited"]
+    assert "Rate limit of 1 calls per task exceeded" in searched[-1]["error"]
     # The read endpoint returns the same log, the refused call included.
     calls = client.get(f"/traces/{task_id}/tools").json()["calls"]
     assert [(c["tool_name"], c["status"]) for c in calls] == [
         (row["tool_name"], row["status"]) for row in invocations(task_id)
     ]
     refused = [c for c in calls if c["status"] == "rate_limited"]
-    assert [(c["tool_name"], c["error"]) for c in refused] == [("rag_list_sources", listed[-1]["error"])]
+    assert [(c["tool_name"], c["error"]) for c in refused] == [("rag_search", searched[-1]["error"])]
 
     llm_calls = client.get(f"/traces/{task_id}").json()["llm_calls"]
     last_research_prompt = [call["prompt"] for call in llm_calls if call["agent"] == "research"][-1]
-    assert "-> rag_list_sources failed: Rate limit of 3 calls per task exceeded" in last_research_prompt
+    assert "-> rag_search failed: Rate limit of 1 calls per task exceeded" in last_research_prompt
 
 
 def test_with_mcp_on_the_existing_flow_runs_and_every_call_respects_ownership(client, mcp_on):
