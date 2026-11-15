@@ -71,4 +71,5 @@ WRITE_SPEC = ToolSpec(
     owners=_OWNERS,
     rate_limit=20,
     handler=handle_write,
+    changes_state=True,
 )

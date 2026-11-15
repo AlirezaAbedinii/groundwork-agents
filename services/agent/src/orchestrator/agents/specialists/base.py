@@ -8,7 +8,8 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    (same tool, same arguments), or to an earlier call of the same turn, is
    answered with that answer again, marked as a repeat. It reaches neither the
    gate nor the registry. Answers a human gave are not reused across turns: a
-   repeated sensitive call goes back to the reviewer.
+   repeated sensitive call goes back to the reviewer. A call of a tool that
+   ``changes_state`` makes every earlier answer stale once it has run.
 1. The human-approval gate rules on each sensitive call before any call of the
    turn runs. It can pause the whole run (``interrupt()``), so it is asked one
    call at a time.
@@ -39,7 +40,13 @@ from orchestrator.agents.base import BaseAgent
 from orchestrator.config import get_settings
 from orchestrator.llm.clients import LLMClient
 from orchestrator.llm.mock import ToolCall
-from orchestrator.tools.base import RateLimitExceededError, ToolContext, ToolError
+from orchestrator.tools.base import (
+    RateLimitExceededError,
+    ToolContext,
+    ToolError,
+    ToolPermissionError,
+    UnknownToolError,
+)
 from orchestrator.tools.registry import ToolRegistry
 from orchestrator.tools.serialize import render_result
 
@@ -86,6 +93,12 @@ def _answer(call: ToolCall, content: str, *, error: bool = False) -> ToolMessage
 
 def _call_key(name: str, arguments: dict) -> str:
     return name + json.dumps(arguments, sort_keys=True)
+
+
+def _refused(outcome: object) -> bool:
+    """Whether the registry turned the call away before it ran. Invalid arguments count as run:
+    treating them so can only cost a run later, never a stale answer."""
+    return isinstance(outcome, UnknownToolError | ToolPermissionError | RateLimitExceededError)
 
 
 def _digest(transcript: list[str]) -> str:
@@ -180,6 +193,16 @@ class SpecialistAgent(BaseAgent):
                     raise outcome  # not the model's to handle: the attempt fails
             ran = {call.id: outcome for call, outcome in zip(to_run, outcomes)}
 
+            # A call that changes state and ran makes every earlier answer stale. The calls of
+            # a turn run at the same time, so a turn's answers are kept only if none of its
+            # calls changed state, or the one that did ran alone (then an identical call
+            # straight after it is still answered from it).
+            ran_here = [call for call in to_run if not _refused(ran[call.id])]
+            changed = any(self.registry.get(call.name).changes_state for call in ran_here)
+            if changed:
+                answered.clear()
+            keep = not changed or len(ran_here) == 1
+
             # 3. Exactly one answer per call, in call order, before the next turn.
             this_turn: dict[str, ToolMessage] = {}  # this turn's answers, by the arguments the model asked with
             for call in response.tool_calls:
@@ -200,7 +223,8 @@ class SpecialistAgent(BaseAgent):
                     else:
                         answer = _answer(call, render_result(outcome, self.registry.get(call.name).result_budget_chars))
                     listed = call.name
-                    answered[_call_key(call.name, arguments[call.id])] = answer
+                    if keep:
+                        answered[_call_key(call.name, arguments[call.id])] = answer
                 if call.id not in repeats:
                     this_turn.setdefault(_call_key(call.name, call.arguments), answer)
                 messages.append(answer)

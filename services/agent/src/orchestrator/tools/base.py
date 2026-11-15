@@ -54,6 +54,9 @@ class ToolSpec:
     sensitive_when: Callable[[BaseModel], bool] | None = None
     # Most characters of JSON the model sees of one result (tools/serialize.py).
     result_budget_chars: int = DEFAULT_RESULT_BUDGET_CHARS
+    # A call can change what another call returns (files, an outside service), so once it
+    # runs the specialist loop stops reusing earlier answers. A tool that writes must set it.
+    changes_state: bool = False
 
     def __post_init__(self) -> None:
         if self.result_budget_chars < MIN_RESULT_BUDGET_CHARS:

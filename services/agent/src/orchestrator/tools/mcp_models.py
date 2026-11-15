@@ -25,6 +25,7 @@ class McpToolPolicy:
     rate_limit: int
     sensitive: bool = False
     result_budget_chars: int = DEFAULT_RESULT_BUDGET_CHARS
+    changes_state: bool = False  # ToolSpec.changes_state; a server tool that writes must set it
 
 
 class McpToolOutput(BaseModel):

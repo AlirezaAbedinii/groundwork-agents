@@ -501,3 +501,45 @@ async def test_a_call_that_ran_is_reused_but_a_human_answer_is_asked_again(store
     answers = tool_messages(llm.calls[4]["messages"])
     assert [m.content.startswith(REPEAT_PREFIX) for m in answers] == [False, True, True, False, False]
     assert answers[-1].content == "denied by human reviewer: no"
+
+
+# --- 11. a call that changes state makes earlier answers stale ----------------------
+
+
+def registry_with_writes(store: InMemoryInvocationStore) -> ToolRegistry:
+    """make_registry's tools, plus write and run (both change state) and write_once (also rate-limited)."""
+    registry = make_registry(store)
+    for name, rate_limit in (("write", 20), ("run", 20), ("write_once", 1)):
+        registry.register(ToolSpec(name=name, description=f"{name}, changing state", input_schema=EchoIn,
+                                   output_schema=EchoOut, owners=frozenset({"research"}), rate_limit=rate_limit,
+                                   handler=lambda args, ctx: EchoOut(msg=args.msg), changes_state=True))
+    return registry
+
+
+@pytest.mark.parametrize(
+    ("turns", "runs", "reused"),
+    [
+        # read, write, read: the write makes the first read stale
+        ([[("echo", "a")], [("write", "x")], [("echo", "a")]], 3, [False, False, False]),
+        # A, B, A with a read-only B: still reused
+        ([[("echo", "a")], [("echo", "b")], [("echo", "a")]], 2, [False, False, True]),
+        # a call that changes state, straight after itself (code_exec X, X): reused
+        ([[("run", "x")], [("run", "x")]], 1, [False, True]),
+        # code_exec X, Y, X: Y may have changed what X sees
+        ([[("run", "x")], [("run", "y")], [("run", "x")]], 3, [False, False, False]),
+        # a repeat runs nothing, so it clears nothing
+        ([[("run", "x")], [("echo", "a")], [("run", "x")], [("echo", "a")]], 2, [False, False, True, True]),
+        # neither does a refusal at the rate limit
+        ([[("write_once", "1")], [("echo", "a")], [("write_once", "2")], [("echo", "a")]], 2,
+         [False, False, False, True]),
+        # a read in the same turn as a write may have seen either state, so it is not kept
+        ([[("echo", "a"), ("write", "x")], [("echo", "a")]], 3, [False, False, False]),
+    ],
+)
+async def test_a_call_that_changes_state_makes_earlier_answers_stale(store, turns, runs, reused):
+    llm = ScriptedLLM(*(turn(*(call(name, msg=msg) for name, msg in calls)) for calls in turns), final("DONE"))
+
+    await ResearchSpecialist(llm, registry_with_writes(store)).execute(SPEC, {}, None, CTX)
+
+    assert len([r for r in store.records if r.status in ("success", "failure")]) == runs
+    assert [m.content.startswith(REPEAT_PREFIX) for m in tool_messages(llm.calls[-1]["messages"])] == reused

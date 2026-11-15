@@ -77,4 +77,5 @@ SPEC = ToolSpec(
     owners=frozenset({"analysis", "code"}),
     rate_limit=5,
     handler=handle,
+    changes_state=True,  # runs in the task workspace, so it can write files there
 )

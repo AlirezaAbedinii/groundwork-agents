@@ -50,4 +50,5 @@ SPEC = ToolSpec(
     rate_limit=10,
     handler=handle,
     sensitive_when=lambda args: args.method == "POST",
+    changes_state=True,  # a POST changes the service; a GET is treated the same, to be safe
 )

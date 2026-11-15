@@ -148,7 +148,8 @@ model can ask for several tools in one turn: sensitive calls go to the tool
 gate first, the rest run concurrently, and every call's result goes back to
 the model before its next turn. A tool error is one of those results, not a
 failure. A call identical to one that already ran in the attempt is answered
-with that result again, without running; a tool that reaches its rate limit is
+with that result again, without running, unless a call that changes state
+(`file_write`, `code_exec`, `api_call`) has run since; a tool that reaches its rate limit is
 no longer offered; and the model is told when its last turn comes. Then the
 reviewer scores the deliverable. Score ≥ threshold → completed; below →
 `rework` with feedback (max `MAX_SPECIALIST_RETRIES` cycles); running out of

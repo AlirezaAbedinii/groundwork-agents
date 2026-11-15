@@ -82,11 +82,25 @@ when the turns ran out, the retry was told only to try a different approach.
 - A call identical to one that reached the registry earlier in the attempt (same tool,
   same arguments, in any key order), or to an earlier call of the same turn, is answered
   with that answer again, prefixed "Identical to an earlier call in this attempt; result
-  unchanged:", and runs nothing. Each call still gets exactly one answer. A call that
-  varies over time would be answered from the earlier result; none of the current tools
-  does within the minutes an attempt takes. Answers a human gave (a rejection, a
-  take-over) are not reused across turns, so a repeated sensitive call goes back to the
-  reviewer; a call a human modified is remembered by the arguments it ran with.
+  unchanged:", and runs nothing. Each call still gets exactly one answer. Answers a
+  human gave (a rejection, a take-over) are not reused across turns, so a repeated
+  sensitive call goes back to the reviewer; a call a human modified is remembered by the
+  arguments it ran with.
+- A tool whose calls can change what other calls return sets `changes_state` on its
+  `ToolSpec`, or on its MCP policy: `file_write`, `code_exec` (it runs in the task
+  workspace) and `api_call` (GET included, to be safe). Once such a call has run,
+  whatever its status, the earlier answers are dropped and then its own is kept, so a
+  read after a write runs again while an identical call straight after the write is
+  still answered from it. A call refused before it ran (unknown tool, not permitted,
+  rate limit) or answered from the history clears nothing; one with invalid arguments
+  counts as run, which can only cost a run. The calls of one turn run at the same time,
+  so a turn's answers are kept only if none of its calls changed state or the one that
+  did ran alone. The flag defaults to false: a new tool that writes must set it, or a
+  read after its writes would get an answer from before them.
+- A call whose result changes with time alone would get its earlier result. The other
+  current tools read the task workspace, the demo database, web search and the
+  retrieval index, none of which is expected to change within an attempt except
+  through a call that changes state.
 - A rate-limited answer adds "this tool is unavailable for the rest of this task", and
   the tool is left out of the definitions for the attempt's later turns. A later attempt
   starts with every tool again and learns of the limit from its first refusal.
