@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -69,7 +70,7 @@ class Settings(BaseSettings):
     max_specialist_retries: int = 2
     # Hard cap on one subtask's attempts: at this many, an approval no longer buys
     # another one and the task fails; a human can still take over or reject
-    max_subtask_attempts: int = 5
+    max_subtask_attempts: int = Field(5, ge=1)
 
     # Observability: spans also go to Azure Monitor (Application Insights) when this is set
     applicationinsights_connection_string: str = ""

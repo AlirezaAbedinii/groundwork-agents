@@ -1,3 +1,5 @@
+import pytest
+
 from orchestrator.config import Settings
 
 
@@ -15,6 +17,14 @@ def test_the_first_allowance_never_passes_the_attempt_cap(monkeypatch):
     monkeypatch.setenv("MAX_SPECIALIST_RETRIES", "6")
     monkeypatch.setenv("MAX_SUBTASK_ATTEMPTS", "4")
     assert Settings(_env_file=None).initial_attempt_allowance == 4
+
+
+def test_the_attempt_cap_is_at_least_one(monkeypatch):
+    from pydantic import ValidationError
+
+    monkeypatch.setenv("MAX_SUBTASK_ATTEMPTS", "0")
+    with pytest.raises(ValidationError):
+        Settings(_env_file=None)
 
 
 def test_env_overrides(monkeypatch):

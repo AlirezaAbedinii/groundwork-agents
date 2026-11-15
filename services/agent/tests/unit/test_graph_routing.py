@@ -518,3 +518,19 @@ async def test_a_notify_override_ends_at_the_attempt_cap(tmp_path, repo, monkeyp
     assert repo.tasks[task_id]["status"] == "failed"
     assert repo.tasks[task_id]["error"] == BUDGET_ERROR
     assert state["hitl_decision"]["requested"] == "notified"
+
+
+def test_an_entry_from_before_the_allowance_is_held_and_escalated():
+    from orchestrator.graph.edges import compute_wave, dispatch
+
+    # a checkpoint written before attempt_allowance existed: three attempts, no allowance
+    state = {
+        "task_id": "t",
+        "plan": json.loads(plan_text([subtask("s1", "research", "look up s1")], 0.9)),
+        "subtask_results": {"s1": {"sid": "s1", "status": "rework", "attempts": 3, "rework_count": 0}},
+    }
+    assert compute_wave(state) == []  # the default allowance, 3, is spent
+    assert dispatch({**state, "current_wave": []}) == "gather"
+    state["subtask_results"]["s1"]["attempts"] = 2
+    (payload,) = compute_wave(state)
+    assert payload["prior"]["attempt_allowance"] is None  # execute fills in the default

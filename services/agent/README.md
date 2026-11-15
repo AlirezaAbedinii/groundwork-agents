@@ -227,7 +227,7 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 
 `NOTIFY` is the fourth level: record it, tell the human, keep going — nothing blocks.
 
-An approved subtask escalation buys exactly one more attempt and never resets the subtask's error and rework counts. At `MAX_SUBTASK_ATTEMPTS` (default 5) an approval or a `NOTIFY` ends the task as `failed` instead, naming the subtask; take-over and reject still work ([ADR 0015](../../docs/decisions/0015-bounded-subtask-attempts.md)).
+An approved subtask escalation buys exactly one more attempt and never resets the subtask's error and rework counts. At `MAX_SUBTASK_ATTEMPTS` (default 5) an approve, a modify or a `NOTIFY` ends the task as `failed` instead, naming the subtask; take-over and reject still work ([ADR 0015](../../docs/decisions/0015-bounded-subtask-attempts.md)).
 
 **Pausing is durable.** An escalation packages the complete decision context — request, plan, completed steps, the step in question, the agent's proposed action and reasoning, plus relevant long-term memories — into a Postgres-backed approval queue, notifies the reviewer (log + optional Slack-compatible webhook), and interrupts the graph. The checkpointed run survives restarts; nothing executes while a decision is pending.
 

@@ -94,13 +94,15 @@ def subtask_escalation(
     *,
     review_threshold: int,
     max_retries: int,
+    default_allowance: int,
     max_failures: int = 2,
-    default_allowance: int | None = None,
 ) -> Escalation | None:
     """Post-wave gate over one subtask's result entry.
 
     Fires when a counter reaches its limit, or when the subtask has made every attempt
-    it was allowed (`attempt_allowance`, by default `max_retries + 1`). An approval
+    it was allowed (`attempt_allowance`; `default_allowance` for an entry without one,
+    which callers take from `Settings.initial_attempt_allowance` so that the wave's
+    hold and this gate agree). An approval
     raises the allowance by one and leaves the counters as they are, so the next
     attempt that does not complete escalates again.
     """
@@ -115,8 +117,7 @@ def subtask_escalation(
         )
     else:
         return None
-    allowance = default_allowance if default_allowance is not None else max_retries + 1
-    if escalation is None and attempts_spent(result, allowance):
+    if escalation is None and attempts_spent(result, default_allowance):
         attempts = result.get("attempts", 0)
         if status == "failed_attempt":
             detail = f": {result['error']}" if result.get("error") else ""

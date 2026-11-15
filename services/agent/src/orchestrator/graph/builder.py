@@ -467,7 +467,8 @@ def build_graph(
         if exhausted:
             proposed = {"type": "fail_task", "sid": sid, "specialist": spec["specialist"], "reason": budget_error}
             reasoning = (
-                f"{reasoning.rstrip('.')}. {budget_error} (the limit): approving or modifying ends "
+                f"{reasoning.rstrip('.')}. {budget_error}, the limit being {settings.max_subtask_attempts}: "
+                "approving or modifying ends "
                 "the task as failed; take over to supply the output, or reject"
             )
         else:
