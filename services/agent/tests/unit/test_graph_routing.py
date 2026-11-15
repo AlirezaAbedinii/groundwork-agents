@@ -75,15 +75,19 @@ async def run(tmp_path, repo, request_text: str, store: InMemoryInvocationStore 
     )
 
 
-async def run_until_pause(tmp_path, repo, request_text: str, queue):
-    """Build an interrupt-capable graph (MemorySaver) and run to the pause."""
-    graph = build_graph(
+def build(tmp_path, repo, queue, checkpointer):
+    return build_graph(
         llm=MockLLMClient(tmp_path),
         registry=build_default_registry(InMemoryInvocationStore()),
         repo=repo,
-        checkpointer=MemorySaver(),
+        checkpointer=checkpointer,
         approvals=queue,
     )
+
+
+async def run_until_pause(tmp_path, repo, request_text: str, queue, checkpointer=None):
+    """Build an interrupt-capable graph (MemorySaver) and run to the pause."""
+    graph = build(tmp_path, repo, queue, checkpointer or MemorySaver())
     task_id = repo.create_task(request_text)
     config = {"configurable": {"thread_id": task_id}}
     state = await graph.ainvoke(
@@ -318,3 +322,122 @@ async def test_invalid_plan_is_retried_once_with_error_then_fails(tmp_path, repo
     assert state.get("plan") is None
     assert "plan invalid after retry" in state["plan_error"].lower()
     assert repo.tasks[task_id]["status"] == "failed"
+
+
+# --- attempt allowance ---------------------------------------------------------
+
+
+def doomed_plan(tmp_path, sids: tuple[str, ...] = ("s1",)) -> None:
+    """Every research attempt calls a tool that does not exist until its turns run out."""
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask(sid, "research", f"look up {sid}") for sid in sids], 0.9),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    fx(tmp_path, "research", "research", "", tool_calls=[tool_call("bogus_tool", {})])
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+
+
+async def decide(graph, config, queue, action: str = "approve", payload: dict | None = None, notes: str = ""):
+    """Resolve the one pending approval and resume the run with that decision."""
+    (row,) = queue.list(status="pending")
+    queue.resolve(row["id"], action=action, payload=payload, notes=notes)
+    return await graph.ainvoke(
+        Command(resume={"action": action, "payload": payload or {}, "notes": notes}), config
+    )
+
+
+def paused_at(state) -> dict:
+    """The step of the escalation the run is paused at."""
+    return state["__interrupt__"][0].value["current_step"]
+
+
+def counters(state, sid: str = "s1") -> tuple:
+    result = state["subtask_results"][sid]
+    return result["attempts"], result["error_count"], result["attempt_allowance"]
+
+
+async def test_an_approval_grants_exactly_one_more_attempt(tmp_path, repo):
+    doomed_plan(tmp_path)
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "doomed task", queue)
+    assert counters(state) == (2, 2, 3)  # attempts, error_count, attempt_allowance
+
+    # the counters are kept, so the one attempt the approval bought escalates again at once
+    state = await decide(graph, config, queue)
+    assert counters(state) == (3, 3, 3)
+    step = paused_at(state)
+    assert (step["sid"], step["attempts"]) == ("s1", 3)
+    (row,) = queue.list(status="pending")
+    assert row["gate_key"] == "subtask:s1:a3"
+
+    state = await decide(graph, config, queue)
+    assert counters(state) == (4, 4, 4)
+    assert repo.subtasks[task_id]["s1"]["attempts"] == 4
+
+
+async def test_the_allowance_escalates_an_attempt_that_no_counter_catches(tmp_path, repo):
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask("s1", "writing", "draft the memo")], 0.9),
+       match=["Create an execution plan"])
+    # two weak drafts exhaust the rework cycles; the approved third attempt runs out of turns
+    fx(tmp_path, "a_writing_retry", "writing", "", match=["draft the memo", "UNLUCKY-RETRY"],
+       tool_calls=[tool_call("bogus_tool", {})])
+    fx(tmp_path, "b_writing", "writing", "DRAFT-V1", match=["draft the memo"])
+    fx(tmp_path, "reviewer", "reviewer", verdict(2, "still weak"))
+
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "write a memo", queue)
+    assert state["__interrupt__"][0].value["trigger"] == "low_review_score"
+
+    state = await decide(graph, config, queue, notes="UNLUCKY-RETRY")
+    result = state["subtask_results"]["s1"]
+    # one error is below the double-failure limit, but the attempt was the last one allowed
+    assert (result["status"], result["attempts"], result["error_count"], result["rework_count"]) == (
+        "failed_attempt", 3, 1, 2,
+    )
+    escalation = state["__interrupt__"][0].value
+    assert escalation["trigger"] == "specialist_double_failure"
+    assert "attempt 3, the last one it was allowed" in escalation["reasoning"]
+
+
+async def test_a_subtask_waiting_for_its_escalation_does_not_run_meanwhile(tmp_path, repo):
+    doomed_plan(tmp_path, sids=("s1", "s2"))
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "doomed pair", queue)
+    # both failed twice in the same waves; gather takes s1 first
+    assert paused_at(state)["sid"] == "s1"
+    assert [counters(state, sid)[0] for sid in ("s1", "s2")] == [2, 2]
+
+    # s1's approval re-runs s1; s2 still has one attempt of its allowance and uses it
+    state = await decide(graph, config, queue)
+    assert paused_at(state)["sid"] == "s1"
+    assert [counters(state, sid)[0] for sid in ("s1", "s2")] == [3, 3]
+
+    # now s2 has made every attempt it was allowed: it waits while s1 runs again
+    state = await decide(graph, config, queue)
+    assert paused_at(state)["sid"] == "s1"
+    assert [counters(state, sid)[0] for sid in ("s1", "s2")] == [4, 3]
+
+    # with s1 taken over nothing can run, so s2's escalation comes next, with no attempt between
+    state = await decide(graph, config, queue, action="take_over", payload={"output": "HUMAN-OUT"})
+    assert paused_at(state)["sid"] == "s2"
+    assert counters(state, "s2")[0] == 3
+    assert state["dispatch_log"] == [["s1", "s2"]] * 3 + [["s1"]]
+
+
+async def test_a_resume_after_a_restart_keeps_the_allowance(tmp_path, repo):
+    doomed_plan(tmp_path)
+    queue = InMemoryApprovalQueue()
+    checkpointer = MemorySaver()
+    task_id, state, graph, config = await run_until_pause(
+        tmp_path, repo, "doomed task", queue, checkpointer=checkpointer
+    )
+    state = await decide(graph, config, queue)
+    assert counters(state) == (3, 3, 3)
+
+    # a new graph over the same checkpoints, as after a process restart
+    restarted = build(tmp_path, repo, queue, checkpointer)
+    snapshot = await restarted.aget_state(config)
+    assert counters(snapshot.values) == (3, 3, 3)
+    state = await decide(restarted, config, queue)
+    assert counters(state) == (4, 4, 4)

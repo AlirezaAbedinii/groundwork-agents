@@ -80,16 +80,54 @@ def plan_escalation(
     return low_plan_confidence(confidence, threshold) or user_requested(require_human_review)
 
 
+def attempts_spent(result: dict, default_allowance: int) -> bool:
+    """True for a subtask that has not completed and has made every attempt it was
+    allowed. Entries from before the allowance existed take `default_allowance`."""
+    return result.get("status") in ("failed_attempt", "rework") and (
+        result.get("attempts", 0) >= result.get("attempt_allowance", default_allowance)
+    )
+
+
 def subtask_escalation(
-    sid: str, result: dict, *, review_threshold: int, max_retries: int, max_failures: int = 2
+    sid: str,
+    result: dict,
+    *,
+    review_threshold: int,
+    max_retries: int,
+    max_failures: int = 2,
+    default_allowance: int | None = None,
 ) -> Escalation | None:
-    """Post-wave gate over one subtask's result entry."""
-    if result.get("status") == "failed_attempt":
-        return specialist_double_failure(
+    """Post-wave gate over one subtask's result entry.
+
+    Fires when a counter reaches its limit, or when the subtask has made every attempt
+    it was allowed (`attempt_allowance`, by default `max_retries + 1`). An approval
+    raises the allowance by one and leaves the counters as they are, so the next
+    attempt that does not complete escalates again.
+    """
+    status = result.get("status")
+    if status == "failed_attempt":
+        escalation = specialist_double_failure(
             sid, result.get("error_count", 0), result.get("error"), max_failures
         )
-    if result.get("status") == "rework":
-        return low_review_score(
+    elif status == "rework":
+        escalation = low_review_score(
             sid, result.get("score"), result.get("rework_count", 0), review_threshold, max_retries
         )
-    return None
+    else:
+        return None
+    allowance = default_allowance if default_allowance is not None else max_retries + 1
+    if escalation is None and attempts_spent(result, allowance):
+        attempts = result.get("attempts", 0)
+        if status == "failed_attempt":
+            detail = f": {result['error']}" if result.get("error") else ""
+            escalation = Escalation(
+                Trigger.SPECIALIST_DOUBLE_FAILURE,
+                f"Subtask {sid} failed on attempt {attempts}, the last one it was allowed{detail}",
+            )
+        else:
+            escalation = Escalation(
+                Trigger.LOW_REVIEW_SCORE,
+                f"Subtask {sid} review score {result.get('score')} was below {review_threshold} "
+                f"on attempt {attempts}, the last one it was allowed",
+            )
+    return escalation

@@ -77,6 +77,12 @@ class Settings(BaseSettings):
     # Per-trigger approval-level overrides, e.g. {"sensitive_operation": "notify"}
     approval_level_overrides: dict[str, str] = {}
 
+    @property
+    def initial_attempt_allowance(self) -> int:
+        """Attempts a subtask may make before its first escalation: the first try plus
+        the retries."""
+        return self.max_specialist_retries + 1
+
 
 @lru_cache
 def get_settings() -> Settings:

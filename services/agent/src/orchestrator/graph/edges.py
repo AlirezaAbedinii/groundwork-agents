@@ -6,7 +6,7 @@ from langgraph.types import Send
 
 from orchestrator.config import get_settings
 from orchestrator.graph.state import TaskState
-from orchestrator.hitl.triggers import plan_escalation
+from orchestrator.hitl.triggers import attempts_spent, plan_escalation
 from orchestrator.planning.schemas import ExecutionPlan
 
 
@@ -48,11 +48,15 @@ def compute_wave(state: TaskState) -> list[dict]:
 
     Ready = not completed, all dependencies completed. Subtasks carrying a
     rework/failed_attempt status are re-dispatched with feedback; escalation
-    for exhausted retries is decided in `gather` before this runs again.
+    for exhausted retries is decided in `gather` before this runs again. A
+    subtask that has made every attempt it was allowed is held back until an
+    escalation decides about it: when two subtasks escalate after the same wave,
+    `gather` takes one at a time, and the other must not run meanwhile.
     """
     plan = ExecutionPlan.model_validate(state["plan"])
     results = state.get("subtask_results", {})
     completed = {sid for sid, r in results.items() if r.get("status") == "completed"}
+    default_allowance = get_settings().initial_attempt_allowance
 
     wave = []
     for subtask in plan.subtasks:
@@ -61,6 +65,8 @@ def compute_wave(state: TaskState) -> list[dict]:
         if not all(dep in completed for dep in subtask.depends_on):
             continue
         prior = results.get(subtask.id)
+        if prior and attempts_spent(prior, default_allowance):
+            continue
         wave.append(
             {
                 "task_id": state["task_id"],
@@ -71,6 +77,7 @@ def compute_wave(state: TaskState) -> list[dict]:
                     "error_count": prior.get("error_count", 0) if prior else 0,
                     "rework_count": prior.get("rework_count", 0) if prior else 0,
                     "attempts": prior.get("attempts", 0) if prior else 0,
+                    "attempt_allowance": prior.get("attempt_allowance") if prior else None,
                 },
             }
         )
@@ -78,10 +85,14 @@ def compute_wave(state: TaskState) -> list[dict]:
 
 
 def dispatch(state: TaskState) -> list[Send] | str:
-    """Fan out the current wave to specialist executions, or synthesize."""
+    """Fan out the current wave to specialist executions; with nothing to run, go
+    back to `gather` while a held subtask waits for its escalation, else synthesize."""
     wave = state.get("current_wave") or []
     if wave:
         return [Send("execute", payload) for payload in wave]
+    default_allowance = get_settings().initial_attempt_allowance
+    if any(attempts_spent(r, default_allowance) for r in (state.get("subtask_results") or {}).values()):
+        return "gather"
     return "synthesize"
 
 

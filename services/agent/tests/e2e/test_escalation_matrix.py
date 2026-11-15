@@ -75,11 +75,14 @@ def test_specialist_double_failure_pauses_and_approve_retries(client):
     )
     assert approval["context"]["subtask_states"]["s1"]["error_count"] == 2
 
-    # approve = retry; the specialist is still doomed, so it escalates again
+    # approve = one more attempt; the specialist is still doomed, and the error count
+    # was kept, so it escalates again after that single attempt
     _approve(client, approval)
     second = _pending_one(client, task_id)
     assert second["id"] != approval["id"]
     assert second["trigger"] == "specialist_double_failure"
+    states = second["context"]["subtask_states"]["s1"]
+    assert (states["attempts"], states["error_count"], states["attempt_allowance"]) == (3, 3, 3)
 
     # the human takes over to finish cleanly
     response = client.post(

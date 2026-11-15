@@ -6,6 +6,7 @@ from orchestrator.config import Settings
 from orchestrator.hitl.levels import ApprovalLevel, level_for
 from orchestrator.hitl.triggers import (
     Trigger,
+    attempts_spent,
     low_plan_confidence,
     low_review_score,
     plan_escalation,
@@ -74,6 +75,52 @@ def test_plan_escalation_precedence():
 def test_subtask_escalation(result, expected):
     escalation = subtask_escalation("s1", result, review_threshold=3, max_retries=2)
     assert (escalation.trigger if escalation else None) == expected
+
+
+@pytest.mark.parametrize(
+    ("result", "expected"),
+    [
+        # every allowed attempt made, though neither counter is at its limit
+        ({"status": "failed_attempt", "error_count": 1, "attempts": 3, "attempt_allowance": 3},
+         Trigger.SPECIALIST_DOUBLE_FAILURE),
+        ({"status": "rework", "score": 2, "rework_count": 1, "attempts": 3, "attempt_allowance": 3},
+         Trigger.LOW_REVIEW_SCORE),
+        # one attempt left
+        ({"status": "failed_attempt", "error_count": 1, "attempts": 3, "attempt_allowance": 4}, None),
+        # a counter at its limit escalates whatever the allowance says
+        ({"status": "failed_attempt", "error_count": 3, "attempts": 3, "attempt_allowance": 4},
+         Trigger.SPECIALIST_DOUBLE_FAILURE),
+        # no allowance recorded (an entry from before it existed): max_retries + 1
+        ({"status": "rework", "score": 2, "rework_count": 1, "attempts": 3}, Trigger.LOW_REVIEW_SCORE),
+        ({"status": "completed", "attempts": 5, "attempt_allowance": 3}, None),
+    ],
+)
+def test_subtask_escalation_when_the_allowance_is_spent(result, expected):
+    escalation = subtask_escalation("s1", result, review_threshold=3, max_retries=2)
+    assert (escalation.trigger if escalation else None) == expected
+    if escalation and result.get("error_count") == 1:
+        assert "the last one it was allowed" in escalation.reason
+
+
+def test_the_default_allowance_stands_in_for_a_missing_one():
+    result = {"status": "failed_attempt", "error_count": 1, "attempts": 2}
+    assert subtask_escalation("s1", result, review_threshold=3, max_retries=2) is None
+    escalation = subtask_escalation("s1", result, review_threshold=3, max_retries=2, default_allowance=2)
+    assert escalation.trigger is Trigger.SPECIALIST_DOUBLE_FAILURE
+
+
+@pytest.mark.parametrize(
+    ("result", "spent"),
+    [
+        ({"status": "failed_attempt", "attempts": 3, "attempt_allowance": 3}, True),
+        ({"status": "rework", "attempts": 4, "attempt_allowance": 3}, True),
+        ({"status": "rework", "attempts": 2, "attempt_allowance": 3}, False),
+        ({"status": "rework", "attempts": 3}, True),  # the default allowance, 3
+        ({"status": "completed", "attempts": 3, "attempt_allowance": 3}, False),
+    ],
+)
+def test_attempts_spent(result, spent):
+    assert attempts_spent(result, default_allowance=3) is spent
 
 
 @pytest.mark.parametrize(

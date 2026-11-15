@@ -5,7 +5,8 @@ intake → plan → (plan gate) → schedule ⇄ execute/gather loops → synthe
 retry-with-revised-approach, and four human-in-the-loop decision points:
 
   escalate_plan     — low plan confidence / user-requested review
-  escalate_subtask  — double specialist failure / review score exhausted
+  escalate_subtask  — double specialist failure / review score exhausted /
+                      every allowed attempt made
   tool gate         — sensitive tool call inside a specialist's loop
   final_gate        — user-requested approval of the final deliverable
 
@@ -124,7 +125,10 @@ def build_graph(
                 sid: r.get("output") for sid, r in results.items() if r.get("status") == "completed"
             },
             "subtask_states": {
-                sid: {k: r.get(k) for k in ("status", "attempts", "error_count", "rework_count", "score", "error")}
+                sid: {
+                    k: r.get(k)
+                    for k in ("status", "attempts", "attempt_allowance", "error_count", "rework_count", "score", "error")
+                }
                 for sid, r in results.items()
             },
             "current_step": current_step,
@@ -261,9 +265,11 @@ def build_graph(
         task_id = payload["task_id"]
         prior = payload.get("prior") or {}
         attempts = prior.get("attempts", 0) + 1
+        allowance = prior.get("attempt_allowance")
         base = {
             "sid": sid,
             "attempts": attempts,
+            "attempt_allowance": allowance if allowance is not None else settings.initial_attempt_allowance,
             "error_count": prior.get("error_count", 0),
             "rework_count": prior.get("rework_count", 0),
         }
@@ -424,6 +430,7 @@ def build_graph(
                     result,
                     review_threshold=settings.review_score_threshold,
                     max_retries=settings.max_specialist_retries,
+                    default_allowance=settings.initial_attempt_allowance,
                 )
                 if escalation:
                     span.set_attribute("orchestrator.status", "warning")
@@ -475,7 +482,11 @@ def build_graph(
             proposed_action=proposed,
             reasoning=info["reason"],
         )
-        retry_entry = {**result, "status": "rework", "feedback": suggested, "error_count": 0, "rework_count": 0}
+        # A grant buys exactly one more attempt. The counters stay as they are, so the
+        # next attempt that does not complete escalates again.
+        retry_entry = {
+            **result, "status": "rework", "feedback": suggested, "attempt_allowance": result.get("attempts", 0) + 1,
+        }
         if level is ApprovalLevel.NOTIFY:
             approvals.record_notify(**common)
             return {
@@ -634,7 +645,7 @@ def build_graph(
         route_after_plan_escalation,
         {"schedule": "schedule", "deliver": "deliver", "end": END},
     )
-    graph.add_conditional_edges("schedule", dispatch, ["execute", "synthesize"])
+    graph.add_conditional_edges("schedule", dispatch, ["execute", "gather", "synthesize"])
     graph.add_edge("execute", "gather")
     graph.add_conditional_edges(
         "gather", after_gather, {"escalate": "escalate_subtask", "schedule": "schedule"}
