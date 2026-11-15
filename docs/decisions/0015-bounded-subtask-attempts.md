@@ -56,6 +56,23 @@ they do below the cap.
   weak one, so level overrides written for those triggers still apply.
 - Rollback is by revert only. The old behaviour is removed, not kept behind a setting.
 
+## Per-task ceilings
+
+The attempt cap bounds one subtask, not a task: a plan with several subtasks, each using
+every turn of every attempt, can still make many model calls. Two settings bound the
+whole task: `MAX_TASK_LLM_CALLS` (default 60) and `MAX_TASK_COST_USD` (default 0.50); 0
+disables either. The traced LLM client checks the task's totals before each call and
+refuses the call that would start at or past either ceiling with `TaskBudgetExceeded`,
+so that call is never made. Nothing asks a human: the graph does not count the refusal
+as a failed attempt but lets it end the run, and the runner records the task as `failed`
+with "task budget exceeded: <n> calls, $<x>". The totals are kept in process and seeded
+from `llm_calls` the first time a run sees the task, so the calls made before a resume,
+or by another worker, count too. A call is counted as it starts, so parallel subtasks
+cannot pass the call ceiling. Its cost is known only when it returns, so each call in
+flight when the spend ceiling is reached can pass it by its own cost. A refusal during
+memory extraction after delivery skips the extraction and leaves the task completed. The
+defaults sit above every completed run in the published records.
+
 ## Alternatives
 
 - **Keep the reset and cap approvals per task.** It ends the loop, but each approval

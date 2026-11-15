@@ -135,6 +135,13 @@ with "Attempt budget exhausted for subtask <sid> after <n> attempts", while a
 take-over or a rejection still works
 ([ADR 0015](../../../docs/decisions/0015-bounded-subtask-attempts.md)).
 
+**Task ceilings.** `TracedLLMClient` refuses any model call once the task has
+made `MAX_TASK_LLM_CALLS` calls (default 60) or spent `MAX_TASK_COST_USD`
+(default 0.50); 0 disables either. The refusal (`TaskBudgetExceeded`) is not a
+failed attempt: it ends the run and the runner marks the task `failed` with
+the totals. The counts are seeded from `llm_calls` on each run, so resumes and
+other workers are included.
+
 **Inside `execute`.** The specialist runs a bounded loop of native tool calls
 (at most `MAX_TOOL_ITERATIONS` model turns; a batch of calls is one turn). The
 model can ask for several tools in one turn: sensitive calls go to the tool
