@@ -102,10 +102,12 @@ flowchart LR
 
     schedule -->|"parallel Send per<br/>DAG-ready subtask"| execute
     execute -->|"specialist tool-loop<br/>+ review"| gather
-    gather -->|"double failure /<br/>rework exhausted"| escalate_subtask
+    gather -->|"double failure /<br/>rework exhausted /<br/>allowance spent"| escalate_subtask
     gather -->|otherwise| schedule
-    escalate_subtask -->|"retry / take over"| schedule
+    escalate_subtask -->|"one more attempt /<br/>take over"| schedule
     escalate_subtask -->|reject| REJ2((rejected))
+    escalate_subtask -->|"approve at the<br/>attempt cap"| FAILED2((failed))
+    schedule -->|"only held<br/>subtasks left"| gather
 
     schedule -->|"nothing left to run"| synthesize --> final_gate
     final_gate -->|"approve / modify /<br/>take over"| deliver
@@ -118,7 +120,20 @@ dependencies are all complete and fans them out in parallel via LangGraph
 `Send`. Each wave is recorded in the state (`dispatch_log`), which is how the
 demo and tests assert real parallelism (`wave 1: r1, r2, r3`). Subtasks
 carrying rework feedback or a failed attempt re-enter the next wave with that
-context in their prompt.
+context in their prompt. A subtask that has made every attempt it is allowed is
+held out of the wave until its escalation is decided; if only held subtasks
+remain, `schedule` returns to `gather` for the next escalation.
+
+**Attempt budget.** Each subtask result carries `attempt_allowance`, at first
+`MAX_SPECIALIST_RETRIES + 1`. `gather` escalates a subtask on two failed
+attempts, on exhausted rework cycles, or when it has not completed and has
+made `attempt_allowance` attempts. Approving, modifying or a `notify` level
+raises the allowance to one more than the attempts made and leaves the error
+and rework counters as they are, so each grant buys exactly one attempt. At
+`MAX_SUBTASK_ATTEMPTS` (default 5) a grant is refused: the task ends `failed`
+with "Attempt budget exhausted for subtask <sid> after <n> attempts", while a
+take-over or a rejection still works
+([ADR 0015](../../../docs/decisions/0015-bounded-subtask-attempts.md)).
 
 **Inside `execute`.** The specialist runs a bounded loop of native tool calls
 (at most `MAX_TOOL_ITERATIONS` model turns; a batch of calls is one turn). The
@@ -133,7 +148,7 @@ the whole run through the tool gate before any call of its turn executes.
 
 **Four human gates**: `escalate_plan` (confidence / user request, before any
 work), the in-loop tool gate (sensitive calls), `escalate_subtask` (double
-failure / exhausted rework), and `final_gate` (user-requested deliverable
+failure / exhausted rework / spent allowance), and `final_gate` (user-requested deliverable
 approval). All four share the same mechanics: package context → durable
 approval row → `interrupt()`.
 
@@ -201,7 +216,8 @@ pass finds the existing row instead of enqueueing (and notifying) twice.
 
 **Resume.** `POST /approvals/{id}/resolve` validates the human payload
 (a modified plan must re-validate; a take-over must carry output), then
-resumes the graph with the decision merged into state: approve proceeds,
+resumes the graph with the decision merged into state: approve proceeds
+(at a subtask gate, one more attempt, or a failed task at the attempt cap),
 modify substitutes the edited plan/arguments/feedback/deliverable, reject
 terminates with the recorded reason, take over uses the human's output and
 stands the agents down. Review time is recorded per approval and rolls into
@@ -327,6 +343,11 @@ doesn't produce false divergences.
     annotations decide nothing. Each call opens and closes its own session on
     a short-lived loop in the tool's worker thread. See
     [ADR 0004](../../../docs/decisions/0004-mcp-as-the-seam.md).
+12. **An approval buys one attempt.** Approving a subtask escalation raises
+    its attempt allowance by one and never resets its counters, and a hard
+    cap per subtask ends the task as failed when approvals run out of
+    attempts to buy, with or without a human in the loop. See
+    [ADR 0015](../../../docs/decisions/0015-bounded-subtask-attempts.md).
 
 ## Demo recording shot list
 

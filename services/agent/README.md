@@ -222,10 +222,12 @@ Escalation is a first-class graph state, not an afterthought. Five triggers paus
 | Plan confidence below threshold | Approve plan | The full execution plan, before any work starts |
 | User requested review | Approve plan (+ final deliverable) | The plan, and later the finished deliverable |
 | Sensitive tool call (e.g. `api_call` POST) | Approve action | That specific call, arguments included |
-| Specialist failed twice on a subtask | Approve action | Retry, or take the subtask over |
-| Review score still failing after rework | Approve action | Retry with new guidance, reject, or take over |
+| Specialist failed twice on a subtask | Approve action | One more attempt, or take the subtask over |
+| Review score still failing after rework | Approve action | One more attempt with new guidance, reject, or take over |
 
 `NOTIFY` is the fourth level: record it, tell the human, keep going — nothing blocks.
+
+An approved subtask escalation buys exactly one more attempt and never resets the subtask's error and rework counts. At `MAX_SUBTASK_ATTEMPTS` (default 5) an approval or a `NOTIFY` ends the task as `failed` instead, naming the subtask; take-over and reject still work ([ADR 0015](../../docs/decisions/0015-bounded-subtask-attempts.md)).
 
 **Pausing is durable.** An escalation packages the complete decision context — request, plan, completed steps, the step in question, the agent's proposed action and reasoning, plus relevant long-term memories — into a Postgres-backed approval queue, notifies the reviewer (log + optional Slack-compatible webhook), and interrupts the graph. The checkpointed run survives restarts; nothing executes while a decision is pending.
 
@@ -452,7 +454,7 @@ The full reasoning lives in [docs/architecture.md](docs/architecture.md); the he
 - **No authentication or multi-tenancy.** `user_id` is honor-system, and both UIs are unauthenticated — this is a portfolio system, not a hosted product.
 - **Poll-based progress.** No token streaming or push updates; clients and the demo script poll task state.
 - **Sandbox needs the Docker socket.** In the composed stack `code_exec` launches sibling containers via the host engine — isolated from the network but a trusted-host assumption; a rootless runtime (gVisor/Firecracker) would harden it.
-- **The planner doesn't know which specialist holds which tool.** The evaluation found database lookups planned for the research specialist, which has no `db_query`; an approved escalation then retries the same specialist, so the task loops until someone stops approving. A provider error that retrying can't fix, such as a revoked API key, loops the same way, and the error shows only in the task's trace (`/traces/<id>`) and subtask records, not in the API's log. Research also prefers `rag_search` snippets to `rag_ask` answers, and simple requests get split into about five subtasks ([findings](../../eval/README.md#findings)).
+- **The planner doesn't know which specialist holds which tool.** The evaluation found database lookups planned for the research specialist, which has no `db_query`; an approved escalation then retries the same specialist, so the task loops until the subtask's attempt cap ends it as failed. A provider error that retrying can't fix, such as a revoked API key, loops the same way, and the error shows only in the task's trace (`/traces/<id>`) and subtask records, not in the API's log. Research also prefers `rag_search` snippets to `rag_ask` answers, and simple requests get split into about five subtasks ([findings](../../eval/README.md#findings)).
 - **Replay comparison is a step table.** Side-by-side with divergence highlighting — deliberately not a graphical graph-diff.
 - **Heuristic memory management.** Consolidation/expiration use embedding similarity, access counts, and recency — no learned relevance model.
 
