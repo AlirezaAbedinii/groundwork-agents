@@ -93,6 +93,24 @@ def test_specialist_double_failure_pauses_and_approve_retries(client):
     assert client.get(f"/tasks/{task_id}").json()["status"] == "completed"
 
 
+def test_approving_every_escalation_ends_failed_at_the_attempt_cap(client):
+    task_id = client.post("/tasks", json={"request": DOOMED_REQUEST}).json()["task_id"]
+
+    approvals = 0
+    while client.get(f"/tasks/{task_id}").json()["status"] == "awaiting_approval":
+        assert approvals < 10, "the task did not terminate"
+        _approve(client, _pending_one(client, task_id))
+        approvals += 1
+
+    bundle = client.get(f"/tasks/{task_id}").json()
+    assert approvals == 4  # at attempts 2, 3, 4 and 5; the last one is refused
+    assert bundle["status"] == "failed"
+    assert bundle["error"] == "Attempt budget exhausted for subtask s1 after 5 attempts"
+    (s1,) = bundle["subtasks"]
+    assert s1["attempts"] == 5
+    assert bundle["final_output"] is None
+
+
 def test_sensitive_operation_pauses_before_the_call_runs(client):
     task_id = client.post("/tasks", json={"request": SENSITIVE_REQUEST}).json()["task_id"]
 

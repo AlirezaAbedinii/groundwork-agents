@@ -6,7 +6,8 @@ retry-with-revised-approach, and four human-in-the-loop decision points:
 
   escalate_plan     — low plan confidence / user-requested review
   escalate_subtask  — double specialist failure / review score exhausted /
-                      every allowed attempt made
+                      every allowed attempt made; at MAX_SUBTASK_ATTEMPTS an
+                      approval ends the task as failed
   tool gate         — sensitive tool call inside a specialist's loop
   final_gate        — user-requested approval of the final deliverable
 
@@ -456,39 +457,63 @@ def build_graph(
     def _escalate_subtask_body(state: TaskState, info, sid, trigger, level, espan) -> dict:
         result = state["subtask_results"][sid]
         spec = next(s for s in state["plan"]["subtasks"] if s["id"] == sid)
+        attempts = result.get("attempts", 0)
         suggested = result.get("feedback") or "Try a different approach."
-        proposed = {
-            "type": "retry_subtask",
-            "sid": sid,
-            "specialist": spec["specialist"],
-            "feedback": suggested,
-        }
+        # At the cap an approval buys nothing: approve, modify and notify end the task
+        # as failed, while take-over and reject work as they do below the cap.
+        exhausted = attempts >= settings.max_subtask_attempts
+        budget_error = f"Attempt budget exhausted for subtask {sid} after {attempts} attempts"
+        reasoning = info["reason"]
+        if exhausted:
+            proposed = {"type": "fail_task", "sid": sid, "specialist": spec["specialist"], "reason": budget_error}
+            reasoning = (
+                f"{reasoning.rstrip('.')}. {budget_error} (the limit): approving or modifying ends "
+                "the task as failed; take over to supply the output, or reject"
+            )
+        else:
+            proposed = {
+                "type": "retry_subtask",
+                "sid": sid,
+                "specialist": spec["specialist"],
+                "feedback": suggested,
+            }
         package = _package(
             state,
             current_step={
                 "gate": "subtask",
                 "sid": sid,
                 "description": spec["description"],
-                "attempts": result.get("attempts", 0),
+                "attempts": attempts,
+                "max_attempts": settings.max_subtask_attempts,
             },
             proposed_action=proposed,
-            reasoning=info["reason"],
+            reasoning=reasoning,
         )
         common = dict(
             task_id=state["task_id"],
-            gate_key=f"subtask:{sid}:a{result.get('attempts', 0)}",
+            gate_key=f"subtask:{sid}:a{attempts}",
             trigger=trigger.value,
             context=package,
             proposed_action=proposed,
-            reasoning=info["reason"],
+            reasoning=reasoning,
         )
         # A grant buys exactly one more attempt. The counters stay as they are, so the
         # next attempt that does not complete escalates again.
-        retry_entry = {
-            **result, "status": "rework", "feedback": suggested, "attempt_allowance": result.get("attempts", 0) + 1,
-        }
+        retry_entry = {**result, "status": "rework", "feedback": suggested, "attempt_allowance": attempts + 1}
+
+        def exhaust(requested: str) -> dict:
+            repo.set_status(state["task_id"], "failed", error=budget_error)
+            espan.set_attribute("orchestrator.status", "failure")
+            set_attr(espan, "error", budget_error)
+            return {
+                "hitl_decision": {"gate": "subtask", "action": "fail", "requested": requested, "sid": sid},
+                "needs_escalation": False,
+            }
+
         if level is ApprovalLevel.NOTIFY:
             approvals.record_notify(**common)
+            if exhausted:
+                return exhaust("notified")
             return {
                 "hitl_decision": {"gate": "subtask", "action": "notified"},
                 "needs_escalation": False,
@@ -524,6 +549,8 @@ def build_graph(
                     sid: {**result, "status": "completed", "output": output, "human_provided": True}
                 },
             }
+        if exhausted:
+            return exhaust(action)
         feedback = payload.get("feedback", suggested) if action == "modify" else (notes or suggested)
         repo.set_status(state["task_id"], "executing")
         return {

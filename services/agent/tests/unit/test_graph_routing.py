@@ -441,3 +441,80 @@ async def test_a_resume_after_a_restart_keeps_the_allowance(tmp_path, repo):
     assert counters(snapshot.values) == (3, 3, 3)
     state = await decide(restarted, config, queue)
     assert counters(state) == (4, 4, 4)
+    # and the cap still holds on the restarted graph
+    state = await decide(restarted, config, queue)
+    state = await decide(restarted, config, queue)
+    assert counters(state)[0] == 5
+    assert repo.tasks[task_id]["status"] == "failed"
+
+
+# --- attempt cap ---------------------------------------------------------------
+
+BUDGET_ERROR = "Attempt budget exhausted for subtask s1 after 5 attempts"
+
+
+@pytest.mark.parametrize(
+    ("action", "payload", "status"),
+    [
+        ("approve", None, "failed"),
+        ("modify", {"feedback": "one more go"}, "failed"),
+        ("take_over", {"output": "HUMAN-OUT"}, "completed"),
+        ("reject", None, "rejected"),
+    ],
+)
+async def test_decisions_at_the_attempt_cap(tmp_path, repo, action, payload, status):
+    doomed_plan(tmp_path)
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "doomed task", queue)
+    approvals = 0
+    while paused_at(state)["attempts"] < 5:
+        state = await decide(graph, config, queue)
+        approvals += 1
+    assert approvals == 3  # at attempts 2, 3 and 4, one more attempt each
+
+    escalation = state["__interrupt__"][0].value
+    assert escalation["proposed_action"]["type"] == "fail_task"
+    assert escalation["current_step"]["max_attempts"] == 5
+    assert "approving or modifying ends the task as failed" in escalation["reasoning"]
+
+    state = await decide(graph, config, queue, action=action, payload=payload)
+    assert "__interrupt__" not in state
+    assert repo.tasks[task_id]["status"] == status
+    assert state["subtask_results"]["s1"]["attempts"] == 5  # never a sixth
+    assert repo.subtasks[task_id]["s1"]["attempts"] == 5
+    if status == "failed":
+        assert repo.tasks[task_id]["error"] == BUDGET_ERROR
+        assert state["hitl_decision"] == {"gate": "subtask", "action": "fail", "requested": action, "sid": "s1"}
+        assert not state.get("final_output")
+    if status == "completed":
+        assert state["subtask_results"]["s1"]["output"] == "HUMAN-OUT"
+        assert state["final_output"] == "DONE"
+
+
+@pytest.mark.parametrize("trigger", ["low_review_score", "specialist_double_failure"])
+async def test_a_notify_override_ends_at_the_attempt_cap(tmp_path, repo, monkeypatch, trigger):
+    from orchestrator.config import get_settings
+
+    # with no human in the loop, every escalation used to grant a fresh pair of attempts
+    monkeypatch.setitem(get_settings().approval_level_overrides, trigger, "notify")
+    if trigger == "low_review_score":
+        fx(tmp_path, "plan", "supervisor",
+           plan_text([subtask("s1", "writing", "draft the memo")], 0.9),
+           match=["Create an execution plan"])
+        fx(tmp_path, "writing", "writing", "DRAFT-V1")
+        fx(tmp_path, "reviewer", "reviewer", verdict(2, "still weak"))
+    else:
+        doomed_plan(tmp_path)
+
+    queue = InMemoryApprovalQueue()
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "nobody watching", queue)
+
+    assert "__interrupt__" not in state  # nobody was asked
+    assert state["subtask_results"]["s1"]["attempts"] == 5
+    notified = queue.list(status="notified")
+    assert [row["gate_key"] for row in notified] == [f"subtask:s1:a{n}" for n in (2, 3, 4, 5)]
+    assert {row["trigger"] for row in notified} == {trigger}
+    assert notified[-1]["proposed_action"]["type"] == "fail_task"
+    assert repo.tasks[task_id]["status"] == "failed"
+    assert repo.tasks[task_id]["error"] == BUDGET_ERROR
+    assert state["hitl_decision"]["requested"] == "notified"

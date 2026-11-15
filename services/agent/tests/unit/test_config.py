@@ -7,6 +7,14 @@ def test_defaults_are_dev_friendly():
     assert settings.plan_confidence_threshold == 0.7
     assert settings.review_score_threshold == 3
     assert settings.max_specialist_retries == 2
+    assert settings.max_subtask_attempts == 5
+    assert settings.initial_attempt_allowance == 3
+
+
+def test_the_first_allowance_never_passes_the_attempt_cap(monkeypatch):
+    monkeypatch.setenv("MAX_SPECIALIST_RETRIES", "6")
+    monkeypatch.setenv("MAX_SUBTASK_ATTEMPTS", "4")
+    assert Settings(_env_file=None).initial_attempt_allowance == 4
 
 
 def test_env_overrides(monkeypatch):

@@ -36,7 +36,8 @@ def route_after_plan_escalation(state: TaskState) -> str:
 
 
 def route_after_subtask_escalation(state: TaskState) -> str:
-    return "end" if _hitl_action(state) == "reject" else "schedule"
+    """A rejection, or an approval refused because the attempt budget is spent, ends the run."""
+    return "end" if _hitl_action(state) in ("reject", "fail") else "schedule"
 
 
 def route_after_final_gate(state: TaskState) -> str:

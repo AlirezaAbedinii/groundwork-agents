@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     plan_confidence_threshold: float = 0.7
     review_score_threshold: int = 3
     max_specialist_retries: int = 2
+    # Hard cap on one subtask's attempts: at this many, an approval no longer buys
+    # another one and the task fails; a human can still take over or reject
+    max_subtask_attempts: int = 5
 
     # Observability: spans also go to Azure Monitor (Application Insights) when this is set
     applicationinsights_connection_string: str = ""
@@ -80,8 +83,8 @@ class Settings(BaseSettings):
     @property
     def initial_attempt_allowance(self) -> int:
         """Attempts a subtask may make before its first escalation: the first try plus
-        the retries."""
-        return self.max_specialist_retries + 1
+        the retries, never more than the cap."""
+        return min(self.max_specialist_retries + 1, self.max_subtask_attempts)
 
 
 @lru_cache
