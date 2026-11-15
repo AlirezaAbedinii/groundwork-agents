@@ -9,7 +9,8 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    call at a time.
 2. The remaining calls run concurrently, each in a worker thread, because the
    registry and the tools are synchronous.
-3. The answers go back in call order. A ToolError is an answer the model sees
+3. The answers go back in call order, each result as JSON within a budget
+   (tools/serialize.py). A ToolError is an answer the model sees
    (``status="error"``), not a failed attempt.
 
 An attempt fails only when the turn budget runs out (``max_tool_iterations``; a
@@ -19,7 +20,6 @@ batch of calls is one turn) or when something other than a ToolError escapes.
 from __future__ import annotations
 
 import asyncio
-import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -31,6 +31,7 @@ from orchestrator.llm.clients import LLMClient
 from orchestrator.llm.mock import ToolCall
 from orchestrator.tools.base import ToolContext, ToolError
 from orchestrator.tools.registry import ToolRegistry
+from orchestrator.tools.serialize import DEFAULT_RESULT_BUDGET_CHARS, render_result
 
 # Stable prompt marker; mock fixtures and tests match on it.
 FEEDBACK_MARKER = "Reviewer feedback:"
@@ -137,7 +138,7 @@ class SpecialistAgent(BaseAgent):
                     if isinstance(outcome, ToolError):
                         answer = _answer(call, str(outcome), error=True)
                     else:
-                        answer = _answer(call, json.dumps(outcome)[:2000])
+                        answer = _answer(call, render_result(outcome, DEFAULT_RESULT_BUDGET_CHARS))
                     listed = call.name
                 messages.append(answer)
                 if listed:

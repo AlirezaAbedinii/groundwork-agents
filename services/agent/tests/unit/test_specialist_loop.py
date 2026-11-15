@@ -22,6 +22,7 @@ from orchestrator.config import get_settings
 from orchestrator.llm.mock import LLMResponse, ToolCall
 from orchestrator.tools.base import InMemoryInvocationStore, ToolContext, ToolExecutionError, ToolSpec
 from orchestrator.tools.registry import ToolRegistry
+from orchestrator.tools.serialize import render_result
 
 pytestmark = pytest.mark.anyio
 
@@ -185,7 +186,10 @@ async def test_a_tool_call_is_answered_by_one_tool_message(store):
         (requested.id, "echo", {"msg": long_msg})
     ]
     assert (answer.tool_call_id, answer.name, answer.status) == (requested.id, "echo", "success")
-    assert answer.content == json.dumps({"msg": long_msg})[:2000]  # the output as JSON, cut at 2000 chars
+    # the output as JSON within the tool's budget, 2000 chars by default: valid, with the cut marked
+    assert answer.content == render_result({"msg": long_msg}, 2000)
+    kept, marker = json.loads(answer.content)["msg"].split("…")
+    assert kept == "x" * len(kept) and marker == f"[+{3000 - len(kept)} chars]"
 
 
 # --- 3. a batch is concurrent, ordered, and one turn -----------------------------
