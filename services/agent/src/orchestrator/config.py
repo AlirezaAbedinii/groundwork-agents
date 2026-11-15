@@ -71,6 +71,10 @@ class Settings(BaseSettings):
     # Hard cap on one subtask's attempts: at this many, an approval no longer buys
     # another one and the task fails; a human can still take over or reject
     max_subtask_attempts: int = Field(5, ge=1)
+    # Hard caps on one task's model calls and spend, counted across runs and workers
+    # (observability/tracing.py): reaching either fails the task before its next call. 0 disables.
+    max_task_llm_calls: int = Field(60, ge=0)
+    max_task_cost_usd: float = Field(0.50, ge=0)
 
     # Observability: spans also go to Azure Monitor (Application Insights) when this is set
     applicationinsights_connection_string: str = ""

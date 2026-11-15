@@ -94,6 +94,15 @@ class DBLLMCallStore:
             )
             return [self._to_dict(row) for row in rows]
 
+    def totals(self, task_id: str) -> tuple[int, float]:
+        """How many calls the task has made so far, and what they cost."""
+        with self._sessions() as session:
+            calls, cost = session.execute(
+                sa.select(sa.func.count(), sa.func.coalesce(sa.func.sum(LLMCallRow.cost_usd), 0.0))
+                .where(LLMCallRow.task_id == task_id)
+            ).one()
+            return int(calls), float(cost)
+
     def get(self, llm_call_id: str) -> dict | None:
         with self._sessions() as session:
             row = session.get(LLMCallRow, llm_call_id)

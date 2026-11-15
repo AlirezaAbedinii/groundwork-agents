@@ -20,6 +20,8 @@ is therefore idempotent (the approval queue is keyed by task_id + gate_key).
 The nodes that call the LLM (plan, execute, synthesize, deliver) are
 coroutines and the graph runs under ``ainvoke``; the other nodes only do
 bookkeeping and stay plain functions, which LangGraph runs in its executor.
+A ``TaskBudgetExceeded`` from the LLM client (the task's call or spend ceiling)
+is never a failed attempt: it ends the run, and the runner fails the task.
 
 Dependencies (LLM client, tool registry, repo, memory, approval queue,
 checkpointer) are injectable so unit tests can run the full graph without
@@ -54,7 +56,7 @@ from orchestrator.llm.clients import LLMClient, get_llm_client
 from orchestrator.llm.router import route
 from orchestrator.memory.extraction import extract_memories, store_extracted
 from orchestrator.memory.retrieval import retrieve_for_planning
-from orchestrator.observability.tracing import child_span, node_span, set_attr
+from orchestrator.observability.tracing import TaskBudgetExceeded, child_span, node_span, set_attr
 from orchestrator.planning.decomposer import PlanValidationError
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.base import ToolContext
@@ -375,6 +377,10 @@ def build_graph(
                 set_attr(review_span, "feedback", verdict.feedback[:300])
         except GraphInterrupt:
             # the sensitive-tool gate paused the run — not a specialist failure
+            raise
+        except TaskBudgetExceeded:
+            # the task's call or spend ceiling: the whole task fails, not this attempt
+            repo.record_subtask(task_id, sid, status="failed", attempts=attempts, error="task budget exceeded")
             raise
         except Exception as error:  # failed attempt → retry with revised approach
             entry = {

@@ -253,13 +253,52 @@ def child_span(
 # --- LLM wrapper -------------------------------------------------------------
 
 
+class TaskBudgetExceeded(Exception):
+    """A task reached its ceiling on model calls or spend; the run ends and the task fails.
+
+    Raised before the call that would pass the ceiling, so it is never made. Graph
+    nodes re-raise it (it is not a failed attempt) and the runner records the message
+    as the task's failure reason.
+    """
+
+    def __init__(self, task_id: str, calls: int, cost_usd: float, max_calls: int, max_cost_usd: float):
+        self.task_id = task_id
+        self.calls = calls
+        self.cost_usd = cost_usd
+        self.max_calls = max_calls
+        self.max_cost_usd = max_cost_usd
+        limits = ", ".join(
+            limit
+            for limit, active in ((f"{max_calls} calls", max_calls), (f"${max_cost_usd:.2f}", max_cost_usd))
+            if active
+        )
+        super().__init__(f"task budget exceeded: {calls} calls, ${cost_usd:.4f} (limit {limits})")
+
+    def __reduce__(self):
+        return type(self), (self.task_id, self.calls, self.cost_usd, self.max_calls, self.max_cost_usd)
+
+
 class TracedLLMClient:
     """Wraps any LLM client: every call gets a span and a durable llm_calls row
-    with the full prompt/response, token usage, and computed cost."""
+    with the full prompt/response, token usage, and computed cost.
 
-    def __init__(self, inner, calls=None):
+    It also enforces the per-task ceilings (``max_task_llm_calls``,
+    ``max_task_cost_usd``; 0 disables either). Totals are kept in process per task
+    id and seeded from the call store the first time the task is seen in a run, so
+    calls made before a resume, or by another worker, count too. A call is counted
+    when it starts, so concurrent calls of one task cannot all slip under the call
+    ceiling; its cost is added when it returns, so concurrent calls can each pass
+    the spend ceiling by what they cost. The runner drops a task's totals when its
+    run ends (``forget``) and the next run reads them from the store again. Calls
+    outside a task (memory consolidation) are not limited.
+    """
+
+    def __init__(self, inner, calls=None, *, max_calls: int | None = None, max_cost_usd: float | None = None):
         self.inner = inner
         self._calls = calls
+        self._max_calls = max_calls  # None: the setting, read at each call
+        self._max_cost_usd = max_cost_usd
+        self._usage: dict[str, list] = {}  # task_id -> [calls, cost_usd]
 
     async def chat(
         self,
@@ -270,14 +309,42 @@ class TracedLLMClient:
         output_schema: type[BaseModel] | None = None,
         producer_provider: str | None = None,
     ):
+        task_id = current_task_id()
+        usage = self._admit(task_id) if task_id else None
         with child_span(f"llm:{agent}", kind="llm", agent=agent) as span:
             response = await self.inner.chat(
                 agent, messages, tools=tools, output_schema=output_schema, producer_provider=producer_provider
             )
-            self._record(span, agent, render_messages(messages), response)
+            cost = self._record(span, agent, render_messages(messages), response)
+        if usage is not None:
+            usage[1] += cost
         return response
 
-    def _record(self, span, agent: str, prompt: str, response) -> None:
+    def usage(self, task_id: str) -> tuple[int, float] | None:
+        """The task's in-process totals (calls started, cost so far), if it is being tracked."""
+        entry = self._usage.get(task_id)
+        return (entry[0], entry[1]) if entry is not None else None
+
+    def forget(self, task_id: str) -> None:
+        """Drop the task's in-process totals; the next run seeds them from the store."""
+        self._usage.pop(task_id, None)
+
+    def _admit(self, task_id: str) -> list:
+        """Count the call about to start, or raise if a ceiling has been reached."""
+        usage = self._usage.get(task_id)
+        if usage is None:
+            totals = self._calls.totals(task_id) if self._calls is not None else (0, 0.0)
+            usage = self._usage[task_id] = [totals[0], totals[1]]
+        settings = get_settings()
+        max_calls = settings.max_task_llm_calls if self._max_calls is None else self._max_calls
+        max_cost = settings.max_task_cost_usd if self._max_cost_usd is None else self._max_cost_usd
+        calls, cost = usage
+        if (max_calls and calls >= max_calls) or (max_cost and cost >= max_cost):
+            raise TaskBudgetExceeded(task_id, calls, cost, max_calls, max_cost)
+        usage[0] += 1
+        return usage
+
+    def _record(self, span, agent: str, prompt: str, response) -> float:
         from orchestrator.llm.pricing import cost_usd
 
         span.set_attribute("orchestrator.agent", agent)
@@ -303,3 +370,4 @@ class TracedLLMClient:
                 completion_tokens=response.completion_tokens,
                 cost_usd=cost,
             )
+        return cost

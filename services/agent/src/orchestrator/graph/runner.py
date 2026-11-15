@@ -25,7 +25,12 @@ from orchestrator.hitl.queue import ApprovalQueue
 from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import get_working_memory
-from orchestrator.observability.tracing import TracedLLMClient, setup_tracing, task_run_span
+from orchestrator.observability.tracing import (
+    TaskBudgetExceeded,
+    TracedLLMClient,
+    setup_tracing,
+    task_run_span,
+)
 from orchestrator.tools.defaults import add_rag_tools, build_default_registry
 from orchestrator.tools.registry import ToolRegistry
 
@@ -91,9 +96,14 @@ async def run_task(task_id: str) -> None:
         async with production_graph() as graph:
             with task_run_span(task_id, "task"):
                 await graph.ainvoke(initial, config={"configurable": {"thread_id": task_id}})
+    except TaskBudgetExceeded as error:
+        logger.warning("Task %s stopped: %s", task_id, error)
+        repo.set_status(task_id, "failed", error=str(error))
     except Exception as error:
         logger.exception("Task %s crashed", task_id)
         repo.set_status(task_id, "failed", error=str(error))
+    finally:
+        _forget_usage(task_id)
 
 
 async def resume_task(task_id: str, decision: dict) -> None:
@@ -106,6 +116,18 @@ async def resume_task(task_id: str, decision: dict) -> None:
                 await graph.ainvoke(
                     Command(resume=decision), config={"configurable": {"thread_id": task_id}}
                 )
+    except TaskBudgetExceeded as error:
+        logger.warning("Task %s stopped while resuming: %s", task_id, error)
+        DBTaskRepo().set_status(task_id, "failed", error=str(error))
     except Exception as error:
         logger.exception("Task %s crashed while resuming", task_id)
         DBTaskRepo().set_status(task_id, "failed", error=str(error))
+    finally:
+        _forget_usage(task_id)
+
+
+def _forget_usage(task_id: str) -> None:
+    """Drop the task's in-process LLM totals once a run ends (paused, finished or failed):
+    the next run, here or on another worker, seeds them from the store."""
+    if _dependencies.cache_info().currsize:
+        _dependencies()["llm"].forget(task_id)
