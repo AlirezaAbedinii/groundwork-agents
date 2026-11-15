@@ -147,11 +147,15 @@ other workers are included.
 model can ask for several tools in one turn: sensitive calls go to the tool
 gate first, the rest run concurrently, and every call's result goes back to
 the model before its next turn. A tool error is one of those results, not a
-failure. Then the reviewer scores the deliverable. Score ≥ threshold →
-completed; below → `rework` with feedback (max `MAX_SPECIALIST_RETRIES`
-cycles); running out of turns or an error outside the tools → `failed_attempt`
-with a revised-approach instruction for the retry. A sensitive tool call pauses
-the whole run through the tool gate before any call of its turn executes.
+failure. A call identical to one that already ran in the attempt is answered
+with that result again, without running; a tool that reaches its rate limit is
+no longer offered; and the model is told when its last turn comes. Then the
+reviewer scores the deliverable. Score ≥ threshold → completed; below →
+`rework` with feedback (max `MAX_SPECIALIST_RETRIES` cycles); running out of
+turns → `failed_attempt` whose retry is told the attempt's last three tool
+exchanges; an error outside the tools → `failed_attempt` with a
+revised-approach instruction. A sensitive tool call pauses the whole run
+through the tool gate before any call of its turn executes.
 
 **Four human gates**: `escalate_plan` (confidence / user request, before any
 work), the in-loop tool gate (sensitive calls), `escalate_subtask` (double

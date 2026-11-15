@@ -372,7 +372,7 @@ The e2e suite pins the six system-level behaviors, plus a full lifecycle:
 6. **Graceful failure recovery**: a specialist that keeps calling a nonexistent tool runs out of turns, retries with a revised approach, escalates on the second failure, and never leaves the task inconsistent.
 7. **Full lifecycle**: the demo scenario start-to-finish with programmatic approvals — final output, memory write-back, cleared working memory, complete trace tree, non-zero computed cost.
 
-The tool-call loop itself is pinned by `tests/unit/test_specialist_loop.py`: every call answered before the model's next turn, parallel calls in call order, tool errors as results, the approval gate, and the turn budget.
+The tool-call loop itself is pinned by `tests/unit/test_specialist_loop.py`: every call answered before the model's next turn, parallel calls in call order, tool errors as results, repeated calls, spent tools, the approval gate, and the turn budget.
 
 All of it runs on recorded LLM fixtures (`tests/fixtures/llm/`) through the production code path, so every suite runs offline with no keys. CI (GitHub Actions) runs ruff and the unit suite on every push and pull request, then the integration and e2e suites against postgres (pgvector) and redis service containers. Locally, `make e2e` runs the e2e suite against the compose services.
 

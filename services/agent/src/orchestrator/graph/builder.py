@@ -37,7 +37,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
 from orchestrator.agents.reviewer import Reviewer
-from orchestrator.agents.specialists import make_specialists
+from orchestrator.agents.specialists import SpecialistError, make_specialists
 from orchestrator.agents.supervisor import Supervisor
 from orchestrator.config import get_settings
 from orchestrator.graph.edges import (
@@ -63,6 +63,13 @@ from orchestrator.tools.base import ToolContext
 from orchestrator.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
+
+
+def _retry_feedback(error: Exception) -> str:
+    """What the next attempt is told about a failed one: its last tool exchanges when it ran out of turns."""
+    if isinstance(error, SpecialistError) and error.digest:
+        return f"Previous attempt ran out of turns. What happened: {error.digest}"
+    return f"Previous attempt raised an error: {error}. Try a different approach."
 
 
 def build_graph(
@@ -389,7 +396,7 @@ def build_graph(
                 "output": None,
                 "error": str(error),
                 "error_count": base["error_count"] + 1,
-                "feedback": f"Previous attempt raised an error: {error}. Try a different approach.",
+                "feedback": _retry_feedback(error),
             }
             repo.record_subtask(task_id, sid, status="failed", attempts=attempts, error=str(error))
             working.record_error(task_id, sid, str(error))

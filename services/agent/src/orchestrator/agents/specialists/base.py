@@ -20,8 +20,10 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    with its rate limit is spent for the task: the answer says so, and the tool
    is not offered again in this attempt.
 
-An attempt fails only when the turn budget runs out (``max_tool_iterations``; a
-batch of calls is one turn) or when something other than a ToolError escapes.
+Before the last turn the model is told that it is the last. An attempt fails
+only when the turn budget runs out (``max_tool_iterations``; a batch of calls is
+one turn), with a digest of its last tool exchanges for the retry, or when
+something other than a ToolError escapes.
 """
 
 from __future__ import annotations
@@ -45,6 +47,11 @@ from orchestrator.tools.serialize import render_result
 FEEDBACK_MARKER = "Reviewer feedback:"
 REPEAT_PREFIX = "Identical to an earlier call in this attempt; result unchanged:"
 UNAVAILABLE = "this tool is unavailable for the rest of this task"
+LAST_TURN = "This is your last turn. Reply with the deliverable. State plainly anything you could not do."
+
+# What a failed attempt's retry is told: its last tool exchanges, in at most this many characters.
+DIGEST_LINES = 3
+DIGEST_CHARS = 600
 
 SYSTEM_PROMPT = """You are the {name} specialist in a multi-agent system. {role}
 Use the tools provided when they help. When you are finished, reply with the
@@ -60,7 +67,11 @@ Gate = Callable[[str, dict, int, list[str]], dict | None]
 
 
 class SpecialistError(RuntimeError):
-    pass
+    """An attempt that ran out of turns; ``digest`` is what its last tool exchanges were."""
+
+    def __init__(self, message: str, digest: str = ""):
+        super().__init__(message)
+        self.digest = digest
 
 
 @dataclass
@@ -75,6 +86,16 @@ def _answer(call: ToolCall, content: str, *, error: bool = False) -> ToolMessage
 
 def _call_key(name: str, arguments: dict) -> str:
     return name + json.dumps(arguments, sort_keys=True)
+
+
+def _digest(transcript: list[str]) -> str:
+    """The last DIGEST_LINES transcript lines, one line each, together at most DIGEST_CHARS.
+
+    Each line gets an equal share and keeps its start, where the tool, the
+    outcome and the start of an error message are."""
+    lines = [" ".join(line.split()) for line in transcript[-DIGEST_LINES:]]
+    share = (DIGEST_CHARS - (len(lines) - 1)) // max(len(lines), 1)  # less the newlines between them
+    return "\n".join(line if len(line) <= share else line[: share - 1] + "…" for line in lines)
 
 
 class SpecialistAgent(BaseAgent):
@@ -109,6 +130,8 @@ class SpecialistAgent(BaseAgent):
         answered: dict[str, ToolMessage] = {}  # each call that reached the registry, by the arguments it ran with
         withdrawn: set[str] = set()  # tools that reached their rate limit
         for iteration in range(budget):
+            if iteration == budget - 1:
+                messages.append(HumanMessage(content=LAST_TURN))
             offered = [tool for tool in tools if tool["function"]["name"] not in withdrawn]
             response = await self.chat(messages, tools=offered)
             if not response.tool_calls:
@@ -185,4 +208,4 @@ class SpecialistAgent(BaseAgent):
                     executed.append(listed)
                 verb = "failed" if answer.status == "error" else "returned"
                 transcript.append(f"-> {call.name} {verb}: {answer.content}")
-        raise SpecialistError(f"{self.name} exceeded {budget} tool iterations")
+        raise SpecialistError(f"{self.name} exceeded {budget} tool iterations", digest=_digest(transcript))

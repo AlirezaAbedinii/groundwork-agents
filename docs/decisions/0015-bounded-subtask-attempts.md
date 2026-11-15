@@ -73,6 +73,29 @@ flight when the spend ceiling is reached can pass it by its own cost. A refusal 
 memory extraction after delivery skips the extraction and leaves the task completed. The
 defaults sit above every completed run in the published records.
 
+## Loop guards
+
+Within an attempt, the specialist loop wasted turns in three ways: it ran the same call
+again, it kept offering a tool the registry had refused for the rest of the task, and
+when the turns ran out, the retry was told only to try a different approach.
+
+- A call identical to one that reached the registry earlier in the attempt (same tool,
+  same arguments, in any key order), or to an earlier call of the same turn, is answered
+  with that answer again, prefixed "Identical to an earlier call in this attempt; result
+  unchanged:", and runs nothing. Each call still gets exactly one answer. A call that
+  varies over time would be answered from the earlier result; none of the current tools
+  does within the minutes an attempt takes. Answers a human gave (a rejection, a
+  take-over) are not reused across turns, so a repeated sensitive call goes back to the
+  reviewer; a call a human modified is remembered by the arguments it ran with.
+- A rate-limited answer adds "this tool is unavailable for the rest of this task", and
+  the tool is left out of the definitions for the attempt's later turns. A later attempt
+  starts with every tool again and learns of the limit from its first refusal.
+- Before the last turn the model is told so and asked for the deliverable, with a plain
+  statement of what it could not do.
+- An attempt that runs out of turns fails with a digest of its last three tool
+  exchanges, at most 600 characters, and the retry's feedback is "Previous attempt ran
+  out of turns. What happened:" followed by it. Other failures keep the old feedback.
+
 ## Alternatives
 
 - **Keep the reset and cap approvals per task.** It ends the loop, but each approval

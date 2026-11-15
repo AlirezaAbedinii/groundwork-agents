@@ -1,8 +1,8 @@
 """E2E 6: graceful recovery from agent failures.
 
 A fixture forces the research specialist to keep calling a nonexistent tool, so
-each attempt runs out of turns: the first failure retries with a revised-approach
-instruction, the second failure escalates, and at no point is the task left in an inconsistent state — it
+each attempt runs out of turns: the first failure retries with what happened in
+its last turns, the second failure escalates, and at no point is the task left in an inconsistent state — it
 pauses cleanly, keeps its working memory for the resume, and completes after a
 human take-over.
 """
@@ -24,15 +24,16 @@ def test_forced_failures_retry_then_escalate_without_corrupting_state(client):
     trace = client.get(f"/traces/{task_id}").json()
 
     # each attempt used its whole turn budget (the unknown tool is an error result the
-    # model sees), and the retry carried a revised-approach instruction into the prompt
+    # model sees), and the retry carried what happened into the prompt
     from orchestrator.config import get_settings
 
     turns = get_settings().max_tool_iterations
     research_prompts = [c["prompt"] for c in trace["llm_calls"] if c["agent"] == "research"]
     assert len(research_prompts) == 2 * turns
     first_attempt, retry = research_prompts[:turns], research_prompts[turns:]
-    assert not any("Try a different approach" in prompt for prompt in first_attempt)
-    assert all("Try a different approach" in prompt for prompt in retry)
+    told = "Previous attempt ran out of turns. What happened: -> bogus_tool failed:"
+    assert not any(told in prompt for prompt in first_attempt)
+    assert all(told in prompt and "Unknown tool 'bogus_tool'" in prompt for prompt in retry)
 
     # both attempts traced as failures; the escalation span carries the trigger
     attempts = [s for s in trace["spans"] if s["kind"] == "specialist"]

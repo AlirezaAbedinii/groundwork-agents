@@ -17,7 +17,13 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from pydantic import BaseModel
 
 from orchestrator.agents.specialists import ResearchSpecialist
-from orchestrator.agents.specialists.base import FEEDBACK_MARKER, REPEAT_PREFIX, SpecialistError, SpecialistResult
+from orchestrator.agents.specialists.base import (
+    FEEDBACK_MARKER,
+    LAST_TURN,
+    REPEAT_PREFIX,
+    SpecialistError,
+    SpecialistResult,
+)
 from orchestrator.config import get_settings
 from orchestrator.llm.mock import LLMResponse, ToolCall
 from orchestrator.tools.base import InMemoryInvocationStore, ToolContext, ToolExecutionError, ToolSpec
@@ -224,8 +230,8 @@ async def test_two_calls_in_one_turn_run_together_and_count_as_one_turn(store, m
     assert [r.status for r in store.records] == ["success", "success"], "the two calls did not run concurrently"
     assert result == SpecialistResult(output="BOTH", tool_calls=["echo", "echo"])
     assert len(llm.calls) == 2
-    *_, assistant, first_answer, second_answer = llm.calls[1]["messages"]
-    assert len(assistant.tool_calls) == 2
+    *_, assistant, first_answer, second_answer, notice = llm.calls[1]["messages"]  # turn 2 of 2 is the last
+    assert len(assistant.tool_calls) == 2 and notice.text == LAST_TURN
     # answered in call order, not in completion order
     assert [first_answer.tool_call_id, second_answer.tool_call_id] == [c.id for c in batch.tool_calls]
     assert [json.loads(first_answer.content), json.loads(second_answer.content)] == [
@@ -310,6 +316,48 @@ async def test_running_out_of_turns_fails_the_attempt(store, monkeypatch):
     with pytest.raises(SpecialistError, match="exceeded 3 tool iterations"):
         await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
     assert len(llm.calls) == 3
+
+
+async def test_the_last_turn_is_announced_after_the_answers(store, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_tool_iterations", 3)
+    llm = ScriptedLLM(turn(call("echo", msg="a")), turn(call("echo", msg="b")), final("WHAT I HAVE"))
+
+    result = await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    assert result.output == "WHAT I HAVE"
+    announced = [[m.text for m in chat["messages"]].count(LAST_TURN) for chat in llm.calls]
+    assert announced == [0, 0, 1]
+    *_, last_answer, notice = llm.calls[2]["messages"]  # after every answer of the turn before
+    assert isinstance(last_answer, ToolMessage) and isinstance(notice, HumanMessage)
+
+
+async def test_the_failure_carries_a_digest_of_the_last_three_exchanges(store, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_tool_iterations", 4)
+    llm = ScriptedLLM(
+        turn(call("echo", msg="first")),
+        turn(call("echo", msg="x" * 3000)),
+        turn(call("boom", msg="y")),
+        turn(call("echo", msg="last")),
+    )
+
+    with pytest.raises(SpecialistError) as failure:
+        await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    digest = failure.value.digest
+    assert len(digest) <= 600
+    long, failed, last = digest.split("\n")
+    assert long.startswith('-> echo returned: {"msg": "xxx') and long.endswith("…") and len(long) == 199
+    assert failed == "-> boom failed: boom failed: kaput"
+    assert last == '-> echo returned: {"msg": "last"}'
+
+
+def test_a_digest_keeps_each_line_on_one_line():
+    from orchestrator.agents.specialists.base import _digest
+
+    assert _digest(["-> a failed: Invalid arguments:\n  msg\n    Field required"]) == (
+        "-> a failed: Invalid arguments: msg Field required"
+    )
+    assert _digest([]) == ""
 
 
 # --- 7. the human-approval gate ---------------------------------------------------

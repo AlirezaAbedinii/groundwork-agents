@@ -238,6 +238,20 @@ async def test_two_specialist_failures_pause_then_human_takes_over(tmp_path, rep
     assert repo.subtasks[task_id]["s1"]["output"] == "HUMAN-OUT"
 
 
+async def test_a_retry_after_running_out_of_turns_is_told_what_happened(tmp_path, repo):
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask("s1", "research", "look something up")], 0.9),
+       match=["Create an execution plan"])
+    fx(tmp_path, "research", "research", "", tool_calls=[tool_call("bogus_tool", {})])
+
+    _, state, _, _ = await run_until_pause(tmp_path, repo, "doomed task", InMemoryApprovalQueue())
+
+    feedback = state["subtask_results"]["s1"]["feedback"]
+    assert feedback.startswith("Previous attempt ran out of turns. What happened: -> bogus_tool failed:")
+    assert "Unknown tool 'bogus_tool'" in feedback.splitlines()[-1]  # the last exchange's error
+    assert "Try a different approach" not in feedback
+
+
 async def test_low_plan_confidence_pauses_then_approve_resumes(tmp_path, repo):
     fx(tmp_path, "plan", "supervisor",
        plan_text([subtask("s1", "research", "vague thing")], 0.3),
