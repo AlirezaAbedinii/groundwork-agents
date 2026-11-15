@@ -16,11 +16,16 @@ logger = logging.getLogger(__name__)
 
 # The retrieval tools the RAG stack's MCP server offers, as the agent allows them.
 # Only tools listed here are registered (deny by default), under the rag_ prefix;
-# the server's own annotations decide nothing.
+# the server's own annotations decide nothing. Search hits and an answer with its
+# citations are the evidence the specialist works from, so they get twice the
+# default result budget: a search with a larger top_k still arrives as whole hits.
 RAG_TOOL_PREFIX = "rag_"
+RAG_RESULT_BUDGET_CHARS = 4000
 RAG_MCP_POLICY: dict[str, McpToolPolicy] = {
-    "search": McpToolPolicy(owners=frozenset({"research"}), rate_limit=10),
-    "ask": McpToolPolicy(owners=frozenset({"research"}), rate_limit=5),  # spends the RAG service's LLM budget
+    "search": McpToolPolicy(owners=frozenset({"research"}), rate_limit=10, result_budget_chars=RAG_RESULT_BUDGET_CHARS),
+    "ask": McpToolPolicy(  # spends the RAG service's LLM budget
+        owners=frozenset({"research"}), rate_limit=5, result_budget_chars=RAG_RESULT_BUDGET_CHARS
+    ),
     "list_sources": McpToolPolicy(owners=frozenset({"research"}), rate_limit=3),
 }
 

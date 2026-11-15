@@ -5,6 +5,9 @@ import random
 import re
 
 import pytest
+from pydantic import BaseModel
+
+from orchestrator.tools.base import ToolSpec
 from orchestrator.tools.serialize import MIN_RESULT_BUDGET_CHARS, render_result
 
 MARKER = re.compile(r"…\[\+(\d+) chars\]$")
@@ -182,3 +185,18 @@ def test_a_budget_below_the_minimum_is_refused():
     with pytest.raises(ValueError, match="at least 200"):
         render_result({"msg": "hi"}, MIN_RESULT_BUDGET_CHARS - 1)
 
+
+class _In(BaseModel):
+    msg: str
+
+
+def _spec(**budget) -> ToolSpec:
+    return ToolSpec(name="echo", description="Echo", input_schema=_In, output_schema=_In,
+                    owners=frozenset({"research"}), rate_limit=1, handler=lambda args, ctx: args, **budget)
+
+
+def test_a_tool_spec_has_a_result_budget_of_2000_unless_given_one():
+    assert _spec().result_budget_chars == 2000
+    assert _spec(result_budget_chars=4000).result_budget_chars == 4000
+    with pytest.raises(ValueError, match="echo: result_budget_chars must be at least 200"):
+        _spec(result_budget_chars=100)

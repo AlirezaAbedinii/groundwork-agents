@@ -16,8 +16,12 @@ from pathlib import Path
 import httpx
 import pytest
 import uvicorn
+from langchain_core.messages import ToolMessage
 
+from orchestrator.agents.specialists import ResearchSpecialist
+from orchestrator.llm.mock import LLMResponse, ToolCall
 from orchestrator.tools.base import InMemoryInvocationStore, ToolContext, ToolExecutionError
+from orchestrator.tools.defaults import RAG_MCP_POLICY
 from orchestrator.tools.mcp_client import discover_tools
 from orchestrator.tools.mcp_models import McpToolPolicy
 from orchestrator.tools.registry import ToolRegistry
@@ -57,14 +61,18 @@ def rag_server(server_module, rag_requests):
     def fake_rag(request: httpx.Request) -> httpx.Response:
         rag_requests.append(request)
         if request.url.path == "/v1/search":
-            hit = {
-                "chunk_id": "a3f9c2e17b4d8e01",
-                "text": CHUNK,
-                "score": 0.91,
-                "source_file": "04-error-codes.md",
-                "section_heading": "Request errors",
-            }
-            return httpx.Response(200, json={"query": json.loads(request.content)["query"], "mode": "hybrid", "hits": [hit]})
+            body = json.loads(request.content)
+            hits = [
+                {
+                    "chunk_id": f"a3f9c2e17b4d8e{n:02d}",
+                    "text": CHUNK,
+                    "score": 0.91 - n / 100,
+                    "source_file": "04-error-codes.md",
+                    "section_heading": "Request errors",
+                }
+                for n in range(body["top_k"])
+            ]
+            return httpx.Response(200, json={"query": body["query"], "mode": "hybrid", "hits": hits})
         if request.url.path == "/v1/ask":
             return httpx.Response(503, json={"detail": "Missing required configuration: OPENAI_API_KEY."})
         if request.url.path == "/v1/documents":
@@ -95,10 +103,10 @@ def served_rag(rag_server):
     sock.close()
 
 
-def registry_for(target) -> tuple[ToolRegistry, InMemoryInvocationStore]:
+def registry_for(target, policy=POLICY) -> tuple[ToolRegistry, InMemoryInvocationStore]:
     store = InMemoryInvocationStore()
     registry = ToolRegistry(store)
-    for spec in asyncio.run(discover_tools(target, POLICY, prefix="rag_")):
+    for spec in asyncio.run(discover_tools(target, policy, prefix="rag_")):
         registry.register(spec)
     return registry, store
 
@@ -142,3 +150,33 @@ def test_arguments_the_server_would_reject_stop_in_the_registry(rag_server, rag_
     assert [(r.url.path, json.loads(r.content)) for r in rag_requests] == [
         ("/v1/search", {"query": "FERRY-429", "top_k": 3})
     ]
+
+
+class SearchThenFinish:
+    """A model that asks for one ten-hit search, then finishes; keeps the messages of its second turn."""
+
+    def __init__(self) -> None:
+        search = ToolCall(id="call_1", name="rag_search", arguments={"query": "FERRY-429", "top_k": 10})
+        self.turns = [LLMResponse(text="", tool_calls=(search,)), LLMResponse(text="DONE")]
+        self.second_turn: list = []
+
+    async def chat(self, agent, messages, *, tools=None, output_schema=None, producer_provider=None):
+        self.second_turn = list(messages)
+        return self.turns.pop(0)
+
+
+def test_a_ten_hit_search_reaches_the_model_as_whole_hits_within_its_budget(rag_server):
+    registry, store = registry_for(rag_server, RAG_MCP_POLICY)  # the agent's own policy: 4000 chars for search
+    llm = SearchThenFinish()
+    task = {"id": "s1", "description": "Explain FERRY-429", "expected_output_format": "plain text"}
+
+    asyncio.run(ResearchSpecialist(llm, registry).execute(task, {}, None, CTX))
+
+    answer = llm.second_turn[-1]
+    assert isinstance(answer, ToolMessage) and answer.status == "success"
+    assert len(answer.content) <= 4000
+    content = json.loads(answer.content)["content"]
+    every_hit = store.records[0].output["content"]["hits"]  # what the tool returned, in full
+    shown = content["truncated"]["shown"]
+    assert content["truncated"] == {"shown": shown, "of": 10} and len(every_hit) == 10
+    assert content["hits"] == every_hit[:shown] and shown > 3  # whole hits, more than a default search (top_k 3)

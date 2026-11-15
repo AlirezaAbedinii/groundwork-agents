@@ -54,6 +54,7 @@ async def discover_tools(
                 owners=allowed.owners,
                 rate_limit=allowed.rate_limit,
                 sensitive=allowed.sensitive,
+                result_budget_chars=allowed.result_budget_chars,
                 handler=_handler(target, tool.name, timeout_s),
             )
         )

@@ -66,12 +66,17 @@ def test_discovery_registers_only_the_tools_the_policy_allows(rag_stub, caplog):
 
 
 def test_specs_carry_the_policy_and_the_servers_description(rag_stub):
-    policy = POLICY | {"ask": McpToolPolicy(owners=frozenset({"research", "analysis"}), rate_limit=2, sensitive=True)}
+    policy = POLICY | {
+        "ask": McpToolPolicy(
+            owners=frozenset({"research", "analysis"}), rate_limit=2, sensitive=True, result_budget_chars=4000
+        )
+    }
 
     specs = {spec.name: spec for spec in discover(rag_stub.server, policy)}
 
     ask = specs["rag_ask"]
     assert (ask.owners, ask.rate_limit, ask.sensitive) == (frozenset({"research", "analysis"}), 2, True)
+    assert (ask.result_budget_chars, specs["rag_search"].result_budget_chars) == (4000, 2000)  # 2000 unless set
     assert specs["rag_search"].description == "Search the team's docs."
     assert all(spec.output_schema is McpToolOutput for spec in specs.values())
 

@@ -66,6 +66,9 @@ def test_with_the_server_up_the_rag_tools_join_under_the_agents_policy(rag_up):
     rag = {name: registry.get(name) for name in RAG}
     assert {name: spec.rate_limit for name, spec in rag.items()} == {"rag_search": 10, "rag_ask": 5, "rag_list_sources": 3}
     assert all(spec.owners == frozenset({"research"}) and not spec.sensitive for spec in rag.values())
+    budgets = {name: spec.result_budget_chars for name, spec in rag.items()}
+    assert budgets == {"rag_search": 4000, "rag_ask": 4000, "rag_list_sources": 2000}
+    assert all(registry.get(name).result_budget_chars == 2000 for name in LOCAL)
 
 
 def test_a_registry_that_has_the_tools_doesnt_discover_again(rag_up, monkeypatch):

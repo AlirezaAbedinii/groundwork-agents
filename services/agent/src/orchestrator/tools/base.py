@@ -9,6 +9,8 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from orchestrator.tools.serialize import DEFAULT_RESULT_BUDGET_CHARS, MIN_RESULT_BUDGET_CHARS
+
 
 class ToolError(Exception):
     """Base class for all tool failures."""
@@ -50,6 +52,12 @@ class ToolSpec:
     sensitive: bool = False
     # Per-invocation sensitivity (e.g. api_call POST); overrides `sensitive` when set.
     sensitive_when: Callable[[BaseModel], bool] | None = None
+    # Most characters of JSON the model sees of one result (tools/serialize.py).
+    result_budget_chars: int = DEFAULT_RESULT_BUDGET_CHARS
+
+    def __post_init__(self) -> None:
+        if self.result_budget_chars < MIN_RESULT_BUDGET_CHARS:
+            raise ValueError(f"{self.name}: result_budget_chars must be at least {MIN_RESULT_BUDGET_CHARS}")
 
     def is_sensitive(self, args: BaseModel) -> bool:
         if self.sensitive_when is not None:

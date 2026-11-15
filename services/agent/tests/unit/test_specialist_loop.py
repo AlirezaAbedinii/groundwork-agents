@@ -192,6 +192,22 @@ async def test_a_tool_call_is_answered_by_one_tool_message(store):
     assert kept == "x" * len(kept) and marker == f"[+{3000 - len(kept)} chars]"
 
 
+async def test_each_result_is_valid_json_within_its_own_tools_budget(store):
+    registry = make_registry(store)
+    registry.register(ToolSpec(name="wide", description="Echo, with twice the result budget", input_schema=EchoIn,
+                               output_schema=EchoOut, owners=frozenset({"research"}), rate_limit=20,
+                               handler=lambda args, ctx: EchoOut(msg=args.msg), result_budget_chars=4000))
+    long_msg = "x" * 5000
+    llm = ScriptedLLM(turn(call("echo", msg=long_msg), call("wide", msg=long_msg)), final("DONE"))
+
+    await ResearchSpecialist(llm, registry).execute(SPEC, {}, None, CTX)
+
+    narrow, wide = tool_messages(llm.calls[1]["messages"])
+    for answer, budget in ((narrow, 2000), (wide, 4000)):
+        assert budget - 20 < len(answer.content) <= budget
+        assert json.loads(answer.content)["msg"].endswith(" chars]")
+
+
 # --- 3. a batch is concurrent, ordered, and one turn -----------------------------
 
 

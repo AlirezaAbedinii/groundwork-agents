@@ -18,8 +18,9 @@ All three are read-only.
 
 `mode` is `hybrid` (keywords and meaning, reranked) or `dense` (meaning only);
 left out, the RAG service's default applies. Every result at default arguments
-fits the agents' 2000-character tool-result budget: `search` sends snippets, not
-whole chunks, and `ask` leaves out the passages it answered from.
+fits the agent's smallest tool-result budget, 2000 characters (`search` and `ask`
+get 4000): `search` sends snippets, not whole chunks, and `ask` leaves out the
+passages it answered from.
 
 When the RAG API fails, the tool returns an error the model can read and act on,
 not a crash: `retrieval service returned 503: <detail>`, or

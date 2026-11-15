@@ -209,7 +209,7 @@ async def test_results_at_default_arguments_fit_the_agent_loop_budget(
     result = await client.call_tool(tool, arguments)
 
     assert result.is_error is False
-    # The agent's registry wraps the result as {"content": ...} before the loop cuts it.
+    # The agent's registry wraps the result as {"content": ...} before the loop measures it.
     assert len(json.dumps({"content": result.structured_content})) <= RESULT_BUDGET_CHARS
 
 

@@ -13,14 +13,18 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from orchestrator.tools.serialize import DEFAULT_RESULT_BUDGET_CHARS
+
 
 @dataclass(frozen=True)
 class McpToolPolicy:
-    """Which specialists may call one server tool, how often per task, and whether it needs approval."""
+    """Which specialists may call one server tool, how often per task, whether it needs approval,
+    and how many characters of its result the model sees."""
 
     owners: frozenset[str]
     rate_limit: int
     sensitive: bool = False
+    result_budget_chars: int = DEFAULT_RESULT_BUDGET_CHARS
 
 
 class McpToolOutput(BaseModel):

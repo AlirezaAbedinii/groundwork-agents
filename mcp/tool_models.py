@@ -2,17 +2,20 @@
 
 Every tool returns one of these models, so the SDK publishes an output schema for
 it and sends the result as ``structured_content`` next to the text. The agent
-loop shows the model at most RESULT_BUDGET_CHARS of a tool's JSON, so ``search``
-sends snippets instead of whole chunks and ``ask`` leaves out the contexts its
-answer came from.
+loop shows the model each tool's JSON within a budget of at least
+RESULT_BUDGET_CHARS, so ``search`` sends snippets instead of whole chunks and
+``ask`` leaves out the contexts its answer came from.
 """
 
 from typing import Annotated
 
 from pydantic import BaseModel, BeforeValidator, Field
 
-# The agent loop cuts every tool result to this many characters of JSON
-# (services/agent/src/orchestrator/agents/specialists/base.py:140).
+# The smallest budget, in characters of JSON, that the agent loop gives these
+# tools' results (services/agent/src/orchestrator/tools/defaults.py: 4000 for
+# search and ask, 2000 for list_sources). A longer result reaches the model
+# shortened, as valid JSON that says what it left out; results at the default
+# arguments are sized to arrive whole.
 RESULT_BUDGET_CHARS = 2000
 SNIPPET_CHARS = 300
 # Measured on the Ferry corpus, worst case: 3 hits of 300 chars come to 1588 chars,
