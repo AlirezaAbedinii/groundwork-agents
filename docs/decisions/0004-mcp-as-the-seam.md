@@ -77,3 +77,36 @@ it goes ahead with the local tools, and the next run tries again. With
 - **Trusting the server's tool annotations** (read-only, destructive) for
   permissions or approvals. The SDK's own documentation says annotations from
   other servers are hints, never guarantees.
+
+## Addendum, 2026-11-15: each result as valid JSON within its tool's budget
+
+The loop showed the model the first 2000 characters of a result's JSON. A longer
+result was cut wherever the 2000th character fell, often inside a hit or a
+string, so the model got text that did not parse and no sign of what was left
+out. That fixed slice is replaced, and with it the 2000-character limit
+described above.
+
+- **Valid JSON that says what it left out.** `tools/serialize.py` renders every
+  result. One within its budget is exactly the JSON it was before. A longer one
+  loses whole items from the end of its longest list, at the top level or under
+  `content` (where the MCP tools' results are), and gains
+  `"truncated": {"shown": n, "of": m}` right after that list. When there is no
+  list, or not even one whole item fits, the longest strings are shortened
+  first, each ending in `…[+N chars]`. Every result parses and fits its budget.
+- **A budget per tool.** `ToolSpec.result_budget_chars`, 2000 by default and at
+  least 200. The agent's MCP policy sets it for server tools: `rag_search` and
+  `rag_ask` get 4000, because search hits and an answer's citations are the
+  evidence the research specialist works from; `rag_list_sources` keeps 2000.
+  A search with `top_k` 10 arrives as whole hits, as many as fit, with their
+  count.
+- **The server sends what it sent before.** Its results at the default
+  arguments are still sized to fit 2000 characters (3 hits with 300-character
+  snippets), so they arrive whole under either budget.
+- **Cost.** Only a search or an answer longer than 2000 characters costs more:
+  up to 2000 more characters, roughly 500 prompt tokens, in each later turn of
+  that attempt.
+
+Alternatives: a larger slice still cuts inside the JSON; a limit inside each
+tool repeats the same logic in every tool and can't reach another MCP server's
+tools; summarizing long results with a model adds a paid call, latency and a
+result that differs from run to run.
