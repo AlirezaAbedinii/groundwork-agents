@@ -272,7 +272,32 @@ async def test_a_rate_limited_call_comes_back_as_an_error_result(store):
     assert [r.status for r in store.records] == ["success", "rate_limited"]
     allowed, limited = tool_messages(llm.calls[2]["messages"])
     assert (allowed.status, limited.status) == ("success", "error")
-    assert "Rate limit of 1 calls per task exceeded" in limited.content
+    assert limited.content == (
+        "Rate limit of 1 calls per task exceeded for 'once'; this tool is unavailable for the rest of this task."
+    )
+
+
+def offered(chat: dict) -> list[str]:
+    return [tool["function"]["name"] for tool in chat["tools"]]
+
+
+async def test_a_tool_at_its_rate_limit_is_not_offered_again(store):
+    llm = ScriptedLLM(
+        turn(call("once", msg="a")),
+        turn(call("once", msg="b"), call("echo", msg="c")),  # refused; echo is unaffected
+        turn(call("once", msg="d")),  # asked for anyway: refused by the registry again
+        final("DONE"),
+    )
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    assert [offered(chat) for chat in llm.calls] == [
+        ["echo", "boom", "once"], ["echo", "boom", "once"], ["echo", "boom"], ["echo", "boom"],
+    ]
+    assert sorted((r.tool_name, r.status) for r in store.records) == [  # a batch logs in completion order
+        ("echo", "success"), ("once", "rate_limited"), ("once", "rate_limited"), ("once", "success"),
+    ]
+    assert tool_messages(llm.calls[3]["messages"])[-1].status == "error"
 
 
 # --- 6. the turn budget --------------------------------------------------------

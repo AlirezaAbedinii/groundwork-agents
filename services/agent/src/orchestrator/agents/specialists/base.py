@@ -16,7 +16,9 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    registry and the tools are synchronous.
 3. The answers go back in call order, each result as JSON within its tool's
    ``result_budget_chars`` (tools/serialize.py). A ToolError is an answer the
-   model sees (``status="error"``), not a failed attempt.
+   model sees (``status="error"``), not a failed attempt. A tool that answers
+   with its rate limit is spent for the task: the answer says so, and the tool
+   is not offered again in this attempt.
 
 An attempt fails only when the turn budget runs out (``max_tool_iterations``; a
 batch of calls is one turn) or when something other than a ToolError escapes.
@@ -35,13 +37,14 @@ from orchestrator.agents.base import BaseAgent
 from orchestrator.config import get_settings
 from orchestrator.llm.clients import LLMClient
 from orchestrator.llm.mock import ToolCall
-from orchestrator.tools.base import ToolContext, ToolError
+from orchestrator.tools.base import RateLimitExceededError, ToolContext, ToolError
 from orchestrator.tools.registry import ToolRegistry
 from orchestrator.tools.serialize import render_result
 
 # Stable prompt markers; mock fixtures and tests match on them.
 FEEDBACK_MARKER = "Reviewer feedback:"
 REPEAT_PREFIX = "Identical to an earlier call in this attempt; result unchanged:"
+UNAVAILABLE = "this tool is unavailable for the rest of this task"
 
 SYSTEM_PROMPT = """You are the {name} specialist in a multi-agent system. {role}
 Use the tools provided when they help. When you are finished, reply with the
@@ -104,8 +107,10 @@ class SpecialistAgent(BaseAgent):
         transcript: list[str] = []
         executed: list[str] = []
         answered: dict[str, ToolMessage] = {}  # each call that reached the registry, by the arguments it ran with
+        withdrawn: set[str] = set()  # tools that reached their rate limit
         for iteration in range(budget):
-            response = await self.chat(messages, tools=tools)
+            offered = [tool for tool in tools if tool["function"]["name"] not in withdrawn]
+            response = await self.chat(messages, tools=offered)
             if not response.tool_calls:
                 return SpecialistResult(output=response.text, tool_calls=executed)
             messages.append(AIMessage(content=response.text, tool_calls=[
@@ -164,7 +169,10 @@ class SpecialistAgent(BaseAgent):
                     answer, listed = decided[call.id]
                 else:
                     outcome = ran[call.id]
-                    if isinstance(outcome, ToolError):
+                    if isinstance(outcome, RateLimitExceededError):
+                        withdrawn.add(call.name)
+                        answer = _answer(call, f"{outcome}; {UNAVAILABLE}.", error=True)
+                    elif isinstance(outcome, ToolError):
                         answer = _answer(call, str(outcome), error=True)
                     else:
                         answer = _answer(call, render_result(outcome, self.registry.get(call.name).result_budget_chars))
