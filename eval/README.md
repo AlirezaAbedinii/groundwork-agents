@@ -130,12 +130,18 @@ no-answer, written from the corpus files without running retrieval, checked by h
 and split 40/60 inside each category × phrasing stratum
 ([ADR 0006](../docs/decisions/0006-evaluation-harness-and-judge.md), addendum).
 
-The [agent tasks](tasks/agent_tasks.jsonl) are 18 requests: 6 docs answers saved to
-files, 3 analyses of the demo database, 2 code tasks, 4 that combine docs with data
-or code into a memo, 2 the docs can't answer, and a three-step chain. Each names the
-calls it needs (`must_call`, where "consult the docs" accepts `rag_search` or
-`rag_ask`), the tools it may also use and the ones it must not, and 3–5 rubric
-criteria (70 in all, 63 critical). Two more, in
+The [agent tasks](tasks/agent_tasks.jsonl) are 28 requests. The first 18 are 6 docs
+answers saved to files, 3 analyses of the demo database, 2 code tasks, 4 that combine
+docs with data or code into a memo, 2 the docs can't answer, and a three-step chain.
+Each names the calls it needs (`must_call`, where "consult the docs" accepts
+`rag_search` or `rag_ask`), the tools it may also use and the ones it must not, and
+3–5 rubric criteria (70 in all, 63 critical). The other 10 (t19 to t28, added on
+2026-11-15) are marked `held_out`: 4 docs, 2 data, 1 code and 3 combined tasks, in
+the proportions of those categories above, each with three critical criteria (46 in
+all, 30 critical). They draw on corpus pages the first 18 don't use, and their facts
+were checked against the corpus files and the demo seed, not against the agent.
+`agent_eval run` leaves them out unless `--include-held-out` asks for them
+([ADR 0008](../docs/decisions/0008-agent-evaluation.md), second addendum). Two more, in
 [`smoke_tasks.jsonl`](tasks/smoke_tasks.jsonl), replay the agent's recorded test
 fixtures for a keyless run of the whole harness.
 

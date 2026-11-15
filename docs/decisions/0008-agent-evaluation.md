@@ -99,3 +99,30 @@ adds three rules:
 
 Version 2 changes no rubric and no judge prompt, and task success still requires
 every critical criterion to pass.
+
+## Addendum, 2026-11-15: held-out tasks
+
+Ten tasks, t19 to t28, are marked `held_out: true`: 4 docs, 2 data, 1 code and 3
+combined, the proportions of those categories among the first 18. They exist to test
+changes made while iterating on the other tasks. A change that only fits the tasks it
+was tuned on shows up as a gap between the two sets, and it can only show up if
+nobody looked at the held-out tasks' runs while making it.
+
+- **How they were written.** From the corpus files and the demo database's seed, never
+  by running the agent or a model. Each fact was checked in the corpus file it comes
+  from, and the data answers against the seed applied to PostgreSQL 16. The docs
+  facts come from corpus pages the first 18 tasks don't use, and no request repeats
+  their wording or file names. The demo schema has one table, so the data tasks query
+  the same table as before, with other questions: the catalog's description of the
+  table, and figures relative to each row instead of to the total.
+- **Rubrics.** Three critical criteria per task, each a fact that can be checked in
+  the deliverable; everything else asked for is non-critical and reported as a pass
+  rate. Fewer critical parts make a near miss less likely to fail the whole task.
+- **The run refuses them.** `agent_eval run` leaves held-out tasks out and says so,
+  unless `--include-held-out` is given; naming one in `--ids` without the flag is an
+  error, not a warning. A refusal fits because a held-out task run once during
+  iteration is no longer held out, and nothing can undo that.
+- **Records keep the flag.** It is part of each task's definition in the records, so
+  a report can show the held-out tasks apart from the rest.
+
+The first 18 tasks, their rubrics and the scoring rules are unchanged.
