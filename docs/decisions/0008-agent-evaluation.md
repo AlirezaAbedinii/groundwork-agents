@@ -126,3 +126,13 @@ nobody looked at the held-out tasks' runs while making it.
   a report can show the held-out tasks apart from the rest.
 
 The first 18 tasks, their rubrics and the scoring rules are unchanged.
+
+## Addendum, 2026-11-15: the never-run tasks are held out as well
+
+t13 to t15, t17 and t18 are now marked `held_out: true` too. No published run includes
+them, and they were already to be kept out of the runs that change the agent, but only
+by each such run naming its tasks with `--ids`: one plain run would have used them up.
+With the flag, a plain `agent_eval run` covers exactly the 13 tasks of the published
+run, and the held-out set is 15 tasks: these five and t19 to t28, which keep their own
+ids as the ten written to be held out. Only the flag changed; their requests and
+rubrics are as before.

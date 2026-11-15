@@ -137,11 +137,13 @@ Each names the calls it needs (`must_call`, where "consult the docs" accepts
 `rag_search` or `rag_ask`), the tools it may also use and the ones it must not, and
 3–5 rubric criteria (70 in all, 63 critical). The other 10 (t19 to t28, added on
 2026-11-15) are marked `held_out`: 4 docs, 2 data, 1 code and 3 combined tasks, in
-the proportions of those categories above, each with three critical criteria (46 in
+the proportions of those categories above, each with three critical criteria (47 in
 all, 30 critical). They draw on corpus pages the first 18 don't use, and their facts
-were checked against the corpus files and the demo seed, not against the agent.
-`agent_eval run` leaves them out unless `--include-held-out` asks for them
-([ADR 0008](../docs/decisions/0008-agent-evaluation.md), second addendum). Two more, in
+were checked against the corpus files and the demo seed, not against the agent. Five of
+the first 18, t13 to t15, t17 and t18, which no published run includes, are marked
+`held_out` too. `agent_eval run` leaves all 15 out unless `--include-held-out` asks
+for them, so a plain run covers the 13 tasks of the published run
+([ADR 0008](../docs/decisions/0008-agent-evaluation.md), second and third addenda). Two more, in
 [`smoke_tasks.jsonl`](tasks/smoke_tasks.jsonl), replay the agent's recorded test
 fixtures for a keyless run of the whole harness.
 
