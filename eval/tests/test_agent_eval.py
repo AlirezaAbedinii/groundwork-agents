@@ -443,6 +443,34 @@ def test_a_run_needs_a_cap(tmp_path, tasks_file):
     assert exc.value.code == 2
 
 
+def test_held_out_tasks_run_only_when_the_flag_asks_for_them(tmp_path, capsys):
+    path = tmp_path / "held.jsonl"
+
+    def write(tasks: list[dict]) -> None:
+        path.write_text("".join(json.dumps(t) + "\n" for t in tasks), encoding="utf-8")
+
+    write([TASKS[0] | {"held_out": True}, *TASKS[1:]])
+    refused = FakeAgent(scripts())
+    with pytest.raises(SystemExit) as exc:
+        run(tmp_path, path, refused, "--ids", "t01,t02")
+    assert exc.value.code == 2
+    assert "held out: ['t01']" in capsys.readouterr().err
+    assert refused.posts == []
+    # a run without --ids leaves t01 out and says so
+    fake = FakeAgent(scripts())
+    assert run(tmp_path, path, fake) == 0
+    assert [p["user_id"] for p in fake.posts] == ["eval-run1-cross-t02", "eval-run1-cross-t03"]
+    assert "left out 1 held-out tasks" in capsys.readouterr().out
+    flagged = FakeAgent(scripts())
+    run(tmp_path, path, flagged, "--ids", "t01", "--include-held-out", run_id="run2")
+    assert [p["user_id"] for p in flagged.posts] == ["eval-run2-cross-t01"]
+    write([t | {"held_out": True} for t in TASKS])
+    with pytest.raises(SystemExit) as exc:
+        run(tmp_path, path, FakeAgent(scripts()), run_id="run3")
+    assert exc.value.code == 2
+    assert "every task in" in capsys.readouterr().err
+
+
 # --- score --------------------------------------------------------------------------
 
 

@@ -22,6 +22,9 @@ caps the agent's spend and the judge's together: a task starts only if its reser
 (``--task-reserve-usd``, 0 on MOCK_LLM) fits, and its real cost, the LLM total plus every
 ``rag_ask``'s ``cost_usd``, is recorded when it ends. Runs resume: a recorded task is
 skipped, and a completed task without a verdict is judged again without running again.
+Tasks marked ``held_out`` are left out unless ``--include-held-out`` asks for them, and
+naming one in ``--ids`` without it is an error, so no run made to change the agent sees
+them by accident.
 
 Scoring rules are versioned (``metrics``): ``run`` stamps each record with
 ``SCORING_VERSION``, and a record without the stamp is scored by version 1, the rules
@@ -791,6 +794,12 @@ def main(
     run.add_argument("--runs", type=Path, default=Path("runs"))
     run.add_argument("--ids", help="only these task ids, comma-separated (a pilot)")
     run.add_argument(
+        "--include-held-out",
+        action="store_true",
+        help="also run tasks marked held_out; without it they are left out, and naming one"
+        " in --ids is an error",
+    )
+    run.add_argument(
         "--max-cost-usd", type=float, required=True, help="the agent's and judge's spend"
     )
     run.add_argument(
@@ -848,6 +857,14 @@ def main(
             if unknown := wanted - {t.id for t in tasks}:
                 parser.error(f"not in {args.tasks}: {sorted(unknown)}")
             tasks = [t for t in tasks if t.id in wanted]
+        held = [t.id for t in tasks if t.held_out]
+        if held and not args.include_held_out:
+            if args.ids:
+                parser.error(f"held out: {held}; only --include-held-out runs them")
+            tasks = [t for t in tasks if not t.held_out]
+            print(f"left out {len(held)} held-out tasks (--include-held-out runs them)")
+            if not tasks:
+                parser.error(f"every task in {args.tasks} is held out")
         users = {t.id: user_id(args.run_id, args.label, t.id) for t in tasks}
         if too_long := sorted(i for i, u in users.items() if len(u) > MAX_USER_ID):
             parser.error(f"--run-id is too long: user ids for {too_long} pass {MAX_USER_ID} chars")

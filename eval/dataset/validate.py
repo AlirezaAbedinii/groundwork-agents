@@ -30,7 +30,8 @@ against the target composition (warnings).
                  tool is both allowed and forbidden, no task requires a tool that
                  reaches an outside service, and every task forbids api_call. A
                  rubric needs unique criterion ids and a critical criterion; an empty
-                 one is a warning until the rubrics are written.
+                 one is a warning until the rubrics are written. The summary counts
+                 the tasks marked ``held_out``.
 
 Exits 1 when there are errors; warnings don't fail the run.
 """
@@ -490,6 +491,10 @@ def summarize_tasks(path: Path, n_rows: int, tasks: list[AgentTask], findings: F
     if by_category:
         line += " · " + ", ".join(f"{c} {n}" for c, n in by_category)
     findings.summary.insert(0, line)
+    if held := [t for t in tasks if t.held_out]:
+        by_category = sorted(Counter(t.category for t in held).items())
+        listed = ", ".join(f"{c} {n}" for c, n in by_category)
+        findings.summary.append(f"  held out: {len(held)} ({listed})")
     required = Counter(" or ".join(entry.tools) for t in tasks for entry in t.must_call)
     if required:
         listed = ", ".join(f"{tools} {n}" for tools, n in required.most_common())

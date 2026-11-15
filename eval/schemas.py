@@ -175,7 +175,9 @@ class AgentTask(_Strict):
     Tool calls are scored from the invocation log: `must_call` lists the calls the task
     needs, `may_call` the tools it may also use without losing precision, and
     `forbidden` the tools it must not touch. The `rubric` is for the task judge, which
-    sees only the outputs.
+    sees only the outputs. A `held_out` task is kept out of every run that is used to
+    change the agent, so it can measure whether those changes carry over to requests
+    they were not made for; `agent_eval run` leaves it out unless asked.
     """
 
     id: str
@@ -186,6 +188,7 @@ class AgentTask(_Strict):
     forbidden: list[str] = []
     rubric: list[RubricCriterion]
     notes: str = ""
+    held_out: bool = False
 
 
 class CriterionVerdict(_Strict):
