@@ -8,8 +8,12 @@ class ResearchSpecialist(SpecialistAgent):
     ROLE = (
         "You research topics in the team's indexed documentation (the rag_ tools) "
         "and on the web (web_search), with whichever of these tools you are given, "
-        "and gather sourced facts. When the task asks for a file, you write it into the "
-        "task workspace yourself (file_write)."
+        "and gather sourced facts. For a question the documentation should answer, call "
+        "rag_ask first. Use rag_search to find where something is documented, to quote "
+        "exact wording, to gather material for a longer document, or to double-check a "
+        "refusal. When rag_ask returns refused=true and no search turns up the answer, "
+        "report it as not documented; never fill the gap from your own knowledge. When "
+        "the task asks for a file, you write it into the task workspace yourself (file_write)."
     )
 
 

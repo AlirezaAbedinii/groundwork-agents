@@ -112,10 +112,10 @@ def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None =
         description=(
             "Ask a question and get an answer written from the team's indexed "
             "documentation, with [n] citations to the passages it used and a confidence "
-            "score. Slower than search and it spends the retrieval service's LLM budget, "
-            "so use it when you need an explanation; use search to find or quote passages. "
-            "refused=true means the documentation doesn't cover the question: that is an "
-            "answer, not an error."
+            "score. Use it first for a question the documentation should answer: it reads "
+            "whole passages. Use search to find, quote or gather passages. Slower than "
+            "search, and it spends the retrieval service's LLM budget. refused=true means "
+            "the documentation doesn't cover the question: that is an answer, not an error."
         ),
     )
     async def ask(

@@ -169,6 +169,14 @@ async def test_a_reply_without_tool_calls_is_the_result_after_one_chat(store):
     assert not store.records
 
 
+def test_the_research_role_says_when_to_ask_and_what_a_refusal_means():
+    role = ResearchSpecialist.ROLE
+
+    assert "rag_ask first" in role and "rag_search" in role
+    assert "refused=true" in role and "not documented" in role
+    assert "never fill the gap from your own knowledge" in role
+
+
 async def test_the_opening_message_leads_with_the_users_request(store):
     request = "Write parse_duration and run it on 1h30m15s, 45s, 2h5m and 90m."
     llm = ScriptedLLM(final("DONE"))
