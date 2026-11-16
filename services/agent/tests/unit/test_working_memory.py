@@ -112,7 +112,7 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
         "task_summary": "t",
         "confidence": 0.9,
         "subtasks": [
-            {"id": "s1", "description": "look up A", "specialist": "research",
+            {"id": "s1", "description": "look up A", "specialist": "research", "tools": ["web_search"],
              "required_inputs": [], "expected_output_format": "plain text",
              "estimated_complexity": "low", "depends_on": []},
             {"id": "s2", "description": "summarize", "specialist": "writing",

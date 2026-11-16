@@ -35,11 +35,16 @@ def plan_text(subtasks: list[dict], confidence: float) -> str:
     return json.dumps({"task_summary": "test", "subtasks": subtasks, "confidence": confidence})
 
 
+# A tool each specialist owns, so a plan built from subtask() passes the plan lint.
+TOOL_OF = {"research": ["web_search"], "analysis": ["db_query"], "code": ["code_exec"], "writing": []}
+
+
 def subtask(sid: str, specialist: str, description: str, depends_on: list[str] | None = None) -> dict:
     return {
         "id": sid,
         "description": description,
         "specialist": specialist,
+        "tools": TOOL_OF[specialist],
         "required_inputs": [],
         "expected_output_format": "plain text",
         "estimated_complexity": "low",

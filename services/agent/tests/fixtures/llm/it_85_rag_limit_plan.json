@@ -6,7 +6,7 @@
     "Ferry documentation"
   ],
   "response": {
-    "text": "{\"task_summary\": \"Search the Ferry docs until the tool refuses\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Keep searching the Ferry documentation until the search tool refuses\", \"specialist\": \"research\", \"required_inputs\": [], \"expected_output_format\": \"what the search found\", \"estimated_complexity\": \"low\", \"depends_on\": []}], \"confidence\": 0.9}",
+    "text": "{\"task_summary\": \"Search the Ferry docs until the tool refuses\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Keep searching the Ferry documentation until the search tool refuses\", \"specialist\": \"research\", \"tools\": [\"rag_search\"], \"required_inputs\": [], \"expected_output_format\": \"what the search found\", \"estimated_complexity\": \"low\", \"depends_on\": []}], \"confidence\": 0.9}",
     "model": "mock-gpt-4o",
     "prompt_tokens": 300,
     "completion_tokens": 90

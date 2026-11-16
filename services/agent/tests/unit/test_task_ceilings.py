@@ -197,7 +197,8 @@ def one_subtask_plan(tmp_path, *, endless: bool) -> None:
     plan = {
         "task_summary": "test", "confidence": 0.9,
         "subtasks": [{
-            "id": "s1", "description": "look it up", "specialist": "research", "required_inputs": [],
+            "id": "s1", "description": "look it up", "specialist": "research", "tools": ["web_search"],
+            "required_inputs": [],
             "expected_output_format": "plain text", "estimated_complexity": "low", "depends_on": [],
         }],
     }
