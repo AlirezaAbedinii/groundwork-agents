@@ -193,7 +193,7 @@ Every agent is a typed LangGraph node — Pydantic models in, Pydantic models ou
 | `api_call` | Call an allowlisted HTTP API | research | `POST` is flagged sensitive |
 | `rag_search` / `rag_ask` / `rag_list_sources` | Search and question answering over the team's indexed documents | research | From the retrieval service's MCP server when `MCP_RAG_URL` is set; 10 / 5 / 3 calls per task |
 
-Every tool call — successful, rejected, rate-limited, or failed — is logged with its arguments, output, latency, and status. Each tool has a per-task rate limit, and specialists can only invoke tools they're explicitly assigned.
+Every tool call — successful, rejected, rate-limited, or failed — is logged with its arguments, output, latency, and status. Each tool has a per-task rate limit, shown in its description with the calls the task has left, and specialists can only invoke tools they're explicitly assigned.
 
 The `rag_*` tools live on the retrieval service's [MCP server](../../mcp/README.md). On the first run that can reach it, the agent lists the server's tools and registers the ones its policy table allows ([`tools/defaults.py`](src/orchestrator/tools/defaults.py); any other server tool is denied) as ordinary registry tools, so every rule above applies to them unchanged. Set `MCP_RAG_URL` to enable them (see [`.env.example`](.env.example)); while the server is unreachable, runs go on with the local tools. See [ADR 0004](../../docs/decisions/0004-mcp-as-the-seam.md).
 

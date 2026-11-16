@@ -136,7 +136,6 @@ class SpecialistAgent(BaseAgent):
         result). Its ``transcript`` is a readable history for the approval context;
         the model never sees it."""
         messages = self._opening(spec, inputs, feedback)
-        tools = self.registry.tool_definitions_for(self.name)
         budget = get_settings().max_tool_iterations
         transcript: list[str] = []
         executed: list[str] = []
@@ -145,6 +144,8 @@ class SpecialistAgent(BaseAgent):
         for iteration in range(budget):
             if iteration == budget - 1:
                 messages.append(HumanMessage(content=LAST_TURN))
+            # read each turn, so the calls left on each tool are current
+            tools = self.registry.tool_definitions_for(self.name, ctx.task_id)
             offered = [tool for tool in tools if tool["function"]["name"] not in withdrawn]
             response = await self.chat(messages, tools=offered)
             if not response.tool_calls:

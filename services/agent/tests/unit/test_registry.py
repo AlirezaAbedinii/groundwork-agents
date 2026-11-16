@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import pytest
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from pydantic import BaseModel
@@ -156,6 +158,35 @@ def test_disabled_code_exec_leaves_the_tool_out(monkeypatch):
     assert owned["code"] == {"file_read", "file_write"}
     with pytest.raises(UnknownToolError):
         registry.invoke("code_exec", {"code": "print(1)"}, _ctx(specialist="code"))
+
+
+# --- per-task limits in the definitions ------------------------------------------
+
+
+def _description(registry: ToolRegistry, task_id: str | None = None) -> str:
+    (definition,) = registry.tool_definitions_for("research", task_id)
+    return definition["function"]["description"]
+
+
+def test_definitions_for_a_task_show_the_limit_and_the_calls_left(registry):
+    assert _description(registry, "t1") == "Echo the message back. Limit: 2 calls per task, 2 left."
+
+    registry.invoke("echo", {"msg": "a"}, _ctx())
+    assert _description(registry, "t1") == "Echo the message back. Limit: 2 calls per task, 1 left."
+    assert _description(registry, "other") == "Echo the message back. Limit: 2 calls per task, 2 left."
+
+    registry.invoke("echo", {"msg": "b"}, _ctx())
+    with pytest.raises(RateLimitExceededError):
+        registry.invoke("echo", {"msg": "c"}, _ctx())  # refused calls don't count
+    assert _description(registry, "t1") == "Echo the message back. Limit: 2 calls per task, 0 left."
+
+    assert _description(registry) == "Echo the message back"  # without a task: the bare description
+
+
+def test_a_description_ending_in_a_full_stop_gets_no_second_one(store):
+    registry = ToolRegistry(store)
+    registry.register(replace(_echo_spec(rate_limit=3), description="Echo it."))
+    assert _description(registry, "t1") == "Echo it. Limit: 3 calls per task, 3 left."
 
 
 # --- what the default registry holds -----------------------------------------------

@@ -22,7 +22,12 @@ def _query(registry, sql: str) -> dict:
 
 def test_the_description_names_the_seeded_table_and_its_columns(registry):
     assert SEEDED in describe(get_engine())
-    assert SEEDED in registry.get("db_query").description  # what the analysis specialist is shown
+    # what the analysis specialist is shown, limit included
+    (definition,) = [
+        d["function"] for d in registry.tool_definitions_for("analysis", "t1") if d["function"]["name"] == "db_query"
+    ]
+    assert SEEDED in definition["description"]
+    assert definition["description"].endswith("Limit: 10 calls per task, 10 left.")
 
 
 def test_an_unqualified_name_resolves_to_the_demo_schema(registry):

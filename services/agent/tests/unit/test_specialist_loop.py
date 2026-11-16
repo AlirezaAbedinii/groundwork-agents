@@ -155,7 +155,7 @@ async def test_a_reply_without_tool_calls_is_the_result_after_one_chat(store):
     assert only["agent"] == "research"
     assert only["output_schema"] is None
     # the tools travel natively, as the registry's definitions ...
-    assert only["tools"] == registry.tool_definitions_for("research")
+    assert only["tools"] == registry.tool_definitions_for("research", CTX.task_id)
     system, human = only["messages"]
     assert isinstance(system, SystemMessage) and isinstance(human, HumanMessage)
     # ... and never as text
@@ -304,6 +304,21 @@ async def test_a_tool_at_its_rate_limit_is_not_offered_again(store):
         ("echo", "success"), ("once", "rate_limited"), ("once", "rate_limited"), ("once", "success"),
     ]
     assert tool_messages(llm.calls[3]["messages"])[-1].status == "error"
+
+
+async def test_each_turn_shows_the_calls_left_on_each_tool(store):
+    llm = ScriptedLLM(turn(call("once", msg="a"), call("echo", msg="b")), turn(call("echo", msg="c")), final("DONE"))
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    def limits(chat: dict) -> dict[str, str]:
+        return {tool["function"]["name"]: tool["function"]["description"].split("Limit: ")[1] for tool in chat["tools"]}
+
+    assert [limits(chat) for chat in llm.calls] == [
+        {"echo": "20 calls per task, 20 left.", "boom": "20 calls per task, 20 left.", "once": "1 calls per task, 1 left."},
+        {"echo": "20 calls per task, 19 left.", "boom": "20 calls per task, 20 left.", "once": "1 calls per task, 0 left."},
+        {"echo": "20 calls per task, 18 left.", "boom": "20 calls per task, 20 left.", "once": "1 calls per task, 0 left."},
+    ]
 
 
 # --- 6. the turn budget --------------------------------------------------------

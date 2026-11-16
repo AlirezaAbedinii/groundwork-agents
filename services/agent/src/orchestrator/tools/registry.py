@@ -51,23 +51,31 @@ class ToolRegistry:
         except Exception:
             return False  # let invoke() produce the proper error/logging
 
-    def tool_definitions_for(self, specialist: str) -> list[dict]:
+    def tool_definitions_for(self, specialist: str, task_id: str | None = None) -> list[dict]:
         """Native tool definitions (OpenAI function format) for the tools a specialist may call.
 
         The parameters are each ToolSpec's Pydantic input schema, so the model
-        is shown exactly the contract invoke() validates arguments against.
+        is shown exactly the contract invoke() validates arguments against. With
+        a ``task_id``, each description ends with the tool's per-task limit and
+        the calls the task has left, counted as invoke() counts them.
         """
         return [
             {
                 "type": "function",
                 "function": {
                     "name": spec.name,
-                    "description": spec.description,
+                    "description": spec.description if task_id is None else self._with_limit(spec, task_id),
                     "parameters": spec.input_schema.model_json_schema(),
                 },
             }
             for spec in self.tools_for(specialist)
         ]
+
+    def _with_limit(self, spec: ToolSpec, task_id: str) -> str:
+        left = max(spec.rate_limit - self._store.count_executions(task_id, spec.name), 0)
+        description = spec.description.rstrip()
+        separator = " " if description.endswith(".") else ". "
+        return f"{description}{separator}Limit: {spec.rate_limit} calls per task, {left} left."
 
     @staticmethod
     def _span_status(exc: BaseException) -> str:
