@@ -14,7 +14,9 @@ The replacement is text only: at a specialist's tool-calling step it ends that
 specialist's tool loop, and the text becomes its output.
 Replays and forks run as new tasks (tasks.replay_of points at the original)
 with long-term memory disabled — a replay must not learn — and under the
-original's rules version (orchestrator/rules.py).
+original's rules version (orchestrator/rules.py). A strict replay that finishes
+with a recorded call it never served has diverged, and fails saying which call:
+otherwise it could end with a different output and no sign of why.
 """
 
 from __future__ import annotations
@@ -36,6 +38,10 @@ logger = logging.getLogger(__name__)
 
 class ReplayDivergenceError(RuntimeError):
     pass
+
+
+# Agents whose recorded calls a replay never makes: it neither reads nor writes long-term memory.
+NOT_REPLAYED = frozenset({"memory"})
 
 
 def _prompt_key(agent: str, prompt: str) -> tuple[str, str]:
@@ -101,6 +107,17 @@ class ReplayLLMClient:
         self._consumed.add(index)
         return self._records[index]
 
+    def first_unused(self) -> dict | None:
+        """The first recorded call not served yet, among the agents a replay calls."""
+        return next(
+            (
+                record
+                for index, record in enumerate(self._records)
+                if index not in self._consumed and record["agent"] not in NOT_REPLAYED
+            ),
+            None,
+        )
+
     def _response(self, record: dict) -> LLMResponse:
         if record["id"] in self._overrides:
             # A human-provided replacement is plain text: it carries no tool
@@ -164,9 +181,8 @@ async def run_replay(
         else:
             pool, overrides, fallback, run_name = records, {}, None, "task:replay"
 
-        llm = TracedLLMClient(
-            ReplayLLMClient(pool, overrides, fallback), calls=DBLLMCallStore()
-        )
+        replayer = ReplayLLMClient(pool, overrides, fallback)
+        llm = TracedLLMClient(replayer, calls=DBLLMCallStore())
         async with open_checkpointer() as checkpointer:
             graph = build_graph(
                 llm=llm,
@@ -180,7 +196,7 @@ async def run_replay(
             )
             bundle = repo.get_task(new_task_id)
             with task_run_span(new_task_id, run_name):
-                await graph.ainvoke(
+                result = await graph.ainvoke(
                     {
                         "task_id": new_task_id,
                         "request": bundle["request"],
@@ -192,6 +208,11 @@ async def run_replay(
                     },
                     config={"configurable": {"thread_id": new_task_id}},
                 )
+        # a strict replay that finished (not one paused for an approval) must have used every call
+        if fallback is None and "__interrupt__" not in result and (unused := replayer.first_unused()):
+            raise ReplayDivergenceError(
+                f"Replay diverged: it finished without using recorded call {unused['id']} ({unused['agent']})"
+            )
     except Exception as error:
         logger.exception("Replay %s of %s crashed", new_task_id, original_task_id)
         repo.set_status(new_task_id, "failed", error=str(error))

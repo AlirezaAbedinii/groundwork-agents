@@ -9,6 +9,9 @@ import sqlalchemy as sa
 
 from orchestrator.db.repo import DBLLMCallStore, DBTaskRepo
 from orchestrator.db.session import get_engine
+from orchestrator.observability.replay import run_replay
+from orchestrator.rules import CURRENT_RULES_VERSION
+from orchestrator.workers.loop import run_in_worker_loop
 
 REQUEST = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
@@ -182,3 +185,15 @@ def test_a_one_subtask_recording_from_before_versions_replays_its_synthesis(clie
     assert (replay["status"], replay["error"]) == ("completed", None)
     assert replay["final_output"] == "OLD-FINAL"  # not the writer's output
 
+
+def test_a_strict_replay_that_leaves_a_recorded_call_unused_fails_naming_it(client):
+    original = _legacy_recording(_legacy_subtask("writing", "Write the release note"), "WRITER-OUTPUT")
+    synthesis = next(c for c in DBLLMCallStore().for_task(original) if c["response"] == "OLD-FINAL")
+    # the same recording run under the current rules delivers the writer's output and skips synthesis
+    replay_id = DBTaskRepo().create_task(LEGACY_REQUEST, replay_of=original, rules_version=CURRENT_RULES_VERSION)
+
+    run_in_worker_loop(run_replay(replay_id, original))
+
+    replay = client.get(f"/tasks/{replay_id}").json()
+    assert replay["status"] == "failed"
+    assert replay["error"] == f"Replay diverged: it finished without using recorded call {synthesis['id']} (supervisor)"
