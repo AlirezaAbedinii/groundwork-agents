@@ -18,6 +18,10 @@ from dataclasses import dataclass
 CURRENT_RULES_VERSION = 2
 
 
+class UnknownRulesVersion(ValueError):
+    """A version this build has no switches for, e.g. one written by a newer deployment."""
+
+
 @dataclass(frozen=True)
 class Rules:
     # The plan lint (planning/capabilities.py) checks the planner's plan and a plan a
@@ -39,8 +43,11 @@ def effective_version(stored: int | None) -> int:
 
 
 def rules_for(version: int | None) -> Rules:
-    """The switches for ``version`` (None is version 1)."""
+    """The switches for ``version`` (None is version 1). A run, a resume and a replay all
+    call this before the graph starts, so an unknown version never runs."""
     try:
         return _SWITCHES[effective_version(version)]
     except KeyError:
-        raise ValueError(f"Unknown rules version {version}; this build knows {sorted(_SWITCHES)}") from None
+        raise UnknownRulesVersion(
+            f"Unknown rules version {version}; this build knows {sorted(_SWITCHES)}"
+        ) from None

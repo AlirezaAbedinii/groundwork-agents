@@ -32,6 +32,7 @@ from pydantic import BaseModel
 from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import LLMResponse, ToolCall
 from orchestrator.llm.structured import validate_output
+from orchestrator.rules import rules_for
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,7 @@ async def run_replay(
     setup_tracing()
     repo = DBTaskRepo()
     try:
+        rules_for(repo.get_task(new_task_id)["rules_version"])  # an unknown version is refused before anything runs
         records = DBLLMCallStore().for_task(original_task_id)
         if llm_call_id is not None:
             k = next((i for i, r in enumerate(records) if r["id"] == llm_call_id), None)

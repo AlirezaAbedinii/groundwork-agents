@@ -74,7 +74,9 @@ through its run.
   Adding a version means adding one entry to `rules_for` and reading the new switch
   where the behaviour changes.
 - A version that this build does not know, for example from a newer deployment sharing
-  the database, is refused with an error, not run under the wrong rules.
+  the database, is refused before a run, a resume or a replay starts. A resume reads the
+  version from the checkpoint, not the task row. The task fails with the reason, and
+  nothing runs under the wrong rules.
 
 ## Alternatives
 

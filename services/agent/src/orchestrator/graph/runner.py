@@ -31,6 +31,7 @@ from orchestrator.observability.tracing import (
     setup_tracing,
     task_run_span,
 )
+from orchestrator.rules import UnknownRulesVersion, rules_for
 from orchestrator.tools.defaults import add_rag_tools, build_default_registry
 from orchestrator.tools.registry import ToolRegistry
 
@@ -87,6 +88,12 @@ async def run_task(task_id: str) -> None:
     if bundle is None:
         logger.error("run_task: task %s not found", task_id)
         return
+    try:
+        rules_for(bundle["rules_version"])  # an unknown version is refused before anything runs
+    except UnknownRulesVersion as error:
+        logger.error("Task %s refused: %s", task_id, error)
+        repo.set_status(task_id, "failed", error=str(error))
+        return
     initial = {
         "task_id": task_id,
         "request": bundle["request"],
@@ -113,15 +120,19 @@ async def run_task(task_id: str) -> None:
 
 
 async def resume_task(task_id: str, decision: dict) -> None:
-    """Resume a paused task from its checkpoint with the human decision."""
+    """Resume a paused task from its checkpoint with the human decision, under the rules
+    version in that checkpoint; an unknown version is refused and the task fails."""
     from langgraph.types import Command
 
+    config = {"configurable": {"thread_id": task_id}}
     try:
         async with production_graph() as graph:
+            rules_for((await graph.aget_state(config)).values.get("rules_version"))
             with task_run_span(task_id, "task:resume"):
-                await graph.ainvoke(
-                    Command(resume=decision), config={"configurable": {"thread_id": task_id}}
-                )
+                await graph.ainvoke(Command(resume=decision), config=config)
+    except UnknownRulesVersion as error:
+        logger.error("Task %s not resumed: %s", task_id, error)
+        DBTaskRepo().set_status(task_id, "failed", error=str(error))
     except TaskBudgetExceeded as error:
         logger.warning("Task %s stopped while resuming: %s", task_id, error)
         DBTaskRepo().set_status(task_id, "failed", error=str(error))
