@@ -56,6 +56,13 @@ def _registry() -> ToolRegistry:
     return build_default_registry(DBInvocationStore())
 
 
+async def current_registry() -> ToolRegistry:
+    """The process's registry, with the RAG tools added if the MCP server can be reached now."""
+    registry = _registry()
+    await add_rag_tools(registry)
+    return registry
+
+
 @asynccontextmanager
 async def production_graph(*, discover: bool = True) -> AsyncIterator[CompiledStateGraph]:
     """The production graph, checkpointing to Postgres over a connection that lives for one run.
@@ -63,9 +70,7 @@ async def production_graph(*, discover: bool = True) -> AsyncIterator[CompiledSt
     With ``discover`` (runs), the RAG MCP tools are added to the registry first if
     they aren't there yet; state reads pass False so they never wait on the server.
     """
-    registry = _registry()
-    if discover:
-        await add_rag_tools(registry)
+    registry = await current_registry() if discover else _registry()
     async with open_checkpointer() as checkpointer:
         yield build_graph(checkpointer=checkpointer, registry=registry, **_dependencies())
 

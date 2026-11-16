@@ -220,6 +220,23 @@ async def test_a_resumed_run_takes_its_rules_from_its_graph_state(tmp_path, repo
     assert finished["final_output"] == final
 
 
+async def test_a_modified_plan_that_fails_the_lint_ends_the_run(tmp_path, repo):
+    fx(tmp_path, "plan", "supervisor", plan_text([subtask("s1", "research", "vague thing")], 0.3),
+       match=["Create an execution plan"])
+    queue = InMemoryApprovalQueue()
+    task_id, _, graph, config = await run_until_pause(tmp_path, repo, "rank the databases", queue)
+    misassigned = json.loads(plan_text([{**subtask("s1", "research", "rank by stars"), "tools": ["db_query"]}], 0.9))
+
+    finished = await decide(graph, config, queue, "modify", {"plan": misassigned})
+
+    assert repo.tasks[task_id]["status"] == "failed"
+    assert repo.tasks[task_id]["error"].startswith(
+        "Modified plan fails the plan lint: s1: 'db_query' belongs to analysis, not research"
+    )
+    assert not finished.get("dispatch_log") and not finished.get("subtask_results")
+    assert len(repo.plans[task_id]) == 1  # the modified plan was never saved
+
+
 def test_each_payload_of_a_wave_carries_the_request():
     from orchestrator.graph.edges import compute_wave
 

@@ -9,6 +9,7 @@ up to the final-deliverable gate and through to completion.
 import sqlalchemy as sa
 
 from orchestrator.db.session import get_engine
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 REQUEST = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
@@ -87,3 +88,30 @@ def test_pause_approve_resume_end_to_end(client):
     assert len(all_rows) == 2
     assert all(row["status"] == "resolved" for row in all_rows)
     assert all(row["review_seconds"] is not None for row in all_rows)
+
+
+def test_a_modified_plan_that_fails_the_lint_is_refused_and_the_approval_stays_pending(client):
+    task_id = client.post("/tasks", json={"request": REQUEST, "require_human_review": True}).json()["task_id"]
+    bundle = client.get(f"/tasks/{task_id}").json()
+    assert bundle["rules_version"] == CURRENT_RULES_VERSION
+    pending = client.get("/approvals", params={"status": "pending"}).json()["approvals"]
+    (approval,) = [a for a in pending if a["task_id"] == task_id]
+    star_ranking = next(s for s in bundle["plan"]["subtasks"] if s["tools"] == ["db_query"])
+    misassigned = {**bundle["plan"], "subtasks": [{**star_ranking, "specialist": "research"}]}
+
+    refused = client.post(f"/approvals/{approval['id']}/resolve",
+                          json={"action": "modify", "payload": {"plan": misassigned}})
+
+    assert refused.status_code == 422
+    assert refused.json()["detail"].startswith(
+        f"Modified plan fails the plan lint: {star_ranking['id']}: 'db_query' belongs to analysis, not research"
+    )
+    assert client.get(f"/approvals/{approval['id']}").json()["status"] == "pending"
+    assert client.get(f"/tasks/{task_id}").json()["status"] == "awaiting_approval"
+    assert _tool_invocation_count(task_id) == 0
+
+    # given back to the specialist that owns db_query, the same plan is accepted and the run resumes
+    fixed = {**misassigned, "subtasks": [{**star_ranking, "specialist": "analysis"}]}
+    accepted = client.post(f"/approvals/{approval['id']}/resolve", json={"action": "modify", "payload": {"plan": fixed}})
+    assert accepted.status_code == 200
+    assert client.get(f"/tasks/{task_id}").json()["subtasks"][0]["specialist"] == "analysis"

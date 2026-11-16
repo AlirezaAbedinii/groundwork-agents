@@ -10,10 +10,13 @@ from langchain_core.messages import HumanMessage
 from pydantic import BaseModel, ValidationError
 
 from orchestrator.config import get_settings
+from orchestrator.db.repo import DBTaskRepo
 from orchestrator.hitl.queue import ApprovalQueue
 from orchestrator.llm.clients import get_llm_client
 from orchestrator.memory.working import get_working_memory
+from orchestrator.planning.capabilities import check
 from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.rules import rules_for
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -72,6 +75,22 @@ def _validate_resolution(approval: dict, body: ResolveRequest) -> None:
             raise HTTPException(status_code=422, detail="modify requires payload.arguments")
 
 
+async def _lint_modified_plan(approval: dict, body: ResolveRequest) -> None:
+    """A modified plan must also pass the plan lint of the rules the task runs under, so
+    a plan the graph would refuse is refused here and the approval stays pending."""
+    if body.action != "modify" or approval["gate_key"] != "plan":
+        return
+    task = DBTaskRepo().get_task(approval["task_id"]) or {}
+    if not rules_for(task.get("rules_version")).lint_plans:
+        return
+    from orchestrator.graph.runner import current_registry
+
+    plan = ExecutionPlan.model_validate((body.payload or {}).get("plan"))  # the schema was checked first
+    errors, rejected = check(plan, await current_registry())
+    if rejected:
+        raise HTTPException(status_code=422, detail="Modified plan fails the plan lint: " + " ".join(errors))
+
+
 @router.get("")
 def list_approvals(status: str | None = None, task_id: str | None = None) -> dict:
     return {"approvals": ApprovalQueue().list(status=status, task_id=task_id)}
@@ -86,7 +105,7 @@ def get_approval(approval_id: str) -> dict:
 
 
 @router.post("/{approval_id}/resolve")
-def resolve_approval(
+async def resolve_approval(
     approval_id: str, body: ResolveRequest, background_tasks: BackgroundTasks
 ) -> dict:
     queue = ApprovalQueue()
@@ -97,6 +116,7 @@ def resolve_approval(
         raise HTTPException(status_code=409, detail=f"Approval is {approval['status']}, not pending")
 
     _validate_resolution(approval, body)
+    await _lint_modified_plan(approval, body)
     resolved = queue.resolve(approval_id, action=body.action, payload=body.payload, notes=body.notes)
     decision = {"action": body.action, "payload": body.payload or {}, "notes": body.notes}
 

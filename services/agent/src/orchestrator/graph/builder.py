@@ -57,6 +57,7 @@ from orchestrator.llm.router import route
 from orchestrator.memory.extraction import extract_memories, store_extracted
 from orchestrator.memory.retrieval import retrieve_for_planning
 from orchestrator.observability.tracing import TaskBudgetExceeded, child_span, node_span, set_attr
+from orchestrator.planning.capabilities import check
 from orchestrator.planning.decomposer import PlanValidationError
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.rules import rules_for
@@ -257,6 +258,15 @@ def build_graph(
             }
         if action == "modify":
             new_plan = ExecutionPlan.model_validate(payload["plan"])
+            if rules_for(state.get("rules_version")).lint_plans:
+                # the approvals API refuses such a plan and keeps the approval pending;
+                # one that reaches the graph another way ends the run here
+                errors, rejected = check(new_plan, registry)
+                set_attr(espan, "lint_errors", errors)
+                if rejected:
+                    error = "Modified plan fails the plan lint: " + " ".join(errors)
+                    repo.set_status(state["task_id"], "failed", error=error)
+                    return {"hitl_decision": {"gate": "plan", "action": "fail", "notes": notes}, "plan_error": error}
             repo.save_plan(state["task_id"], new_plan)
             working.set_plan(state["task_id"], new_plan.model_dump())
             repo.set_status(state["task_id"], "executing")

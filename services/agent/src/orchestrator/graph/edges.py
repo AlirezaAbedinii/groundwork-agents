@@ -27,8 +27,9 @@ def _hitl_action(state: TaskState) -> str:
 
 
 def route_after_plan_escalation(state: TaskState) -> str:
+    """A rejection, or a modified plan that fails the plan lint, ends the run."""
     action = _hitl_action(state)
-    if action == "reject":
+    if action in ("reject", "fail"):
         return "end"
     if action == "take_over":
         return "deliver"
