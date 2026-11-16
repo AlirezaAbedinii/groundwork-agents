@@ -91,11 +91,11 @@ def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None =
             "Search the team's indexed documentation for passages that match a query. "
             "Returns the best hits first, each with its source file, section, relevance "
             "score and text: whole passages while the result stays within about "
-            f"{RESULT_BUDGET_CHARS} characters, then as much of each other hit's start "
-            "as fits. complete says whether a hit's text is the whole passage. Fast and "
-            "cheap (no LLM call): use it to find where something is documented, quote "
-            "exact wording or gather material. Use ask instead for one answer that "
-            "combines several passages."
+            f"{RESULT_BUDGET_CHARS} characters, then for the other hits the lines that "
+            "best match the query. complete says whether a hit's text is the whole "
+            "passage. Fast and cheap (no LLM call): use it to find where something is "
+            "documented, quote exact wording or gather material. Use ask instead for one "
+            "answer that combines several passages."
         ),
     )
     async def search(

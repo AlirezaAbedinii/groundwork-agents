@@ -14,6 +14,7 @@ them: each non-ASCII character is six.
 """
 
 import json
+import re
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field
@@ -23,20 +24,26 @@ DEFAULT_TOP_K = 3
 MAX_TOP_K = 8
 # The query is echoed back; a longer one is echoed cut, so it can't crowd out the hits.
 QUERY_ECHO_CHARS = 200
+# A query term is a word of the query, lower-cased, longer than two characters.
+_WORD = re.compile(r"\w+")
+_NEWLINE_CHARS = 2  # "\n" inside a JSON string
 
 # RAG chunk metadata reports "" for a chunk with no section heading.
 Heading = Annotated[str | None, BeforeValidator(lambda heading: heading or None)]
 
 
 class SearchHit(BaseModel):
-    """One retrieved chunk: the whole text, or as much of its start as fits."""
+    """One retrieved chunk: the whole text, or the part of it that best matches the query."""
 
     chunk_id: str
     source_file: str
     section_heading: Heading
     score: float = Field(description="Retrieval score; higher is more relevant.")
     complete: bool = Field(description="True when text is the whole chunk.")
-    text: str = Field(description="The chunk's text when complete; otherwise its start.")
+    text: str = Field(
+        description="The chunk's text when complete; otherwise the consecutive lines of it "
+        "with the most query words, or its start when no such lines fit."
+    )
 
 
 class SearchResult(BaseModel):
@@ -94,15 +101,20 @@ def _text_chars(text: str) -> int:
     return _chars(text) - 2
 
 
+def query_terms(query: str) -> frozenset[str]:
+    """The words of ``query`` an excerpt is chosen by: lower-cased, longer than two characters."""
+    return frozenset(word for word in _WORD.findall(query.lower()) if len(word) > 2)
+
+
 def fit_hits(query: str, mode: str, hits: list[dict], budget: int = RESULT_BUDGET_CHARS) -> dict:
     """A search result of at most ``budget`` characters: ``{"query", "mode", "hits"}``.
 
     ``hits`` are the RAG API's (chunk_id, source_file, section_heading, score,
     text), best first. Hits take whole texts in rank order while the result stays
-    within the budget; from the first that doesn't fit, each takes as much of its
-    start as fits an equal share of what is left (a share a hit doesn't use passes
-    to the hits after it). Every hit keeps its metadata. Only metadata too long to
-    fit at all drops hits, from the end.
+    within the budget; from the first that doesn't fit, each takes an excerpt in
+    an equal share of what is left (a share an excerpt doesn't use passes to the
+    hits after it). Every hit keeps its metadata. Only metadata too long to fit
+    at all drops hits, from the end.
     """
     echo = query if len(query) <= QUERY_ECHO_CHARS else query[:QUERY_ECHO_CHARS] + "…"
     shaped = [
@@ -120,14 +132,41 @@ def fit_hits(query: str, mode: str, hits: list[dict], budget: int = RESULT_BUDGE
     while shaped and _chars(result) > budget:
         shaped.pop()
     room = budget - _chars(result)
+    terms = query_terms(query)
     whole = True
     for rank, out in enumerate(shaped):
         text = hits[rank]["text"]
         whole = whole and _text_chars(text) <= room
-        out["text"] = text if whole else _prefix(text, room // (len(shaped) - rank))
+        out["text"] = text if whole else excerpt(text, terms, room // (len(shaped) - rank))
         out["complete"] = out["text"] == text
         room -= _text_chars(out["text"]) - out["complete"]  # true is a character shorter than false
     return result
+
+
+def excerpt(text: str, terms: frozenset[str], limit: int) -> str:
+    """At most ``limit`` characters (inside a JSON string) of ``text``.
+
+    All of it if it fits. Otherwise the window of consecutive lines with the most
+    distinct ``terms`` (the earliest of equals), each window as long as fits from
+    its first line; with no term in any window that fits, the text's start.
+    """
+    if _text_chars(text) <= limit:
+        return text
+    lines = text.split("\n")
+    sizes = [_text_chars(line) for line in lines]
+    found = [terms & set(_WORD.findall(line.lower())) for line in lines]
+    best, most = None, 0
+    for start in range(len(lines)):
+        size, covered, end = -_NEWLINE_CHARS, set(), start
+        while end < len(lines) and size + _NEWLINE_CHARS + sizes[end] <= limit:
+            size += _NEWLINE_CHARS + sizes[end]
+            covered |= found[end]
+            end += 1
+        if len(covered) > most:
+            best, most = (start, end), len(covered)
+    if best is None:
+        return _prefix(text, limit)
+    return "\n".join(lines[best[0] : best[1]])
 
 
 def _prefix(text: str, limit: int) -> str:

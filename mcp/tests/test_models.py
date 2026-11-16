@@ -18,7 +18,9 @@ from tool_models import (
     AskResult,
     Citation,
     SearchResult,
+    excerpt,
     fit_hits,
+    query_terms,
 )
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -191,3 +193,82 @@ def test_ask_result_with_five_citations_leaves_room_for_the_answer():
     # The answer's length is up to the generator; five citations must leave it
     # a thousand characters of the budget.
     assert RESULT_BUDGET_CHARS - size(result.model_dump(mode="json")) >= 1000
+
+
+# --- excerpts ------------------------------------------------------------------------
+
+CHUNK = "\n".join(
+    [
+        "# Rate limits",
+        "Every project has a submission quota.",
+        "Quotas reset at midnight UTC.",
+        "Unrelated notes about the dashboard colours.",
+        "When you exceed the limit the API answers FERRY-429.",
+        "The response carries a Retry-After header in seconds.",
+        "Clients retry according to their ferry.retry.* settings.",
+        "More notes about the dashboard.",
+        "Even more notes about the dashboard and its themes.",
+    ]
+)
+
+
+def test_query_terms_are_lower_cased_words_longer_than_two_characters():
+    assert query_terms("What does FERRY-429 mean, and is it OK?") == {
+        "what",
+        "does",
+        "ferry",
+        "429",
+        "mean",
+        "and",
+    }
+
+
+def test_an_excerpt_is_the_window_of_lines_with_the_most_query_terms():
+    terms = query_terms("What header comes with FERRY-429 when I exceed the limit?")
+
+    got = excerpt(CHUNK, terms, 120)
+
+    assert len(json.dumps(got)) - 2 <= 120
+    assert "When you exceed the limit the API answers FERRY-429." in got.split("\n")
+    assert "Retry-After header" in got
+    assert got in CHUNK and not got.startswith("# Rate limits")
+
+
+def test_an_excerpt_counts_distinct_terms_not_repeats():
+    text = "ferry ferry ferry ferry\nfiller\nfiller\nferry retry quota"
+
+    assert excerpt(text, query_terms("ferry retry quota"), 20) == "ferry retry quota"
+
+
+def test_an_excerpt_takes_the_earliest_of_equal_windows():
+    text = "alpha one\nfiller\nalpha two"
+
+    assert excerpt(text, query_terms("alpha"), 12) == "alpha one"
+
+
+def test_an_excerpt_without_query_terms_is_the_start():
+    got = excerpt(CHUNK, query_terms("kubernetes helm"), 60)
+
+    # The longest start within 60 characters as JSON, where each line break is two.
+    assert CHUNK.startswith(got)
+    assert len(json.dumps(got)) - 2 <= 60 < len(json.dumps(CHUNK[: len(got) + 1])) - 2
+
+
+def test_a_line_too_long_for_the_limit_falls_back_to_the_start():
+    text = "FERRY-429 " * 30  # one line, 300 characters
+
+    assert excerpt(text, query_terms("FERRY-429"), 50) == text[:50]
+
+
+def test_an_excerpt_measures_text_as_json():
+    text = "→" * 40 + "\nFERRY-429 here"  # each arrow is 6 characters as JSON
+
+    got = excerpt(text, query_terms("FERRY-429"), 30)
+
+    assert got == "FERRY-429 here"
+    assert excerpt("→" * 40, frozenset(), 30) == "→" * 5
+
+
+def test_a_text_that_fits_is_returned_whole_and_a_zero_limit_gives_nothing():
+    assert excerpt(CHUNK, frozenset(), 10_000) == CHUNK
+    assert excerpt(CHUNK, query_terms("FERRY-429"), 0) == ""

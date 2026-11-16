@@ -22,10 +22,11 @@ left out, the RAG service's default applies. The agent shows its model up to
 and `search` sizes its result to 3600 (`tool_models.py`), so it arrives whole:
 
 - `search` fills hits in rank order with whole passages while the result fits.
-  Each hit after that gets an equal share of what is left, filled with as much
-  of the passage's start as fits; a share a hit doesn't use passes to the next.
-  `complete` is true for a whole passage. With more hits, the later ones are
-  shorter.
+  Each hit after that gets an equal share of what is left, filled with the
+  window of consecutive lines that holds the most distinct query words (of three
+  or more characters), or the passage's start when no such window fits; a share
+  a hit doesn't use passes to the next. `complete` is true for a whole passage.
+  With more hits, the later ones are shorter excerpts.
 - `ask` leaves out the passages it answered from.
 
 When the RAG API fails, the tool returns an error the model can read and act on,
