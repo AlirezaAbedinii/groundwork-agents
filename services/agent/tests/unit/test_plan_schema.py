@@ -64,3 +64,10 @@ def test_unknown_specialist_rejected():
 def test_at_least_one_subtask():
     with pytest.raises(ValidationError):
         ExecutionPlan(subtasks=[], confidence=0.5)
+
+
+def test_a_subtask_lists_its_tools_and_defaults_to_none():
+    named = Subtask.model_validate({**_subtask("s1"), "tools": ["web_search", "file_write"]})
+    assert named.tools == ["web_search", "file_write"]
+    assert Subtask.model_validate(_subtask("s2", "writing")).tools == []
+    assert "tools" in ExecutionPlan.model_json_schema()["$defs"]["Subtask"]["properties"]

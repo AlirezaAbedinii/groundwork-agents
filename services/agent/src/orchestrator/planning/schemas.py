@@ -19,6 +19,11 @@ class Subtask(BaseModel):
     id: str = Field(min_length=1, description="Plan-local id, e.g. 's1'")
     description: str = Field(min_length=1)
     specialist: Specialist
+    tools: list[str] = Field(
+        default_factory=list,
+        description="The tools this subtask will call, each owned by its specialist; "
+        "empty only for a writing subtask that works from its inputs",
+    )
     required_inputs: list[str] = Field(
         default_factory=list, description="What this subtask needs to start (free text)"
     )

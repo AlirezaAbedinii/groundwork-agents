@@ -64,6 +64,11 @@ class Settings(BaseSettings):
     mcp_rag_url: str = ""  # Streamable HTTP URL, e.g. http://localhost:8001/mcp; empty disables the rag_* tools
     mcp_call_timeout_s: float = 30.0
 
+    # Planning (planning/capabilities.py): the most subtasks a plan may have, and whether a
+    # plan that fails the lint is sent back for the one retry ("enforce") or only recorded ("off")
+    max_plan_subtasks: int = Field(4, ge=1)
+    plan_lint: Literal["enforce", "off"] = "enforce"
+
     # Thresholds
     plan_confidence_threshold: float = 0.7
     review_score_threshold: int = 3
