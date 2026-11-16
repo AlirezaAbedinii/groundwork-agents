@@ -70,7 +70,7 @@ Two run modes share every line of orchestration code:
 | Layer | Agent | Responsibility | Default model |
 |---|---|---|---|
 | 1 | **Supervisor** | Retrieves memories, creates the execution plan, delegates, synthesizes the final deliverable | `openai:gpt-4o` |
-| 2 | **Research** | Web research, internal documentation, source gathering (`web_search`, `api_call`, and the `rag_*` tools when MCP is on) | `openai:gpt-4o-mini` |
+| 2 | **Research** | Web research, internal documentation, source gathering (`web_search` when a Tavily key is set, `api_call`, and the `rag_*` tools when MCP is on) | `openai:gpt-4o-mini` |
 | 2 | **Analysis** | Data extraction & computation (`db_query`, `code_exec`, files) | `openai:gpt-4o-mini` |
 | 2 | **Writing** | Drafts, summaries, memos (files) | `openai:gpt-4o-mini` |
 | 2 | **Code** | Writes and runs code (`code_exec`, files) | `openai:gpt-4o-mini` |

@@ -6,8 +6,9 @@ from orchestrator.tools.registry import ToolRegistry
 class ResearchSpecialist(SpecialistAgent):
     name = "research"
     ROLE = (
-        "You research topics on the web and in the team's indexed documentation "
-        "(the rag_ tools, when available), and gather sourced facts."
+        "You research topics in the team's indexed documentation (the rag_ tools) "
+        "and on the web (web_search), with whichever of these tools you are given, "
+        "and gather sourced facts."
     )
 
 

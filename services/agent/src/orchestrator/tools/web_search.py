@@ -1,7 +1,10 @@
 """Web search tool: Tavily API with DuckDuckGo fallback; canned under MOCK_LLM.
 
 External effects are mocked at the tool boundary: with MOCK_LLM=1 the
-handler returns deterministic results without any network call.
+handler returns deterministic results without any network call. Without a
+Tavily key and outside MOCK_LLM the registry leaves the tool out
+(tools/defaults.py): the DuckDuckGo instant-answer API returns nothing for most
+queries, so the tool would cost turns and give no results.
 """
 
 from __future__ import annotations

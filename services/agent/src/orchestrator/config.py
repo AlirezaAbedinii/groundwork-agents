@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     # LLM providers
     openai_api_key: str = ""
     anthropic_api_key: str = ""
-    tavily_api_key: str = ""  # optional; web search falls back to DuckDuckGo
+    tavily_api_key: str = ""  # optional; without it web_search is left out of the registry (except under MOCK_LLM)
 
     # Storage
     database_url: str = "postgresql+psycopg://orchestrator:orchestrator@localhost:5432/orchestrator"

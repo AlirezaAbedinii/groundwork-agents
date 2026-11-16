@@ -40,8 +40,9 @@ _register_lock = threading.Lock()
 
 def build_default_registry(store: InvocationStore) -> ToolRegistry:
     """The local tools. ``db_query``'s description lists the demo schema's tables, read
-    from the database now (the static text if it can't be read). ``code_exec`` is left
-    out when there is no sandbox."""
+    from the database now (the static text if it can't be read). A tool with nothing
+    behind it is left out: ``code_exec`` without a sandbox, and ``web_search`` without a
+    Tavily key (MOCK_LLM keeps it, answered with canned results)."""
     settings = get_settings()
     registry = ToolRegistry(store)
     for spec in (
@@ -54,6 +55,8 @@ def build_default_registry(store: InvocationStore) -> ToolRegistry:
     ):
         if spec is code_exec.SPEC and settings.code_exec_backend == "disabled":
             continue  # no sandbox to run model-written code in
+        if spec is web_search.SPEC and not (settings.tavily_api_key or settings.mock_llm):
+            continue  # no search provider to answer it
         if spec is db_query.SPEC:
             spec = replace(spec, description=db_query.describe(get_engine()))
         registry.register(spec)

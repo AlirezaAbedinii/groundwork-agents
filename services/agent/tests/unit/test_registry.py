@@ -192,6 +192,27 @@ def test_a_description_ending_in_a_full_stop_gets_no_second_one(store):
 # --- what the default registry holds -----------------------------------------------
 
 
+def _local_names(store=None) -> set[str]:
+    registry = build_default_registry(store or InMemoryInvocationStore())
+    return {spec.name for specialist in SPECIALISTS for spec in registry.tools_for(specialist)}
+
+
+def test_web_search_is_left_out_without_a_search_provider(monkeypatch):
+    monkeypatch.setattr(get_settings(), "mock_llm", False)
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "")
+    assert "web_search" not in _local_names()
+    assert "db_query" in _local_names()  # the others stay
+
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "tvly-test")
+    assert "web_search" in _local_names()
+
+
+def test_mock_llm_keeps_web_search_without_a_key(monkeypatch):
+    monkeypatch.setattr(get_settings(), "mock_llm", True)
+    monkeypatch.setattr(get_settings(), "tavily_api_key", "")
+    assert "web_search" in _local_names()
+
+
 def test_db_query_keeps_the_static_description_when_the_database_cannot_be_read(monkeypatch):
     class Unreachable:
         def connect(self):
