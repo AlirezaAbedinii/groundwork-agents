@@ -69,6 +69,8 @@ paraphrase.
   expected format, and no second model rewrites it. With several, synthesis runs as
   before.
 - The planning prompt is longer by one table row per specialist and tool.
+- The lint and the one-subtask delivery are switched by the task's rules version
+  (ADR 0018), so a run recorded before them replays the way it ran.
 
 ## Alternatives
 

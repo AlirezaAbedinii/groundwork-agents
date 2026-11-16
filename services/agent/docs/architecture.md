@@ -284,7 +284,12 @@ playback client that has *no fallback* — zero API calls is structural. Fork
 mode substitutes an edited response at step k (text only: at a tool-calling
 step it ends that specialist's tool loop) and runs live from there; the comparison aligns original and fork by
 (agent, prompt) rather than sequence position, so parallel-branch timing
-doesn't produce false divergences.
+doesn't produce false divergences. A replay or fork runs under its original's
+rules version (`tasks.rules_version`, [ADR 0018](../../../docs/decisions/0018-a-rules-version-on-every-task.md)):
+the switches that decide which model calls happen and what is delivered, so a
+run recorded before a change to them replays the way it ran. A strict replay
+that finishes with a recorded call unused fails with `ReplayDivergenceError`
+naming that call.
 
 ## Determinism and testing strategy
 
