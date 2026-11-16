@@ -51,6 +51,7 @@ from orchestrator.tools.registry import ToolRegistry
 from orchestrator.tools.serialize import render_result
 
 # Stable prompt markers; mock fixtures and tests match on them.
+REQUEST_MARKER = "User's request (context; do only your subtask):"
 FEEDBACK_MARKER = "Reviewer feedback:"
 REPEAT_PREFIX = "Identical to an earlier call in this attempt; result unchanged:"
 UNAVAILABLE = "this tool is unavailable for the rest of this task"
@@ -64,7 +65,11 @@ SYSTEM_PROMPT = """You are the {name} specialist in a multi-agent system. {role}
 Use the tools provided when they help. When you are finished, reply with the
 deliverable as plain text and no tool calls."""
 
-TASK_PROMPT = """Subtask: {description}
+# The request comes first and verbatim: the subtask description is the planner's
+# paraphrase of it, and whatever detail the paraphrase drops is otherwise lost.
+TASK_PROMPT = REQUEST_MARKER + """ {request}
+
+Subtask: {description}
 Expected output format: {expected_format}
 Inputs from completed subtasks:
 {inputs}{feedback_block}"""
@@ -118,8 +123,11 @@ class SpecialistAgent(BaseAgent):
         super().__init__(llm)
         self.registry = registry
 
-    def _opening(self, spec: dict, inputs: dict[str, str], feedback: str | None) -> list[BaseMessage]:
+    def _opening(
+        self, spec: dict, inputs: dict[str, str], feedback: str | None, request: str = ""
+    ) -> list[BaseMessage]:
         task = TASK_PROMPT.format(
+            request=request.strip() or "(none)",
             description=spec["description"],
             expected_format=spec.get("expected_output_format", "plain text"),
             inputs="\n".join(f"[{sid}] {text}" for sid, text in sorted(inputs.items())) or "(none)",
@@ -128,14 +136,22 @@ class SpecialistAgent(BaseAgent):
         return [SystemMessage(content=SYSTEM_PROMPT.format(name=self.name, role=self.ROLE)), HumanMessage(content=task)]
 
     async def execute(
-        self, spec: dict, inputs: dict[str, str], feedback: str | None, ctx: ToolContext, gate: Gate | None = None
+        self,
+        spec: dict,
+        inputs: dict[str, str],
+        feedback: str | None,
+        ctx: ToolContext,
+        gate: Gate | None = None,
+        *,
+        request: str = "",
     ) -> SpecialistResult:
-        """Run the loop. ``gate`` is consulted before every sensitive call and returns
-        a human decision: approve (run it), modify (run with ``payload["arguments"]``),
-        reject (answer with the denial), or take_over (``payload["output"]`` is the
-        result). Its ``transcript`` is a readable history for the approval context;
-        the model never sees it."""
-        messages = self._opening(spec, inputs, feedback)
+        """Run the loop. ``request`` is the task's request as the user wrote it, shown
+        above the subtask as context. ``gate`` is consulted before every sensitive call
+        and returns a human decision: approve (run it), modify (run with
+        ``payload["arguments"]``), reject (answer with the denial), or take_over
+        (``payload["output"]`` is the result). Its ``transcript`` is a readable history
+        for the approval context; the model never sees it."""
+        messages = self._opening(spec, inputs, feedback, request)
         budget = get_settings().max_tool_iterations
         transcript: list[str] = []
         executed: list[str] = []

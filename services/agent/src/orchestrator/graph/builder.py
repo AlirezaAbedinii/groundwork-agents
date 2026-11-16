@@ -371,7 +371,8 @@ def build_graph(
         repo.record_subtask(task_id, sid, status="running", attempts=attempts)
         try:
             result = await specialists[spec["specialist"]].execute(
-                spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate
+                spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate,
+                request=payload.get("request", ""),  # absent from a wave dispatched before it was added
             )
             with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
                 verdict = await reviewer.review(

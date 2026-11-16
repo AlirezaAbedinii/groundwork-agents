@@ -21,6 +21,7 @@ from orchestrator.agents.specialists.base import (
     FEEDBACK_MARKER,
     LAST_TURN,
     REPEAT_PREFIX,
+    REQUEST_MARKER,
     SpecialistError,
     SpecialistResult,
 )
@@ -166,6 +167,36 @@ async def test_a_reply_without_tool_calls_is_the_result_after_one_chat(store):
     assert SPEC["expected_output_format"] in human.text
     assert "PRIOR-OUTPUT" in human.text  # inputs from completed subtasks
     assert not store.records
+
+
+async def test_the_opening_message_leads_with_the_users_request(store):
+    request = "Write parse_duration and run it on 1h30m15s, 45s, 2h5m and 90m."
+    llm = ScriptedLLM(final("DONE"))
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(
+        SPEC, {"s0": "PRIOR-OUTPUT"}, "add citations", CTX, request=f"  {request}\n"
+    )
+
+    system, human = llm.calls[0]["messages"]
+    assert human.text.startswith(f"{REQUEST_MARKER} {request}\n\nSubtask: ")
+    assert request not in system.text  # the system prompt stays the same for every task
+    # after the request, the subtask, its format, the inputs and the feedback keep their order
+    parts = [
+        f"Subtask: {SPEC['description']}",
+        f"Expected output format: {SPEC['expected_output_format']}",
+        "Inputs from completed subtasks:\n[s0] PRIOR-OUTPUT",
+        f"{FEEDBACK_MARKER} add citations",
+    ]
+    positions = [human.text.index(part) for part in parts]
+    assert positions == sorted(positions)
+
+
+async def test_an_opening_without_a_request_says_so(store):
+    llm = ScriptedLLM(final("DONE"))
+
+    await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
+
+    assert llm.calls[0]["messages"][1].text.startswith(f"{REQUEST_MARKER} (none)\n\nSubtask: ")
 
 
 # --- 2. one call, one answer ---------------------------------------------------

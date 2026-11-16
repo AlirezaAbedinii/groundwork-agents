@@ -118,6 +118,41 @@ async def test_happy_path_with_parallel_wave(tmp_path, repo):
     assert repo.tasks[task_id]["final_output"] == "DONE"
 
 
+async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, repo):
+    # the plan drops the inputs the request names; each specialist's fixture answers only
+    # when its prompt carries them, and the agent defaults answer when it does not
+    request = "Write parse_duration and run it on 1h30m15s, 45s, 2h5m and 90m; report the seconds."
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask("s1", "code", "Run the function on the provided duration strings"),
+                  subtask("s2", "writing", "Report the results", depends_on=["s1"])], 0.9),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    fx(tmp_path, "code", "code", "NO-REQUEST")
+    fx(tmp_path, "code_with_request", "code", "5415, 45, 7500, 5400",
+       match=["Run the function on the provided duration strings", "1h30m15s"])
+    fx(tmp_path, "writing", "writing", "NO-REQUEST")
+    fx(tmp_path, "writing_with_request", "writing", "REPORT-OK", match=["Report the results", "2h5m"])
+    fx(tmp_path, "reviewer", "reviewer", verdict(5, "solid"))
+
+    _, state = await run(tmp_path, repo, request)
+
+    results = state["subtask_results"]
+    assert (results["s1"]["output"], results["s2"]["output"]) == ("5415, 45, 7500, 5400", "REPORT-OK")
+
+
+def test_each_payload_of_a_wave_carries_the_request():
+    from orchestrator.graph.edges import compute_wave
+
+    state = {
+        "task_id": "t",
+        "request": "compare A and B",
+        "plan": json.loads(plan_text([subtask("s1", "research", "look up A"),
+                                      subtask("s2", "research", "look up B")], 0.9)),
+        "subtask_results": {},
+    }
+    assert [payload["request"] for payload in compute_wave(state)] == ["compare A and B"] * 2
+
+
 async def test_two_tool_calls_in_one_turn_run_as_one_batch(tmp_path, repo, monkeypatch):
     from orchestrator.config import get_settings
 

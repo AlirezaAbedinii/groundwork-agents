@@ -142,7 +142,13 @@ failed attempt: it ends the run and the runner marks the task `failed` with
 the totals. The counts are seeded from `llm_calls` on each run, so resumes and
 other workers are included.
 
-**Inside `execute`.** The specialist runs a bounded loop of native tool calls
+**Inside `execute`.** The specialist's opening message starts with the user's
+request, verbatim and marked as context for its subtask only, then gives the
+subtask's description, its expected format, the outputs of the subtasks it
+depends on, and any reviewer feedback. The request is there because the
+description is the planner's paraphrase, and a detail the paraphrase drops
+(the exact inputs to run, a constraint) is otherwise lost to the specialist.
+It runs a bounded loop of native tool calls
 (at most `MAX_TOOL_ITERATIONS` model turns; a batch of calls is one turn). The
 model can ask for several tools in one turn: sensitive calls go to the tool
 gate first, the rest run concurrently, and every call's result goes back to

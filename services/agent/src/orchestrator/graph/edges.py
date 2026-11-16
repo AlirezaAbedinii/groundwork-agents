@@ -71,6 +71,7 @@ def compute_wave(state: TaskState) -> list[dict]:
         wave.append(
             {
                 "task_id": state["task_id"],
+                "request": state.get("request", ""),
                 "spec": subtask.model_dump(),
                 "inputs": {dep: results[dep].get("output", "") for dep in subtask.depends_on},
                 "feedback": prior.get("feedback") if prior else None,
