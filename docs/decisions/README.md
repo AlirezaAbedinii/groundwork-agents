@@ -21,6 +21,7 @@ supersedes it.
 | [0013](0013-a-hard-time-limit-on-the-stack.md) | A hard time limit on the stack instead of a spending cap | accepted |
 | [0014](0014-an-agent-reliability-phase-before-presentation.md) | An agent reliability phase before presentation | accepted |
 | [0015](0015-bounded-subtask-attempts.md) | An approval buys one attempt, and each subtask has a cap | accepted |
+| [0016](0016-tool-contracts-the-model-can-act-on.md) | Tool contracts the model can act on | accepted |
 
 ## Format
 
