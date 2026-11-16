@@ -5,8 +5,10 @@ from __future__ import annotations
 import logging
 import threading
 import weakref
+from dataclasses import replace
 
 from orchestrator.config import get_settings
+from orchestrator.db.session import get_engine
 from orchestrator.tools import api_call, code_exec, db_query, file_io, web_search
 from orchestrator.tools.base import InvocationStore
 from orchestrator.tools.mcp_models import McpToolPolicy, McpUnavailableError
@@ -37,6 +39,10 @@ _register_lock = threading.Lock()
 
 
 def build_default_registry(store: InvocationStore) -> ToolRegistry:
+    """The local tools. ``db_query``'s description lists the demo schema's tables, read
+    from the database now (the static text if it can't be read). ``code_exec`` is left
+    out when there is no sandbox."""
+    settings = get_settings()
     registry = ToolRegistry(store)
     for spec in (
         web_search.SPEC,
@@ -46,8 +52,10 @@ def build_default_registry(store: InvocationStore) -> ToolRegistry:
         db_query.SPEC,
         api_call.SPEC,
     ):
-        if spec is code_exec.SPEC and get_settings().code_exec_backend == "disabled":
+        if spec is code_exec.SPEC and settings.code_exec_backend == "disabled":
             continue  # no sandbox to run model-written code in
+        if spec is db_query.SPEC:
+            spec = replace(spec, description=db_query.describe(get_engine()))
         registry.register(spec)
     return registry
 

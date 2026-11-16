@@ -13,6 +13,7 @@ from orchestrator.tools.base import (
     ToolSpec,
     UnknownToolError,
 )
+from orchestrator.tools import db_query, defaults
 from orchestrator.tools.defaults import build_default_registry
 from orchestrator.tools.registry import ToolRegistry
 
@@ -155,3 +156,16 @@ def test_disabled_code_exec_leaves_the_tool_out(monkeypatch):
     assert owned["code"] == {"file_read", "file_write"}
     with pytest.raises(UnknownToolError):
         registry.invoke("code_exec", {"code": "print(1)"}, _ctx(specialist="code"))
+
+
+# --- what the default registry holds -----------------------------------------------
+
+
+def test_db_query_keeps_the_static_description_when_the_database_cannot_be_read(monkeypatch):
+    class Unreachable:
+        def connect(self):
+            raise ConnectionRefusedError("no database here")
+
+    monkeypatch.setattr(defaults, "get_engine", lambda: Unreachable())
+    registry = build_default_registry(InMemoryInvocationStore())
+    assert registry.get("db_query").description == db_query.STATIC_DESCRIPTION

@@ -3,7 +3,7 @@ import pytest
 from orchestrator.tools.api_call import ApiCallInput, SPEC as API_SPEC, handle as api_handle
 from orchestrator.tools.base import ToolContext, ToolExecutionError
 from orchestrator.tools.code_exec import CodeExecInput, handle as code_handle
-from orchestrator.tools.db_query import DbQueryInput, handle as db_handle
+from orchestrator.tools.db_query import STATIC_DESCRIPTION, DbQueryInput, describe, handle as db_handle
 from orchestrator.tools.file_io import (
     FileReadInput,
     FileWriteInput,
@@ -83,3 +83,46 @@ def test_api_call_post_is_sensitive_get_is_not():
 def test_web_search_mock_returns_canned_results(ctx):
     output = search_handle(WebSearchInput(query="chroma db"), ctx)
     assert output.results[0].snippet == "[mock] result for chroma db"
+
+
+class _FakeEngine:
+    """Answers describe()'s information_schema query with fixed rows, or raises."""
+
+    def __init__(self, rows=(), error: Exception | None = None):
+        self.rows, self.error = list(rows), error
+
+    def connect(self):
+        if self.error:
+            raise self.error
+        engine = self
+
+        class Connection:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def execute(self, statement, params):
+                assert params == {"schema": "demo"}
+                return type("Result", (), {"all": lambda _: engine.rows})()
+
+        return Connection()
+
+
+def test_db_query_describe_lists_each_table_with_its_columns_in_order():
+    rows = [
+        ("licenses", "spdx_id", "text"),
+        ("vector_db_stats", "name", "text"),
+        ("vector_db_stats", "github_stars", "integer"),
+        ("vector_db_stats", "license", "text"),
+    ]
+    assert describe(_FakeEngine(rows)) == (
+        f"{STATIC_DESCRIPTION}. Unqualified table names resolve to demo. Tables: demo.licenses(spdx_id text); "
+        "demo.vector_db_stats(name text, github_stars integer, license text)"
+    )
+
+
+def test_db_query_describe_falls_back_on_a_database_error_or_an_empty_schema():
+    assert describe(_FakeEngine(error=OSError("connection refused"))) == STATIC_DESCRIPTION
+    assert describe(_FakeEngine(rows=[])) == STATIC_DESCRIPTION
