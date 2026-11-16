@@ -149,6 +149,22 @@ def test_default_tools_all_produce_native_definitions():
         assert convert_to_openai_tool(definition) == definition, name
 
 
+def test_who_owns_each_default_tool(monkeypatch, tmp_path):
+    monkeypatch.setattr(get_settings(), "code_exec_backend", "subprocess")
+    registry = build_default_registry(InMemoryInvocationStore())
+    owned = {specialist: {s.name for s in registry.tools_for(specialist)} for specialist in SPECIALISTS}
+    assert owned == {
+        "research": {"web_search", "api_call", "file_read", "file_write"},
+        "analysis": {"db_query", "code_exec", "file_read", "file_write"},
+        "writing": {"file_read", "file_write"},
+        "code": {"code_exec", "file_read", "file_write"},
+    }
+    # research can save what it found, inside the task's workspace
+    ctx = ToolContext(task_id="t1", specialist="research", subtask_id="s1", workspace=tmp_path)
+    registry.invoke("file_write", {"path": "notes.md", "content": "found"}, ctx)
+    assert (tmp_path / "notes.md").read_text() == "found"
+
+
 def test_disabled_code_exec_leaves_the_tool_out(monkeypatch):
     monkeypatch.setattr(get_settings(), "code_exec_backend", "disabled")
     registry = build_default_registry(InMemoryInvocationStore())

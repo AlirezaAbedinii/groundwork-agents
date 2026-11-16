@@ -187,7 +187,7 @@ Every agent is a typed LangGraph node — Pydantic models in, Pydantic models ou
 | Tool | Purpose | Owners | Notes |
 |---|---|---|---|
 | `web_search` | Web search | research | Registered only with `TAVILY_API_KEY` set (or under `MOCK_LLM`, with canned results) |
-| `file_read` / `file_write` | Read/write within the task's workspace | analysis, writing, code | Path traversal outside the workspace is rejected |
+| `file_read` / `file_write` | Read/write within the task's workspace | research, analysis, writing, code | Path traversal outside the workspace is rejected |
 | `code_exec` | Run a Python snippet | analysis, code | Sandboxed: no network, capped CPU/memory/pids/time; the result says whether the exit code was 0 and notes code that printed nothing |
 | `db_query` | Read-only SQL | analysis | `SELECT`/`WITH` only, single statement, read-only transaction; the description lists the `demo` tables and columns, and unqualified names resolve to `demo` ([ADR 0016](../../docs/decisions/0016-tool-contracts-the-model-can-act-on.md)) |
 | `api_call` | Call an allowlisted HTTP API | research | `POST` is flagged sensitive |

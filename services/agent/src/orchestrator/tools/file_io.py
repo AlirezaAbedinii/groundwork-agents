@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from orchestrator.tools.base import ToolContext, ToolExecutionError, ToolSpec
 
-_OWNERS = frozenset({"analysis", "writing", "code"})
+_OWNERS = frozenset({"research", "analysis", "writing", "code"})
 
 
 def _resolve(workspace: Path, relative: str) -> Path:

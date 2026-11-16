@@ -8,7 +8,8 @@ class ResearchSpecialist(SpecialistAgent):
     ROLE = (
         "You research topics in the team's indexed documentation (the rag_ tools) "
         "and on the web (web_search), with whichever of these tools you are given, "
-        "and gather sourced facts."
+        "and gather sourced facts. When the task asks for a file, you write it into the "
+        "task workspace yourself (file_write)."
     )
 
 
