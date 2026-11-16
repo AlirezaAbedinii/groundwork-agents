@@ -9,9 +9,9 @@ over the fake RAG API in conftest.py and call it the way an agent does, through
 - Each call sends one request to the RAG API (``POST /v1/search``, ``POST /v1/ask``,
   ``GET /v1/documents``) and returns a model from tool_models.py. Arguments left
   at None are not sent, so the RAG API applies its own defaults.
-- Results are sized for the agent loop: ``search`` stays within RESULT_BUDGET_CHARS
-  (whole passages, then the start of the rest), and ``ask`` drops the retrieved
-  contexts.
+- Results are sized for the agent loop: ``search`` and ``list_sources`` stay within
+  RESULT_BUDGET_CHARS (whole passages, then excerpts; a count per directory for a
+  long list), and ``ask`` drops the retrieved contexts.
 - A refused answer is a result, not an error.
 - Failures reach the model as readable tool errors:
   "retrieval service returned {status}: {detail}" and
@@ -113,7 +113,11 @@ async def test_schemas_are_the_contract_the_model_sees(client):
     mode, mode_nullable = nullable(props["mode"])
     assert sorted(mode["enum"]) == ["dense", "hybrid"] and mode_nullable
 
-    assert not tools["list_sources"].input_schema.get("properties")
+    sources = tools["list_sources"].input_schema
+    assert not sources.get("required")
+    prefix, prefix_nullable = nullable(sources["properties"]["prefix"])
+    assert (prefix["type"], prefix["maxLength"], prefix_nullable) == ("string", 500, True)
+    assert sources["properties"]["prefix"]["default"] is None
 
     # Returning the result models gives clients an output schema and structured content.
     assert tools["search"].output_schema == SearchResult.model_json_schema()
@@ -201,6 +205,44 @@ async def test_list_sources_reports_documents_and_chunk_counts(client, fake_rag)
     listed = SourcesResult.model_validate(result.structured_content)
     assert {source.source_file: source.chunks for source in listed.sources} == SOURCES
     assert listed.total_chunks == sum(SOURCES.values())
+    assert (listed.truncated, listed.directories) == (None, None)  # the whole list fits
+
+
+async def test_list_sources_keeps_the_documents_under_a_prefix(client, fake_rag):
+    fake_rag.documents = {"guides/a.md": 3, "guides/deep/b.md": 4, "reference/c.md": 5}
+
+    result = await client.call_tool("list_sources", {"prefix": "guides/"})
+
+    # The RAG API is asked for everything; the tool filters.
+    assert fake_rag.sent() == [("GET", "/v1/documents", None)]
+    listed = SourcesResult.model_validate(result.structured_content)
+    assert [s.source_file for s in listed.sources] == ["guides/a.md", "guides/deep/b.md"]
+    assert listed.total_chunks == 7  # of the matching documents
+
+    result = await client.call_tool("list_sources", {"prefix": "nowhere/"})
+    nothing = result.structured_content
+    assert (nothing["sources"], nothing["total_chunks"]) == ([], 0)
+
+
+async def test_a_long_source_list_comes_as_counts_per_directory(client, fake_rag):
+    # The public corpus lists 250 documents in 31 directories, about 17,000 characters.
+    fake_rag.documents = {
+        f"{area}/{section}/page-about-something-{n:02d}.md": 1 + n % 9
+        for area in ("fastapi", "uv", "pydantic")
+        for section in ("tutorial", "guides", "concepts", "reference")
+        for n in range(20)
+    }
+
+    result = await client.call_tool("list_sources", {})
+
+    assert result.is_error is False
+    assert len(json.dumps(result.structured_content)) <= RESULT_BUDGET_CHARS
+    listed = SourcesResult.model_validate(result.structured_content)
+    assert listed.truncated is not None and listed.truncated.of == 240
+    assert len(listed.sources) == listed.truncated.shown > 0
+    assert [d.directory for d in listed.directories][:2] == ["fastapi/concepts/", "fastapi/guides/"]
+    assert sum(d.documents for d in listed.directories) == 240
+    assert listed.total_chunks == sum(fake_rag.documents.values())
 
 
 @pytest.mark.parametrize(("tool", "arguments"), EVERY_TOOL)
@@ -276,6 +318,7 @@ async def test_an_unreachable_rag_is_a_readable_tool_error(
         pytest.param(
             "search", {"query": "FERRY-429", "top_k": MAX_TOP_K + 1}, id="search-top_k-over-max"
         ),
+        pytest.param("list_sources", {"prefix": "x" * 501}, id="list_sources-long-prefix"),
         pytest.param("search", {"query": ""}, id="search-empty-query"),
         pytest.param("search", {"query": "FERRY-429", "mode": "sparse"}, id="search-bad-mode"),
         pytest.param("ask", {"question": ""}, id="ask-empty-question"),

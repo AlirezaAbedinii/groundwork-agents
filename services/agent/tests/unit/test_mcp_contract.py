@@ -55,7 +55,13 @@ def rag_requests() -> list[httpx.Request]:
 
 
 @pytest.fixture()
-def rag_server(server_module, rag_requests):
+def rag_documents() -> list[dict]:
+    """What the fake RAG API's /v1/documents lists; a test may replace the contents."""
+    return [{"source_file": "04-error-codes.md", "chunks": 4}]
+
+
+@pytest.fixture()
+def rag_server(server_module, rag_requests, rag_documents):
     """The real server over a fake RAG API: search answers, ask is keyless (503), documents list."""
 
     def fake_rag(request: httpx.Request) -> httpx.Response:
@@ -76,7 +82,8 @@ def rag_server(server_module, rag_requests):
         if request.url.path == "/v1/ask":
             return httpx.Response(503, json={"detail": "Missing required configuration: OPENAI_API_KEY."})
         if request.url.path == "/v1/documents":
-            return httpx.Response(200, json={"documents": [{"source_file": "04-error-codes.md", "chunks": 4}], "total_chunks": 4})
+            total = sum(d["chunks"] for d in rag_documents)
+            return httpx.Response(200, json={"documents": rag_documents, "total_chunks": total})
         return httpx.Response(404, json={"detail": "Not Found"})
 
     http = httpx.AsyncClient(base_url="http://rag.test", transport=httpx.MockTransport(fake_rag))
@@ -135,7 +142,8 @@ def test_the_real_server_over_streamable_http(served_rag):
 
     output = registry.invoke("rag_list_sources", {}, CTX)
 
-    assert output == {"content": {"sources": [{"source_file": "04-error-codes.md", "chunks": 4}], "total_chunks": 4}}
+    sources = [{"source_file": "04-error-codes.md", "chunks": 4}]
+    assert output == {"content": {"sources": sources, "truncated": None, "total_chunks": 4, "directories": None}}
     assert [record.status for record in store.records] == ["success"]
 
 
@@ -189,3 +197,21 @@ def test_the_largest_search_reaches_the_model_whole_within_its_budget(rag_server
     hits = seen["content"]["hits"]
     assert len(hits) == top_k and hits[0]["complete"] and not hits[-1]["complete"]
     assert all(hit["text"] and hit["text"] in CHUNK for hit in hits)
+
+
+def test_a_long_source_list_reaches_the_model_whole_as_counts_per_directory(rag_server, rag_documents):
+    rag_documents[:] = [
+        {"source_file": f"{area}/{section}/page-{n:02d}.md", "chunks": 2}
+        for area in ("fastapi", "uv", "pydantic")
+        for section in ("tutorial", "guides", "concepts")
+        for n in range(25)
+    ]
+    registry, store = registry_for(rag_server, RAG_MCP_POLICY)
+
+    text, seen = seen_by_the_model(registry, "rag_list_sources", {})
+
+    assert len(text) <= RAG_MCP_POLICY["list_sources"].result_budget_chars
+    assert seen == store.records[0].output
+    listed = seen["content"]
+    assert listed["truncated"]["of"] == 225 and len(listed["directories"]) == 9
+    assert listed["total_chunks"] == 450

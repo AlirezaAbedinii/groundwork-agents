@@ -1,8 +1,8 @@
 """The SDK import isn't shadowed, and tool results are sized for the agent loop.
 
-``fit_hits`` takes the RAG API's hits and returns what ``search`` sends. Sizes
-are measured the way the agent loop measures them: the JSON of the result as
-``json.dumps`` writes it, every non-ASCII character as six.
+``fit_hits`` and ``fit_sources`` take the RAG API's dicts and return what the
+tools send. Sizes are measured the way the agent loop measures them: the JSON of
+the result as ``json.dumps`` writes it, every non-ASCII character as six.
 """
 
 import json
@@ -18,8 +18,10 @@ from tool_models import (
     AskResult,
     Citation,
     SearchResult,
+    SourcesResult,
     excerpt,
     fit_hits,
+    fit_sources,
     query_terms,
 )
 
@@ -272,3 +274,60 @@ def test_an_excerpt_measures_text_as_json():
 def test_a_text_that_fits_is_returned_whole_and_a_zero_limit_gives_nothing():
     assert excerpt(CHUNK, frozenset(), 10_000) == CHUNK
     assert excerpt(CHUNK, query_terms("FERRY-429"), 0) == ""
+
+
+# --- list_sources --------------------------------------------------------------------
+
+
+def documents(n: int) -> list[dict]:
+    """``n`` documents in nested directories, as the RAG API lists them."""
+    dirs = ["fastapi/tutorial/", "fastapi/advanced/security/", "uv/guides/", "pydantic/"]
+    return [
+        {"source_file": f"{dirs[i % len(dirs)]}document-number-{i:03d}.md", "chunks": 1 + i % 7}
+        for i in range(n)
+    ] + [{"source_file": "README.md", "chunks": 2}]
+
+
+def test_a_list_that_fits_is_sent_whole():
+    docs = documents(10)
+
+    fitted = fit_sources(docs, 99)
+
+    assert fitted == {"sources": docs, "truncated": None, "total_chunks": 99, "directories": None}
+    assert SourcesResult.model_validate(fitted).model_dump(mode="json") == fitted
+
+
+def test_a_long_list_becomes_counts_per_directory_and_the_first_documents():
+    docs = documents(300)
+
+    fitted = fit_sources(docs, 1234)
+
+    sent = SourcesResult.model_validate(fitted).model_dump(mode="json")
+    assert sent == fitted and size(sent) <= RESULT_BUDGET_CHARS
+    assert loop_view(sent) <= AGENT_BUDGET_CHARS
+    shown = fitted["truncated"]["shown"]
+    assert fitted["truncated"] == {"shown": shown, "of": 301} and 0 < shown < 301
+    assert fitted["sources"] == docs[:shown]
+    assert fitted["total_chunks"] == 1234
+    by_dir = {d["directory"]: (d["documents"], d["chunks"]) for d in fitted["directories"]}
+    assert list(by_dir) == [
+        "",
+        "fastapi/advanced/security/",
+        "fastapi/tutorial/",
+        "pydantic/",
+        "uv/guides/",
+    ]
+    assert by_dir[""] == (1, 2)  # README.md, at the top level
+    tutorial = [d for d in docs if d["source_file"].startswith("fastapi/tutorial/")]
+    assert by_dir["fastapi/tutorial/"] == (len(tutorial), sum(d["chunks"] for d in tutorial))
+
+
+def test_more_directories_than_fit_are_cut_and_the_budget_holds():
+    docs = [{"source_file": f"area-{i:04d}/sub/page.md", "chunks": 1} for i in range(400)]
+
+    fitted = fit_sources(docs, 400)
+
+    assert size(fitted) <= RESULT_BUDGET_CHARS
+    listed = [d["directory"] for d in fitted["directories"]]
+    assert 0 < len(listed) < 400 and listed == sorted(listed)
+    assert listed[0] == "area-0000/sub/"

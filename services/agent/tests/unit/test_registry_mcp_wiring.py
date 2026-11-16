@@ -67,7 +67,7 @@ def test_with_the_server_up_the_rag_tools_join_under_the_agents_policy(rag_up):
     assert {name: spec.rate_limit for name, spec in rag.items()} == {"rag_search": 10, "rag_ask": 5, "rag_list_sources": 3}
     assert all(spec.owners == frozenset({"research"}) and not spec.sensitive for spec in rag.values())
     budgets = {name: spec.result_budget_chars for name, spec in rag.items()}
-    assert budgets == {"rag_search": 4000, "rag_ask": 4000, "rag_list_sources": 2000}
+    assert budgets == {"rag_search": 4000, "rag_ask": 4000, "rag_list_sources": 4000}
     assert all(registry.get(name).result_budget_chars == 2000 for name in LOCAL)
     # the tools that write, whose calls make the loop's earlier answers stale; the RAG tools only read
     assert {name for name in LOCAL | RAG if registry.get(name).changes_state} == {"file_write", "code_exec", "api_call"}

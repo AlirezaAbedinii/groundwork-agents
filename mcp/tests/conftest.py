@@ -65,6 +65,7 @@ class FakeRag:
 
     Knobs, all off by default:
       chunk_chars  length of every chunk text (the RAG's chunk_size is 800)
+      documents    what /v1/documents lists: source_file -> chunks (SOURCES)
       refuse       /v1/ask answers with the refusal instead of an answer
       fail         (status, body): every route answers with that error
       raises       the transport raises this, e.g. httpx.ConnectError("refused")
@@ -73,6 +74,7 @@ class FakeRag:
     def __init__(self) -> None:
         self.requests: list[httpx.Request] = []
         self.chunk_chars = 800
+        self.documents = dict(SOURCES)
         self.refuse = False
         self.fail: tuple[int, dict | str] | None = None
         self.raises: Exception | None = None
@@ -184,8 +186,8 @@ class FakeRag:
 
     def _documents(self) -> dict:
         return {
-            "documents": [{"source_file": s, "chunks": n} for s, n in SOURCES.items()],
-            "total_chunks": sum(SOURCES.values()),
+            "documents": [{"source_file": s, "chunks": n} for s, n in self.documents.items()],
+            "total_chunks": sum(self.documents.values()),
         }
 
 

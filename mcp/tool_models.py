@@ -2,19 +2,20 @@
 
 Every tool returns one of these models, so the SDK publishes an output schema for
 it and sends the result as ``structured_content`` next to the text. The agent
-loop shows the model at most 4000 characters of a search's JSON
+loop shows the model at most 4000 characters of each retrieval tool's JSON
 (services/agent/src/orchestrator/tools/defaults.py), and wraps the result in
-``{"content": …}`` first. ``search`` sizes its result to RESULT_BUDGET_CHARS,
-which leaves room for that, so it arrives whole; ``ask`` leaves out the contexts
-its answer came from.
+``{"content": …}`` first. ``search`` and ``list_sources`` size their results to
+RESULT_BUDGET_CHARS, which leaves room for that, so they arrive whole; ``ask``
+leaves out the contexts its answer came from.
 
-``fit_hits`` does the sizing; it takes and returns plain dicts. Sizes are
-characters of ``json.dumps`` output with its defaults, as the agent loop counts
-them: each non-ASCII character is six.
+``fit_hits`` and ``fit_sources`` do the sizing; they take and return plain dicts.
+Sizes are characters of ``json.dumps`` output with its defaults, as the agent loop
+counts them: each non-ASCII character is six.
 """
 
 import json
 import re
+from collections import defaultdict
 from typing import Annotated, Any
 
 from pydantic import BaseModel, BeforeValidator, Field
@@ -84,11 +85,34 @@ class Source(BaseModel):
     chunks: int
 
 
-class SourcesResult(BaseModel):
-    """Result of ``list_sources``: every indexed document and its chunk count."""
+class Shown(BaseModel):
+    """How much of a list a result holds."""
 
-    sources: list[Source]
-    total_chunks: int
+    shown: int
+    of: int
+
+
+class Directory(BaseModel):
+    """The documents directly in one directory."""
+
+    directory: str = Field(description="The path up to the file names; '' for the top level.")
+    documents: int
+    chunks: int
+
+
+class SourcesResult(BaseModel):
+    """Result of ``list_sources``: the matching documents and their chunk counts."""
+
+    sources: list[Source] = Field(description="Every matching document, or the first ones.")
+    truncated: Shown | None = Field(
+        default=None, description="Set when sources holds only the first matching documents."
+    )
+    total_chunks: int = Field(description="Chunks in all the matching documents.")
+    directories: list[Directory] | None = Field(
+        default=None,
+        description="Set with truncated: each directory of the matching documents, as many "
+        "as fit. A directory is a prefix that lists its documents.",
+    )
 
 
 def _chars(value: Any) -> int:
@@ -172,6 +196,42 @@ def excerpt(text: str, terms: frozenset[str], limit: int) -> str:
 def _prefix(text: str, limit: int) -> str:
     """The longest start of ``text`` within ``limit`` characters inside a JSON string."""
     return text[: _most(len(text), lambda n: _text_chars(text[:n]) <= limit)]
+
+
+def fit_sources(
+    documents: list[dict], total_chunks: int, budget: int = RESULT_BUDGET_CHARS
+) -> dict:
+    """A list_sources result of at most ``budget`` characters.
+
+    Every document when they fit. Otherwise a count per directory (in path order,
+    as many as fit) and then the first documents that fit, with how many those are.
+    """
+    whole = {"sources": documents, "truncated": None, "total_chunks": total_chunks}
+    whole["directories"] = None
+    if _chars(whole) <= budget:
+        return whole
+    counts: dict[str, list[int]] = defaultdict(lambda: [0, 0])
+    for document in documents:
+        directory = document["source_file"].rpartition("/")[0]
+        count = counts[directory + "/" if directory else ""]
+        count[0] += 1
+        count[1] += document["chunks"]
+    directories = [
+        {"directory": name, "documents": n, "chunks": chunks}
+        for name, (n, chunks) in sorted(counts.items())
+    ]
+
+    def shaped(shown: int, listed: int) -> dict:
+        return {
+            "sources": documents[:shown],
+            "truncated": {"shown": shown, "of": len(documents)},
+            "total_chunks": total_chunks,
+            "directories": directories[:listed],
+        }
+
+    listed = _most(len(directories), lambda n: _chars(shaped(0, n)) <= budget)
+    shown = _most(len(documents) - 1, lambda n: _chars(shaped(n, listed)) <= budget)
+    return shaped(shown, listed)
 
 
 def _most(high: int, fits) -> int:

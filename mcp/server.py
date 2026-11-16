@@ -30,6 +30,7 @@ from tool_models import (
     SearchResult,
     SourcesResult,
     fit_hits,
+    fit_sources,
 )
 
 DEFAULT_RAG_URL = "http://localhost:8000"
@@ -133,12 +134,27 @@ def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None =
         annotations=READ_ONLY,
         description=(
             "List the documents in the team's index, with how many chunks each has. "
-            "Use it to see what the documentation covers before searching."
+            "Use it to see what the documentation covers before searching. prefix keeps "
+            "the documents whose path starts with it. A list too long for one result "
+            "comes as a count per directory and the first documents; call again with a "
+            "directory as prefix to list its documents."
         ),
     )
-    async def list_sources() -> SourcesResult:
+    async def list_sources(
+        prefix: Annotated[
+            str | None,
+            Field(
+                max_length=500,
+                description="Only documents whose path starts with this, e.g. 'guides/'.",
+            ),
+        ] = None,
+    ) -> SourcesResult:
         listed = await rag("GET", "/v1/documents")
-        return SourcesResult(sources=listed["documents"], total_chunks=listed["total_chunks"])
+        documents, total = listed["documents"], listed["total_chunks"]
+        if prefix:  # the RAG API lists every document; the filter is this tool's
+            documents = [d for d in documents if d["source_file"].startswith(prefix)]
+            total = sum(d["chunks"] for d in documents)
+        return SourcesResult.model_validate(fit_sources(documents, total))
 
     return server
 
