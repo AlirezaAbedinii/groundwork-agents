@@ -24,11 +24,12 @@ from pydantic import Field
 
 from tool_models import (
     DEFAULT_TOP_K,
-    SNIPPET_CHARS,
+    MAX_TOP_K,
+    RESULT_BUDGET_CHARS,
     AskResult,
-    SearchHit,
     SearchResult,
     SourcesResult,
+    fit_hits,
 )
 
 DEFAULT_RAG_URL = "http://localhost:8000"
@@ -43,7 +44,16 @@ Mode = Annotated[
         "Leave it out to use the service's default."
     ),
 ]
-TopK = Annotated[int, Field(ge=1, le=20, description="How many passages to use.")]
+SearchTopK = Annotated[
+    int,
+    Field(
+        ge=1,
+        le=MAX_TOP_K,
+        description="How many hits to return, best first. They share one result of about "
+        f"{RESULT_BUDGET_CHARS} characters, so more hits leave less of each.",
+    ),
+]
+AskTopK = Annotated[int, Field(ge=1, le=20, description="How many passages to use.")]
 
 
 def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None = None) -> MCPServer:
@@ -80,21 +90,21 @@ def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None =
         description=(
             "Search the team's indexed documentation for passages that match a query. "
             "Returns the best hits first, each with its source file, section, relevance "
-            f"score and a snippet (the passage's first {SNIPPET_CHARS} characters). Fast "
-            "and cheap (no LLM call): use it to find where something is documented, check "
-            "exact wording or collect sources to cite. Use ask instead for one answer that "
+            "score and text: whole passages while the result stays within about "
+            f"{RESULT_BUDGET_CHARS} characters, then as much of each other hit's start "
+            "as fits. complete says whether a hit's text is the whole passage. Fast and "
+            "cheap (no LLM call): use it to find where something is documented, quote "
+            "exact wording or gather material. Use ask instead for one answer that "
             "combines several passages."
         ),
     )
     async def search(
         query: Annotated[str, Field(min_length=1, max_length=2000, description="What to find.")],
-        top_k: TopK = DEFAULT_TOP_K,
+        top_k: SearchTopK = DEFAULT_TOP_K,
         mode: Mode = None,
     ) -> SearchResult:
         found = await rag("POST", "/v1/search", {"query": query, "top_k": top_k, "mode": mode})
-        # Each hit keeps the start of its text as a snippet; the full text stays behind.
-        hits = [SearchHit(**hit, snippet=hit["text"][:SNIPPET_CHARS]) for hit in found["hits"]]
-        return SearchResult(query=found["query"], mode=found["mode"], hits=hits)
+        return SearchResult.model_validate(fit_hits(found["query"], found["mode"], found["hits"]))
 
     @server.tool(
         annotations=READ_ONLY,
@@ -110,7 +120,7 @@ def build_server(rag_url: str | None = None, *, http: httpx.AsyncClient | None =
     async def ask(
         question: Annotated[str, Field(min_length=1, max_length=2000, description="The question.")],
         mode: Mode = None,
-        top_k: TopK | None = None,
+        top_k: AskTopK | None = None,
     ) -> AskResult:
         answered = await rag(
             "POST", "/v1/ask", {"question": question, "mode": mode, "top_k": top_k}

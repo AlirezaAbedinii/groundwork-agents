@@ -121,9 +121,9 @@ def test_the_real_server_in_process_through_the_registry(rag_server):
     assert sorted(definitions) == ["rag_ask", "rag_list_sources", "rag_search"]
     assert definitions["rag_search"]["description"].startswith("Search the team's indexed documentation")
 
-    hit = registry.invoke("rag_search", {"query": "FERRY-429"}, CTX)["content"]["hits"][0]
-    assert (hit["source_file"], hit["section_heading"]) == ("04-error-codes.md", "Request errors")
-    assert CHUNK.startswith(hit["snippet"]) and len(hit["snippet"]) <= 300
+    hits = registry.invoke("rag_search", {"query": "FERRY-429"}, CTX)["content"]["hits"]
+    assert (hits[0]["source_file"], hits[0]["section_heading"]) == ("04-error-codes.md", "Request errors")
+    assert [(hit["complete"], hit["text"]) for hit in hits] == [(True, CHUNK)] * 3  # whole passages
 
     with pytest.raises(ToolExecutionError, match="retrieval service returned 503: Missing required configuration"):
         registry.invoke("rag_ask", {"question": "What does FERRY-429 mean?"}, CTX)
@@ -152,12 +152,12 @@ def test_arguments_the_server_would_reject_stop_in_the_registry(rag_server, rag_
     ]
 
 
-class SearchThenFinish:
-    """A model that asks for one ten-hit search, then finishes; keeps the messages of its second turn."""
+class CallThenFinish:
+    """A model that makes one tool call, then finishes; keeps the messages of its second turn."""
 
-    def __init__(self) -> None:
-        search = ToolCall(id="call_1", name="rag_search", arguments={"query": "FERRY-429", "top_k": 10})
-        self.turns = [LLMResponse(text="", tool_calls=(search,)), LLMResponse(text="DONE")]
+    def __init__(self, name: str, arguments: dict) -> None:
+        call = ToolCall(id="call_1", name=name, arguments=arguments)
+        self.turns = [LLMResponse(text="", tool_calls=(call,)), LLMResponse(text="DONE")]
         self.second_turn: list = []
 
     async def chat(self, agent, messages, *, tools=None, output_schema=None, producer_provider=None):
@@ -165,18 +165,27 @@ class SearchThenFinish:
         return self.turns.pop(0)
 
 
-def test_a_ten_hit_search_reaches_the_model_as_whole_hits_within_its_budget(rag_server):
-    registry, store = registry_for(rag_server, RAG_MCP_POLICY)  # the agent's own policy: 4000 chars for search
-    llm = SearchThenFinish()
+def seen_by_the_model(registry, name: str, arguments: dict) -> tuple[str, dict]:
+    """The tool message the research specialist's model reads after one call, and its JSON."""
+    llm = CallThenFinish(name, arguments)
     task = {"id": "s1", "description": "Explain FERRY-429", "expected_output_format": "plain text"}
 
     asyncio.run(ResearchSpecialist(llm, registry).execute(task, {}, None, CTX))
 
     answer = llm.second_turn[-1]
     assert isinstance(answer, ToolMessage) and answer.status == "success"
-    assert len(answer.content) <= 4000
-    content = json.loads(answer.content)["content"]
-    every_hit = store.records[0].output["content"]["hits"]  # what the tool returned, in full
-    shown = content["truncated"]["shown"]
-    assert content["truncated"] == {"shown": shown, "of": 10} and len(every_hit) == 10
-    assert content["hits"] == every_hit[:shown] and shown > 3  # whole hits, more than a default search (top_k 3)
+    return answer.content, json.loads(answer.content)
+
+
+def test_the_largest_search_reaches_the_model_whole_within_its_budget(rag_server, server_module):
+    registry, store = registry_for(rag_server, RAG_MCP_POLICY)  # the agent's own policy: 4000 chars for search
+    top_k = server_module.MAX_TOP_K
+
+    text, seen = seen_by_the_model(registry, "rag_search", {"query": "FERRY-429", "top_k": top_k})
+
+    assert len(text) <= RAG_MCP_POLICY["search"].result_budget_chars
+    # Nothing was cut on the way: the model reads exactly what the server sent.
+    assert seen == store.records[0].output
+    hits = seen["content"]["hits"]
+    assert len(hits) == top_k and hits[0]["complete"] and not hits[-1]["complete"]
+    assert all(hit["text"] and hit["text"] in CHUNK for hit in hits)

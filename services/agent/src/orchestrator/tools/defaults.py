@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 # Only tools listed here are registered (deny by default), under the rag_ prefix;
 # the server's own annotations decide nothing. Search hits and an answer with its
 # citations are the evidence the specialist works from, so they get twice the
-# default result budget: a search with a larger top_k still arrives as whole hits.
+# default result budget. The server sizes search results to 3600 characters
+# (mcp/tool_models.py), so they arrive whole.
 RAG_TOOL_PREFIX = "rag_"
 RAG_RESULT_BUDGET_CHARS = 4000
 RAG_MCP_POLICY: dict[str, McpToolPolicy] = {

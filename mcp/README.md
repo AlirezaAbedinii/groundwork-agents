@@ -12,15 +12,21 @@ All three are read-only.
 
 | Tool | RAG endpoint | Returns |
 |---|---|---|
-| `search(query, top_k=3, mode=None)` | `POST /v1/search` | The best-matching passages: source file, section, score and a 300-character snippet each. Retrieval only, so it needs no generation key. |
+| `search(query, top_k=3, mode=None)` | `POST /v1/search` | The best-matching passages, up to 8: source file, section, score, the text, and whether the text is the whole passage. Retrieval only, so it needs no generation key. |
 | `ask(question, mode=None, top_k=None)` | `POST /v1/ask` | A grounded answer with `[n]` citations, a confidence score and the request's cost. Needs the RAG service's generation key. |
 | `list_sources()` | `GET /v1/documents` | Every indexed document with its chunk count. |
 
 `mode` is `hybrid` (keywords and meaning, reranked) or `dense` (meaning only);
-left out, the RAG service's default applies. Every result at default arguments
-fits the agent's smallest tool-result budget, 2000 characters (`search` and `ask`
-get 4000): `search` sends snippets, not whole chunks, and `ask` leaves out the
-passages it answered from.
+left out, the RAG service's default applies. The agent shows its model up to
+4000 characters of the JSON of a search or an answer (2000 for the source list),
+and `search` sizes its result to 3600 (`tool_models.py`), so it arrives whole:
+
+- `search` fills hits in rank order with whole passages while the result fits.
+  Each hit after that gets an equal share of what is left, filled with as much
+  of the passage's start as fits; a share a hit doesn't use passes to the next.
+  `complete` is true for a whole passage. With more hits, the later ones are
+  shorter.
+- `ask` leaves out the passages it answered from.
 
 When the RAG API fails, the tool returns an error the model can read and act on,
 not a crash: `retrieval service returned 503: <detail>`, or

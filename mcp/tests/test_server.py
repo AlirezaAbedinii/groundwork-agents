@@ -9,8 +9,9 @@ over the fake RAG API in conftest.py and call it the way an agent does, through
 - Each call sends one request to the RAG API (``POST /v1/search``, ``POST /v1/ask``,
   ``GET /v1/documents``) and returns a model from tool_models.py. Arguments left
   at None are not sent, so the RAG API applies its own defaults.
-- Results fit the agent loop's budget: ``search`` returns snippets of at most
-  SNIPPET_CHARS, and ``ask`` drops the retrieved contexts.
+- Results are sized for the agent loop: ``search`` stays within RESULT_BUDGET_CHARS
+  (whole passages, then the start of the rest), and ``ask`` drops the retrieved
+  contexts.
 - A refused answer is a result, not an error.
 - Failures reach the model as readable tool errors:
   "retrieval service returned {status}: {detail}" and
@@ -35,8 +36,8 @@ from conftest import ANSWER, CHUNKS, RAG_URL, REFUSAL, SOURCES, chunk_text
 from server import build_server, main
 from tool_models import (
     DEFAULT_TOP_K,
+    MAX_TOP_K,
     RESULT_BUDGET_CHARS,
-    SNIPPET_CHARS,
     AskResult,
     SearchResult,
     SourcesResult,
@@ -95,7 +96,7 @@ async def test_schemas_are_the_contract_the_model_sees(client):
     assert props["query"]["type"] == "string"
     assert (props["query"]["minLength"], props["query"]["maxLength"]) == (1, 2000)
     top_k, top_k_nullable = nullable(props["top_k"])
-    assert (top_k["type"], top_k["minimum"], top_k["maximum"]) == ("integer", 1, 20)
+    assert (top_k["type"], top_k["minimum"], top_k["maximum"]) == ("integer", 1, MAX_TOP_K)
     assert props["top_k"]["default"] == DEFAULT_TOP_K and not top_k_nullable
     mode, mode_nullable = nullable(props["mode"])
     assert sorted(mode["enum"]) == ["dense", "hybrid"] and mode_nullable
@@ -123,7 +124,7 @@ async def test_schemas_are_the_contract_the_model_sees(client):
 # --- One request per call, results shaped for the agent -----------------------------
 
 
-async def test_search_sends_one_request_and_returns_ranked_snippets(client, fake_rag):
+async def test_search_sends_one_request_and_returns_ranked_whole_passages(client, fake_rag):
     result = await client.call_tool("search", {"query": "FERRY-429"})
 
     assert result.is_error is False
@@ -136,9 +137,8 @@ async def test_search_sends_one_request_and_returns_ranked_snippets(client, fake
     first = found.hits[0]
     assert (first.source_file, first.section_heading) == ("04-error-codes.md", "Request errors")
     assert first.score == pytest.approx(1 / 61, abs=5e-4)  # rounding is fine, reordering isn't
-    for hit in found.hits:
-        assert 0 < len(hit.snippet) <= SNIPPET_CHARS
-        assert chunk_text(fake_rag.chunk_chars).startswith(hit.snippet.removesuffix("…"))
+    # Three chunks at the RAG's chunk_size arrive whole.
+    assert all(hit.complete and hit.text == chunk_text(fake_rag.chunk_chars) for hit in found.hits)
 
     # A second call on the same injected client: the tool must not close it.
     result = await client.call_tool("search", {"query": "retry", "mode": "dense", "top_k": 5})
@@ -149,6 +149,9 @@ async def test_search_sends_one_request_and_returns_ranked_snippets(client, fake
     found = SearchResult.model_validate(result.structured_content)
     assert found.mode == "dense"
     assert found.hits[3].section_heading is None  # a null heading passes through
+    # Five do not all fit: the best arrive whole, the rest as excerpts.
+    assert [hit.complete for hit in found.hits] == [True, True, True, False, False]
+    assert all(hit.text and hit.text in chunk_text(fake_rag.chunk_chars) for hit in found.hits)
 
 
 async def test_ask_returns_the_answer_and_citations_without_contexts(client, fake_rag):
@@ -201,16 +204,24 @@ async def test_list_sources_reports_documents_and_chunk_counts(client, fake_rag)
 
 
 @pytest.mark.parametrize(("tool", "arguments"), EVERY_TOOL)
-async def test_results_at_default_arguments_fit_the_agent_loop_budget(
-    client, fake_rag, tool, arguments
-):
-    fake_rag.chunk_chars = 2000  # long chunks come in; only snippets may go out
+async def test_results_at_default_arguments_fit_the_budget(client, fake_rag, tool, arguments):
+    fake_rag.chunk_chars = 2000  # long chunks come in; only what fits may go out
 
     result = await client.call_tool(tool, arguments)
 
     assert result.is_error is False
-    # The agent's registry wraps the result as {"content": ...} before the loop measures it.
-    assert len(json.dumps({"content": result.structured_content})) <= RESULT_BUDGET_CHARS
+    assert len(json.dumps(result.structured_content)) <= RESULT_BUDGET_CHARS
+
+
+@pytest.mark.parametrize("top_k", range(1, MAX_TOP_K + 1))
+async def test_no_search_result_exceeds_the_budget(client, fake_rag, top_k):
+    fake_rag.chunk_chars = 2000
+
+    result = await client.call_tool("search", {"query": "FERRY-429 retry", "top_k": top_k})
+
+    assert result.is_error is False
+    assert len(result.structured_content["hits"]) == min(top_k, len(CHUNKS))
+    assert len(json.dumps(result.structured_content)) <= RESULT_BUDGET_CHARS
 
 
 # --- Failures the model can read and act on -----------------------------------------
@@ -262,6 +273,9 @@ async def test_an_unreachable_rag_is_a_readable_tool_error(
     ("tool", "arguments"),
     [
         pytest.param("search", {"query": "FERRY-429", "top_k": 99}, id="search-top_k-99"),
+        pytest.param(
+            "search", {"query": "FERRY-429", "top_k": MAX_TOP_K + 1}, id="search-top_k-over-max"
+        ),
         pytest.param("search", {"query": ""}, id="search-empty-query"),
         pytest.param("search", {"query": "FERRY-429", "mode": "sparse"}, id="search-bad-mode"),
         pytest.param("ask", {"question": ""}, id="ask-empty-question"),

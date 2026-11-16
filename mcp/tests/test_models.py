@@ -1,23 +1,32 @@
-"""The SDK import isn't shadowed, and tool results fit the agent loop's budget."""
+"""The SDK import isn't shadowed, and tool results are sized for the agent loop.
+
+``fit_hits`` takes the RAG API's hits and returns what ``search`` sends. Sizes
+are measured the way the agent loop measures them: the JSON of the result as
+``json.dumps`` writes it, every non-ASCII character as six.
+"""
 
 import json
 from pathlib import Path
 
+import pytest
+
 from tool_models import (
     DEFAULT_TOP_K,
+    MAX_TOP_K,
+    QUERY_ECHO_CHARS,
     RESULT_BUDGET_CHARS,
-    SNIPPET_CHARS,
     AskResult,
     Citation,
-    SearchHit,
     SearchResult,
+    fit_hits,
 )
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
+# The agent loop's budget for these tools (services/agent/.../tools/defaults.py:
+# RAG_RESULT_BUDGET_CHARS); it measures the result wrapped as {"content": …}.
+AGENT_BUDGET_CHARS = 4000
 
-# The costliest headings of the Ferry corpus as JSON (quotes and dashes escaped),
-# and snippets denser in non-ASCII than any chunk there: json.dumps writes each
-# such character as six, and the loop measures the escaped JSON.
+# The costliest headings of the Ferry corpus as JSON (quotes and dashes escaped).
 HEADINGS = [
     'Sample Corpus — "Ferry" Internal Docs (synthetic)',
     "Why this corpus is shaped the way it is",
@@ -25,12 +34,37 @@ HEADINGS = [
     "Ferry — Configuration Reference",
     "Ferry — Architecture & Glossary",
 ]
-SNIPPET = ("Ferry retries a job with backoff — see ferry.retry.* → the DLQ. " * 10)[:SNIPPET_CHARS]
+# The worst case: chunks at the RAG's chunk_size (800) denser in non-ASCII than any
+# chunk of either corpus, the longest source path of the public corpus, scores at
+# full float precision, and a query longer than any echoed whole.
+DENSE_LINE = "Ferry retries a job with backoff — see ferry.retry.* → the DLQ “now”.\n"
+WORST_TEXT = (DENSE_LINE * 20)[:800]
+WORST_PATH = "fastapi/advanced/path-operation-advanced-configuration-and-more-options.md"
+WORST_QUERY = "How should a client retry after FERRY-429 — Rate Limit Exceeded? " * 6
 
 
-def loop_view(result) -> int:
+def hit(n: int, text: str, heading: str | None = None, path: str = "04-error-codes.md") -> dict:
+    """One hit as the RAG API sends it."""
+    return {
+        "chunk_id": f"a3f9c2e17b4d8e{n:02d}",
+        "text": text,
+        "score": 1 / (61 + n),
+        "source_file": path,
+        "section_heading": heading if heading is not None else "",
+    }
+
+
+def worst_hits(k: int) -> list[dict]:
+    return [hit(n, WORST_TEXT, HEADINGS[n % len(HEADINGS)], WORST_PATH) for n in range(k)]
+
+
+def size(result: dict) -> int:
+    return len(json.dumps(result))
+
+
+def loop_view(result: dict) -> int:
     """Characters of JSON the agent loop sees: the registry wraps results in {"content": …}."""
-    return len(json.dumps({"content": result.model_dump(mode="json")}))
+    return len(json.dumps({"content": result}))
 
 
 def test_import_mcp_resolves_to_the_sdk_not_this_directory():
@@ -45,22 +79,94 @@ def test_import_mcp_resolves_to_the_sdk_not_this_directory():
     assert hasattr(mcp, "Client")
 
 
-def test_search_result_at_the_default_top_k_fits_the_loop_budget():
-    hit = SearchHit(
-        chunk_id="9d2b7c5e0f1a4836",
-        source_file="03-configuration.md",
-        section_heading=HEADINGS[0],
-        score=1 / 61,
-        snippet=SNIPPET,
-    )
-    result = SearchResult(
-        query="How should a client retry after FERRY-429 — Rate Limit Exceeded?",
-        mode="hybrid",
-        hits=[hit] * DEFAULT_TOP_K,
-    )
+# --- search --------------------------------------------------------------------------
 
-    assert len(SNIPPET) == SNIPPET_CHARS
-    assert loop_view(result) <= RESULT_BUDGET_CHARS
+
+@pytest.mark.parametrize("top_k", range(1, MAX_TOP_K + 1))
+def test_a_search_result_never_exceeds_the_budget(top_k):
+    fitted = fit_hits(WORST_QUERY, "hybrid", worst_hits(top_k))
+
+    # What the tool sends is the model's JSON, so measure that, not the dict.
+    sent = SearchResult.model_validate(fitted).model_dump(mode="json")
+    assert sent == fitted
+    assert size(sent) <= RESULT_BUDGET_CHARS
+    assert loop_view(sent) <= AGENT_BUDGET_CHARS
+    assert len(sent["hits"]) == top_k  # every hit keeps its place
+    assert all(h["text"] for h in sent["hits"][:3])
+
+
+@pytest.mark.parametrize("top_k", range(1, MAX_TOP_K + 1))
+def test_the_budget_holds_for_chunks_far_longer_than_the_rags(top_k):
+    hits = [hit(n, WORST_TEXT * 4, HEADINGS[0], WORST_PATH) for n in range(top_k)]
+
+    assert size(fit_hits(WORST_QUERY, "dense", hits)) <= RESULT_BUDGET_CHARS
+
+
+def test_hits_are_whole_in_rank_order_while_they_fit_then_excerpts():
+    texts = [f"Passage {n}: " + "the retry policy backs off. " * 25 for n in range(6)]
+
+    fitted = fit_hits("retry policy", "hybrid", [hit(n, t) for n, t in enumerate(texts)])
+
+    complete = [h["complete"] for h in fitted["hits"]]
+    whole = complete.index(False)
+    assert whole >= 3 and not any(complete[whole:])  # whole first, then only excerpts
+    for h, text in zip(fitted["hits"], texts, strict=True):
+        assert (h["text"] == text) is h["complete"]
+        assert text.startswith(h["text"]) or h["text"] in text
+    assert size(fitted) <= RESULT_BUDGET_CHARS
+    assert RESULT_BUDGET_CHARS - size(fitted) < 8  # the excerpts use what is left
+
+
+def test_the_default_top_k_sends_the_rags_chunks_whole():
+    # 800 characters is the RAG's chunk_size; the public corpus's median chunk is 600.
+    texts = [(f"Line {n} of a passage about retries and backoff.\n" * 20)[:800] for n in range(3)]
+    hits = [hit(n, text, HEADINGS[n]) for n, text in enumerate(texts)]
+
+    fitted = fit_hits("How do retries back off?", "hybrid", hits)
+
+    assert DEFAULT_TOP_K == 3
+    assert [h["complete"] for h in fitted["hits"]] == [True, True, True]
+    assert [h["text"] for h in fitted["hits"]] == texts
+
+
+def test_a_short_hit_after_a_long_one_can_still_be_whole():
+    long_text, short = "word " * 2000, "FERRY-429 means you exceeded the quota."
+
+    fitted = fit_hits("FERRY-429", "dense", [hit(0, long_text), hit(1, short)])
+
+    assert [h["complete"] for h in fitted["hits"]] == [False, True]
+    assert fitted["hits"][1]["text"] == short
+
+
+def test_the_metadata_passes_through_and_an_empty_heading_is_null():
+    fitted = fit_hits("FERRY-429", "hybrid", [hit(0, "FERRY-429", "Request errors"), hit(1, "x")])
+
+    first, second = fitted["hits"]
+    assert (first["chunk_id"], first["source_file"], first["section_heading"]) == (
+        "a3f9c2e17b4d8e00",
+        "04-error-codes.md",
+        "Request errors",
+    )
+    assert first["score"] == 1 / 61  # full precision, unchanged
+    assert second["section_heading"] is None
+    assert (fitted["query"], fitted["mode"]) == ("FERRY-429", "hybrid")
+
+
+def test_a_long_query_is_echoed_cut():
+    fitted = fit_hits(WORST_QUERY, "hybrid", [])
+
+    assert len(WORST_QUERY) > QUERY_ECHO_CHARS
+    assert fitted["query"] == WORST_QUERY[:QUERY_ECHO_CHARS] + "…"
+    assert fit_hits("short", "hybrid", [])["query"] == "short"
+
+
+def test_metadata_too_long_for_every_hit_drops_hits_from_the_end():
+    heading = "Ö" * 300  # 1800 characters as JSON
+
+    fitted = fit_hits("x", "dense", [hit(n, "text", heading) for n in range(4)])
+
+    assert size(fitted) <= RESULT_BUDGET_CHARS
+    assert [h["chunk_id"] for h in fitted["hits"]] == ["a3f9c2e17b4d8e00"]
 
 
 def test_ask_result_with_five_citations_leaves_room_for_the_answer():
@@ -84,4 +190,4 @@ def test_ask_result_with_five_citations_leaves_room_for_the_answer():
 
     # The answer's length is up to the generator; five citations must leave it
     # a thousand characters of the budget.
-    assert RESULT_BUDGET_CHARS - loop_view(result) >= 1000
+    assert RESULT_BUDGET_CHARS - size(result.model_dump(mode="json")) >= 1000

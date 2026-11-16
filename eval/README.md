@@ -236,7 +236,7 @@ the gitignored `runs/`.
   cross reviewer rejects every attempt, and approving an escalation retries the same
   specialist, so the task loops until the harness stops approving (5 approvals).
   Under `same`, the reviewer approved one of these runs with invented data.
-- **Research reads snippets.** It searches (`rag_search` shows each hit's first 300
+- **Research reads snippets.** It searches (`rag_search` showed each hit's first 300
   characters) and rarely asks (`rag_ask` answers from whole passages), so the notes
   it hands the writer miss the facts the rubrics check.
 - **The planner over-splits.** Even two-step tasks become about five subtasks, each
