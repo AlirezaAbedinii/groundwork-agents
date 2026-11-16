@@ -5,8 +5,8 @@ from __future__ import annotations
 from langchain_core.messages import HumanMessage
 
 from orchestrator.agents.base import BaseAgent
-from orchestrator.planning.decomposer import decompose
-from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.planning.decomposer import Planned, decompose
+from orchestrator.tools.registry import ToolRegistry
 
 # Stable marker; mock fixtures and tests match on it.
 SYNTH_MARKER = "Synthesize the final deliverable"
@@ -25,8 +25,9 @@ Write the final deliverable for the user. Respond with the deliverable text only
 class Supervisor(BaseAgent):
     name = "supervisor"
 
-    async def plan(self, request: str, memories: str | None = None) -> ExecutionPlan:
-        return await decompose(self.llm, request, memories=memories)
+    async def plan(self, request: str, registry: ToolRegistry, memories: str | None = None) -> Planned:
+        """A plan for ``request`` from the tools in ``registry``, with what the lint found."""
+        return await decompose(self.llm, request, registry, memories=memories)
 
     async def synthesize(self, request: str, outputs: dict[str, str]) -> str:
         rendered = "\n".join(f"[{sid}]\n{text}\n" for sid, text in sorted(outputs.items()))

@@ -1,0 +1,14 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Create an execution plan",
+    "TRIGGER-LINT",
+    "Your previous plan was invalid"
+  ],
+  "response": {
+    "text": "{\"task_summary\": \"Rank the vector databases by GitHub stars\", \"subtasks\": [{\"id\": \"s1\", \"description\": \"Compute the GitHub star ranking of vector databases from the demo database\", \"specialist\": \"analysis\", \"tools\": [\"db_query\"], \"required_inputs\": [], \"expected_output_format\": \"a ranked list\", \"estimated_complexity\": \"low\", \"depends_on\": []}], \"confidence\": 0.9}",
+    "model": "mock-gpt-4o",
+    "prompt_tokens": 900,
+    "completion_tokens": 90
+  }
+}

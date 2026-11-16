@@ -28,7 +28,7 @@ def _planning_prompt(trace: dict) -> str:
     )
 
 
-def test_second_similar_task_plans_with_retrieved_memory(client):
+def test_second_similar_task_plans_with_retrieved_memory(client, showcase_plan_limit):
     first = client.post("/tasks", json={"request": VECTOR_REQUEST}).json()["task_id"]
     assert client.get(f"/tasks/{first}").json()["status"] == "completed"
 

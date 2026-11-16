@@ -19,6 +19,10 @@ x-app-env: &app-env
   PLAN_CONFIDENCE_THRESHOLD: ${PLAN_CONFIDENCE_THRESHOLD:-0.7}
   REVIEW_SCORE_THRESHOLD: ${REVIEW_SCORE_THRESHOLD:-3}
   MAX_SPECIALIST_RETRIES: ${MAX_SPECIALIST_RETRIES:-2}
+  # The showcase scenario (make demo) plans five subtasks, one more than the
+  # service's default of 4, so this stack allows five.
+  MAX_PLAN_SUBTASKS: ${MAX_PLAN_SUBTASKS:-5}
+  PLAN_LINT: ${PLAN_LINT:-enforce}
   APPROVAL_WEBHOOK_URL: ${APPROVAL_WEBHOOK_URL:-}
   # Retrieval tools over MCP; empty disables them. The RAG stack's MCP server
   # runs in another compose project: http://host.docker.internal:8001/mcp.

@@ -33,7 +33,7 @@ def _pending_one(client, task_id):
     return row
 
 
-def test_full_lifecycle_demo_scenario(client):
+def test_full_lifecycle_demo_scenario(client, showcase_plan_limit):
     # a prior run seeds long-term memory so the showcase planning is informed
     warmup = client.post("/tasks", json={"request": WARMUP_REQUEST}).json()["task_id"]
     assert client.get(f"/tasks/{warmup}").json()["status"] == "completed"

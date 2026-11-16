@@ -23,6 +23,7 @@ from orchestrator.planning.decomposer import decompose
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools import web_search
 from orchestrator.tools.base import InMemoryInvocationStore, ToolContext
+from orchestrator.tools.defaults import build_default_registry
 from orchestrator.tools.registry import ToolRegistry
 from orchestrator.workers.loop import run_in_worker_loop
 
@@ -62,7 +63,7 @@ class MeteredClient:
 
 def _check_plan(plan: ExecutionPlan) -> None:
     assert isinstance(plan, ExecutionPlan)
-    assert len(plan.subtasks) >= 2
+    assert plan.subtasks
     assert 0.0 <= plan.confidence <= 1.0
     assert plan.topological_waves()  # acyclic
 
@@ -71,7 +72,7 @@ def _check_plan(plan: ExecutionPlan) -> None:
 def test_openai_plans_through_strict_json_schema(monkeypatch):
     llm = MeteredClient(monkeypatch, "openai", "gpt-4o-mini")
 
-    _check_plan(run_in_worker_loop(decompose(llm, REQUEST)))
+    _check_plan(run_in_worker_loop(decompose(llm, REQUEST, build_default_registry(InMemoryInvocationStore()))).plan)
     llm.check_usage()
 
 
@@ -79,7 +80,7 @@ def test_openai_plans_through_strict_json_schema(monkeypatch):
 def test_anthropic_plans_through_json_schema(monkeypatch):
     llm = MeteredClient(monkeypatch, "anthropic", "claude-haiku-4-5")
 
-    _check_plan(run_in_worker_loop(decompose(llm, REQUEST)))
+    _check_plan(run_in_worker_loop(decompose(llm, REQUEST, build_default_registry(InMemoryInvocationStore()))).plan)
     llm.check_usage()
 
 

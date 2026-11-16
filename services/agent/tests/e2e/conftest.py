@@ -63,3 +63,13 @@ def _purge_redis() -> None:
     client = redis.Redis.from_url(get_settings().redis_url, decode_responses=True)
     for key in client.scan_iter(match="task:*"):
         client.delete(key)
+
+
+@pytest.fixture()
+def showcase_plan_limit(monkeypatch) -> None:
+    """The showcase scenario (``make demo``) plays a recorded plan of five subtasks, one
+    more than ``max_plan_subtasks`` allows by default; docker-compose.yml raises the
+    limit for the demo stack the same way."""
+    from orchestrator.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "max_plan_subtasks", 5)

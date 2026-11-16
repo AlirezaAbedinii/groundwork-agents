@@ -3,11 +3,15 @@
 Three differently-shaped requests — a diamond (three parallel subtasks feeding
 one), a two-stage fan-in pipeline, and a single-node plan. Every plan must be
 schema-valid, acyclic, assigned to known specialists, and carry a confidence.
+A plan that fails the plan lint is sent back once with the lint's errors.
 """
+
+import json
 
 import pytest
 
 from orchestrator.llm.router import SPECIALISTS
+from orchestrator.planning.decomposer import PLAN_MARKER
 from orchestrator.planning.schemas import ExecutionPlan
 
 VECTOR_REQUEST = (
@@ -35,7 +39,9 @@ CASES = [
 
 
 @pytest.mark.parametrize("request_text,subtask_count,expected_deps", CASES)
-def test_decomposition_produces_valid_plan(client, request_text, subtask_count, expected_deps):
+def test_decomposition_produces_valid_plan(
+    client, showcase_plan_limit, request_text, subtask_count, expected_deps
+):
     task_id = client.post("/tasks", json={"request": request_text}).json()["task_id"]
     raw_plan = client.get(f"/tasks/{task_id}").json()["plan"]
     assert raw_plan is not None
@@ -49,3 +55,23 @@ def test_decomposition_produces_valid_plan(client, request_text, subtask_count, 
     dependencies = {s.id: set(s.depends_on) for s in plan.subtasks}
     for sid, expected in expected_deps.items():
         assert dependencies[sid] == expected
+
+
+def test_a_plan_that_fails_the_lint_is_replanned_once_and_runs(client):
+    # the first plan gives the database query to research, which does not own db_query
+    request = "TRIGGER-LINT: rank the databases in the demo schema by their GitHub stars."
+    task_id = client.post("/tasks", json={"request": request}).json()["task_id"]
+
+    task = client.get(f"/tasks/{task_id}").json()
+    assert task["status"] == "completed"
+    (only,) = ExecutionPlan.model_validate(task["plan"]).subtasks
+    assert (only.specialist, only.tools) == ("analysis", ["db_query"])
+
+    trace = client.get(f"/traces/{task_id}").json()
+    planning = [c for c in trace["llm_calls"] if c["agent"] == "supervisor" and PLAN_MARKER in c["prompt"]]
+    assert len(planning) == 2
+    assert "'db_query' belongs to analysis, not research" in planning[1]["prompt"]
+    plan_span = next(span for span in trace["spans"] if span["name"] == "plan")
+    (error,) = json.loads(plan_span["attributes"]["lint_errors"])
+    assert error.startswith("s1: 'db_query' belongs to analysis, not research")
+    assert plan_span["attributes"]["subtask_count"] == 1

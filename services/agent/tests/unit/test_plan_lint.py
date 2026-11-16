@@ -8,12 +8,16 @@ fail. A plan with one subtask, or one subtask per owner of the tools it needs,
 must pass.
 """
 
+import json
 from dataclasses import replace
 
 import pytest
 
 from orchestrator.config import get_settings
+from orchestrator.llm.messages import render_messages
+from orchestrator.llm.mock import MockLLMClient
 from orchestrator.planning.capabilities import lint, manifest, render_manifest, summary
+from orchestrator.planning.decomposer import PLAN_MARKER, PlanValidationError, decompose
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools import api_call, code_exec, db_query, file_io, web_search
 from orchestrator.tools.base import InMemoryInvocationStore
@@ -181,3 +185,76 @@ def test_the_lint_changes_neither_the_plan_nor_the_registry():
 
     assert (shape.model_dump(), render_manifest(manifest(tools))) == before
 
+
+# --- planning with the lint ----------------------------------------------------
+
+WRONG_OWNER = plan(step("s1", "research", ["db_query"], "Rank the databases by stars"))
+RIGHT_OWNER = plan(step("s1", "analysis", ["db_query"], "Rank the databases by stars"))
+
+
+class Recording:
+    def __init__(self, inner):
+        self.inner, self.prompts = inner, []
+
+    async def chat(self, agent, messages, **kwargs):
+        self.prompts.append(render_messages(messages))
+        return await self.inner.chat(agent, messages, **kwargs)
+
+
+def fixtures(tmp_path, first: ExecutionPlan, retry: ExecutionPlan) -> Recording:
+    for name, chosen, match in (("plan", first, [PLAN_MARKER]),
+                                ("plan_retry", retry, [PLAN_MARKER, "Your previous plan was invalid"])):
+        payload = {"agent": "supervisor", "match": match, "response": {"text": chosen.model_dump_json()}}
+        (tmp_path / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
+    return Recording(MockLLMClient(tmp_path))
+
+
+@pytest.mark.anyio
+async def test_the_prompt_carries_the_manifest_and_the_size_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr(get_settings(), "max_plan_subtasks", 3)
+    llm = fixtures(tmp_path, RIGHT_OWNER, RIGHT_OWNER)
+    tools = registry(without=("code_exec",))
+
+    await decompose(llm, "rank the databases", tools)
+
+    (prompt,) = llm.prompts
+    assert render_manifest(manifest(tools)) in prompt
+    assert "code_exec" not in prompt
+    assert "never more than 3" in prompt
+
+
+@pytest.mark.anyio
+async def test_a_plan_that_fails_the_lint_is_retried_once_with_the_errors(tmp_path):
+    llm = fixtures(tmp_path, WRONG_OWNER, RIGHT_OWNER)
+
+    planned = await decompose(llm, "rank the databases", registry())
+
+    assert planned.plan == RIGHT_OWNER
+    expected = lint(WRONG_OWNER, registry(), 4)
+    assert planned.lint_errors == expected  # what the first plan was rejected for
+    first, retry = llm.prompts
+    assert expected[0] not in first
+    assert f"Validation error:\n{expected[0]}" in retry
+
+
+@pytest.mark.anyio
+async def test_a_plan_that_fails_the_lint_twice_fails_planning(tmp_path):
+    llm = fixtures(tmp_path, WRONG_OWNER, WRONG_OWNER)
+
+    with pytest.raises(PlanValidationError, match="^Plan invalid after retry: s1: 'db_query' belongs") as raised:
+        await decompose(llm, "rank the databases", registry())
+
+    assert raised.value.lint_errors == lint(WRONG_OWNER, registry(), 4) * 2
+    assert len(llm.prompts) == 2
+
+
+@pytest.mark.anyio
+async def test_with_the_lint_off_its_findings_are_reported_but_reject_nothing(tmp_path, monkeypatch):
+    monkeypatch.setattr(get_settings(), "plan_lint", "off")
+    llm = fixtures(tmp_path, WRONG_OWNER, RIGHT_OWNER)
+
+    planned = await decompose(llm, "rank the databases", registry())
+
+    assert planned.plan == WRONG_OWNER
+    assert planned.lint_errors == lint(WRONG_OWNER, registry(), 4)
+    assert len(llm.prompts) == 1

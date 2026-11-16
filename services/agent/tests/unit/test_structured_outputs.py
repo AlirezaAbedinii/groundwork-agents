@@ -14,6 +14,9 @@ from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import LLMResponse, MockLLMClient
 from orchestrator.planning.decomposer import PLAN_MARKER, PlanValidationError, decompose
 from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.tools import web_search
+from orchestrator.tools.base import InMemoryInvocationStore
+from orchestrator.tools.registry import ToolRegistry
 
 pytestmark = pytest.mark.anyio
 
@@ -50,7 +53,14 @@ def _plan(subtasks: list[dict], confidence: float = 0.9) -> dict:
 
 
 def _subtask(sid: str, depends_on: list[str]) -> dict:
-    return {"id": sid, "description": f"step {sid}", "specialist": "research", "depends_on": depends_on}
+    return {"id": sid, "description": f"step {sid}", "specialist": "research", "tools": ["web_search"],
+            "depends_on": depends_on}
+
+
+def _registry() -> ToolRegistry:
+    registry = ToolRegistry(InMemoryInvocationStore())
+    registry.register(web_search.SPEC)
+    return registry
 
 
 CYCLIC = _plan([_subtask("s1", ["s2"]), _subtask("s2", ["s1"])])
@@ -64,7 +74,7 @@ async def test_a_cyclic_plan_is_retried_once_with_the_error_then_fails(tmp_path)
     llm = RecordingLLM(MockLLMClient(tmp_path))
 
     with pytest.raises(PlanValidationError, match=r"(?s)^Plan invalid after retry: .*Dependency cycle"):
-        await decompose(llm, "compare Chroma and Qdrant")
+        await decompose(llm, "compare Chroma and Qdrant", _registry())
 
     assert [call["output_schema"] for call in llm.calls] == [ExecutionPlan, ExecutionPlan]
     first, retry = (call["prompt"] for call in llm.calls)
@@ -79,9 +89,10 @@ async def test_a_valid_plan_comes_back_parsed_without_reading_the_text():
     # text that no parser could read: decompose must use the provider-parsed object
     llm = RecordingLLM(CannedLLM(LLMResponse(text="<not json>", parsed=plan)))
 
-    result = await decompose(llm, "compare Chroma and Qdrant")
+    result = await decompose(llm, "compare Chroma and Qdrant", _registry())
 
-    assert result is plan
+    assert result.plan is plan
+    assert result.lint_errors == []
     (call,) = llm.calls
     assert call["agent"] == "supervisor"
     assert call["output_schema"] is ExecutionPlan

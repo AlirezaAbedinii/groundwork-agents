@@ -178,11 +178,18 @@ approval row → `interrupt()`.
    facts, preferences; top-k per kind, filtered by user) and injects the hits
    into the planning prompt in a labeled block; retrieved ids are recorded to
    the audit log and the trace.
-3. **Planning** — decomposition into an `ExecutionPlan` through native
-   structured output (subtasks with specialist, inputs, expected format,
+3. **Planning** — the planner is shown a capability manifest, a table of
+   each specialist's tools read from the live registry (summary and per-task
+   limit), and asked for the fewest subtasks: one when a single specialist owns
+   every tool needed. The `ExecutionPlan` comes back through native structured
+   output (subtasks with specialist, tools, inputs, expected format,
    complexity, `depends_on`, plan confidence). Pydantic validation enforces unique ids,
-   resolvable dependencies, and acyclicity; one retry with the validation
-   error in-prompt, then the task fails rather than executing a broken plan.
+   resolvable dependencies, and acyclicity; the plan lint then checks that each
+   tool exists and belongs to its subtask's specialist, that research, analysis
+   and code subtasks name their tools, and the size (`MAX_PLAN_SUBTASKS`, 4).
+   One retry with the errors in-prompt, then the task fails rather than
+   executing a broken plan; `PLAN_LINT=off` records the lint's findings on the
+   plan span without rejecting.
 4. **Plan gate** — low confidence or user-requested review pauses here,
    before any agent work.
 5. **Execution** — DAG waves fan out; specialists read working memory, call

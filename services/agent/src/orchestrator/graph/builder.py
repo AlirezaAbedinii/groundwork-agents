@@ -183,11 +183,14 @@ def build_graph(
                     memories_block, retrieved_ids = retrieved.block, retrieved.ids
             set_attr(span, "memories_injected", len(retrieved_ids))
             try:
-                plan = await supervisor.plan(state["request"], memories=memories_block)
+                planned = await supervisor.plan(state["request"], registry, memories=memories_block)
             except PlanValidationError as error:
+                set_attr(span, "lint_errors", error.lint_errors)
                 span.set_attribute("orchestrator.status", "failure")
                 repo.set_status(state["task_id"], "failed", error=str(error))
                 return {"plan": None, "plan_error": str(error)}
+            plan = planned.plan
+            set_attr(span, "lint_errors", planned.lint_errors)
             repo.save_plan(state["task_id"], plan)
             working.set_plan(state["task_id"], plan.model_dump())
             set_attr(span, "confidence", plan.confidence)

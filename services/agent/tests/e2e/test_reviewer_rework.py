@@ -17,7 +17,7 @@ DEMO_REQUEST = (
 )
 
 
-def test_reviewer_rejects_citation_free_draft_then_rework_passes(client):
+def test_reviewer_rejects_citation_free_draft_then_rework_passes(client, showcase_plan_limit):
     task_id = client.post("/tasks", json={"request": DEMO_REQUEST}).json()["task_id"]
     bundle = client.get(f"/tasks/{task_id}").json()
     assert bundle["status"] == "completed"

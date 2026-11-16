@@ -378,6 +378,19 @@ async def test_invalid_plan_is_retried_once_with_error_then_fails(tmp_path, repo
     assert repo.tasks[task_id]["status"] == "failed"
 
 
+async def test_a_plan_that_fails_the_lint_twice_never_reaches_schedule(tmp_path, repo):
+    # research does not own db_query; the retry prompt gets the same plan back
+    misassigned = {**subtask("s1", "research", "rank the databases by stars"), "tools": ["db_query"]}
+    fx(tmp_path, "plan", "supervisor", plan_text([misassigned], 0.9), match=["Create an execution plan"])
+
+    task_id, state = await run(tmp_path, repo, "rank the databases by stars")
+
+    assert state.get("plan") is None
+    assert "'db_query' belongs to analysis, not research" in state["plan_error"]
+    assert not state.get("dispatch_log") and not state.get("subtask_results")
+    assert repo.tasks[task_id]["status"] == "failed"
+
+
 # --- attempt allowance ---------------------------------------------------------
 
 
