@@ -22,6 +22,7 @@ supersedes it.
 | [0014](0014-an-agent-reliability-phase-before-presentation.md) | An agent reliability phase before presentation | accepted |
 | [0015](0015-bounded-subtask-attempts.md) | An approval buys one attempt, and each subtask has a cap | accepted |
 | [0016](0016-tool-contracts-the-model-can-act-on.md) | Tool contracts the model can act on | accepted |
+| [0017](0017-plans-from-the-tools-checked-before-they-run.md) | Plans from the tools, checked before they run | accepted |
 
 ## Format
 
