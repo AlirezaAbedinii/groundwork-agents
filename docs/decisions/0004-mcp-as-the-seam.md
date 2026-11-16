@@ -110,3 +110,74 @@ Alternatives: a larger slice still cuts inside the JSON; a limit inside each
 tool repeats the same logic in every tool and can't reach another MCP server's
 tools; summarizing long results with a model adds a paid call, latency and a
 result that differs from run to run.
+
+## Addendum, 2026-11-16: whole passages within one budget, a summarised source list, ask first
+
+`search` cut every hit to its first 300 characters and took `top_k` up to 20, so
+asking for more hits never showed more of any one hit. On the public docs corpus's
+test split, the top 3 hits hold 0.691 of the questions' evidence as whole chunks
+and 0.272 as snippets in dense mode (hybrid 0.647 and 0.208): a hit's evidence
+mostly sits past its first 300 characters. `list_sources` sent every document,
+about 17,000 characters for that corpus, of which the loop showed the first 2000.
+Nothing told the research specialist when to ask rather than search.
+
+- **One budget per search result.** `top_k` is at most 8 (default 3). The result's
+  JSON is at most 3600 characters, inside the 4000 the agent gives the tool once it
+  wraps the result in `{"content": …}`. Hits take their whole text in rank order
+  while the result fits. From the first that doesn't, each takes an equal share of
+  what is left, and a share it doesn't use passes to the hits after it. A share is
+  filled with the window of consecutive lines that holds the most distinct query
+  words (lower-cased, longer than two characters; the earliest of equal windows),
+  or with the passage's start when no window with a query word fits. Every hit
+  says whether its text is `complete`; `text` replaces `snippet`. Hits keep their
+  metadata, the echoed query is cut at 200 characters, and only metadata too long
+  to fit at all drops hits from the end, so no result is over the budget.
+- **`list_sources(prefix)`.** The server filters by path prefix (the RAG API is
+  unchanged). A list over the budget becomes a count of documents and chunks per
+  directory, as many as fit in path order, then the first documents, with
+  `truncated: {"shown", "of"}`; a directory is a prefix that lists its documents.
+  The agent's budget for this tool rises from 2000 to 4000, like the other two.
+- **Ask first.** The research role says to call `rag_ask` first for a question
+  the documentation should answer; to use `rag_search` to find where something is
+  documented, quote exact wording, gather material for a longer document or
+  double-check a refusal; and to report a refusal that no search overturns as not
+  documented, never filling the gap from the model's own knowledge. The `ask`
+  description says the same.
+- **Measured with the server's own code.** The sizing lives in
+  `mcp/tool_models.py` as functions of plain dicts. The retrieval evaluation loads
+  that file and records, for every recorded search, what each hit covers as
+  `search` returns it with `top_k` 3, 5 and 8.
+
+Consequences:
+
+- Evidence recall on the test split, as `search` returns it (and as whole chunks):
+
+  | `top_k` | dense | hybrid |
+  |---|---|---|
+  | 3 | 0.691 (0.691) | 0.647 (0.647) |
+  | 5 | 0.730 (0.740) | 0.672 (0.725) |
+  | 8 | 0.652 (0.794) | 0.681 (0.784) |
+
+- At the default `top_k` nothing is lost: all 150 recorded searches came back as
+  three whole passages. At 8, the hits' metadata takes about half the budget, so
+  fewer of the top hits fit whole and the rest get excerpts of about 50
+  characters; dense recall at 8 is below dense recall at 3. The `top_k`
+  description tells the model that more hits leave less of each.
+- Which words count, and which of equal windows wins, made no difference on the
+  dev split (substring against whole-word matching, earliest window against the
+  most matches in total); the rule takes whole words and the earliest window.
+- A default search's result grows from about 1600 to up to 3600 characters,
+  roughly 500 more prompt tokens in each later turn of that attempt.
+- `snippet` is gone, so a client that read it breaks. The agent passes results to
+  the model as JSON and reads no field of them; a contract test pins the new shape
+  through the real server, adapter and registry.
+- The source summary groups by full directory path: the public corpus has 31
+  directories, about 2000 characters of counts. A corpus with many more shows the
+  first that fit, and `prefix` narrows the list.
+
+Alternatives: a fourth tool to fetch a whole chunk is outside the roadmap's tool
+set, and whole passages at the default `top_k` remove most of the need for it.
+Equal excerpts for every hit give up the whole top passages, which hold most of the
+evidence. A budget that grows with `top_k` would also need a larger budget in the
+agent for every value. Dropping the hits that only get a short excerpt would return
+fewer hits than asked, though their source and section still say where to look.

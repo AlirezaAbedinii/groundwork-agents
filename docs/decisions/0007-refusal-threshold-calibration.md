@@ -71,3 +71,17 @@ recall 8.3 points less evidence than 3 hits of 300 in hybrid mode on the test sp
 - **Keeping 0.30 for hybrid because it did slightly better on test.** That would make
   the published test numbers a fit to the test split, the bias the split exists to
   prevent.
+
+## Addendum, 2026-11-16: the snippet size is no longer a choice
+
+The comparison of 3 hits of 300 characters with 5 of 150 settled a question that
+`search` no longer has: it now returns whole passages within a 3600-character
+result, then excerpts centred on the query's words ([ADR 0004](0004-mcp-as-the-seam.md),
+addendum of 2026-11-16). The report's section on it now gives evidence recall as
+`search` returns it for `top_k` 3, 5 and 8, computed from the same recorded searches
+with the server's own sizing code, and keeps the snippet columns beside it. The
+records and report were scored again from the run with the golden set it was
+collected against; every other number, and both thresholds, are unchanged. On the
+test split, `top_k` 3 now shows the agent as much evidence as the whole chunks
+hold: 0.691 in dense mode and 0.647 in hybrid, against 0.272 and 0.208 as
+300-character snippets.
