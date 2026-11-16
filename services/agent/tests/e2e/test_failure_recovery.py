@@ -65,7 +65,7 @@ def test_forced_failures_retry_then_escalate_without_corrupting_state(client):
     (s1,) = bundle["subtasks"]
     assert s1["status"] == "completed"
     assert s1["output"].startswith("HUMAN-RESEARCH")
-    assert bundle["final_output"].startswith("FINAL")
+    assert bundle["final_output"] == s1["output"]  # one subtask: its output is the deliverable
 
     # working memory cleared on completion — nothing leaks
     assert not get_working_memory().exists(task_id)

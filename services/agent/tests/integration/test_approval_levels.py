@@ -119,7 +119,7 @@ def test_double_failure_take_over_uses_human_output(client):
     (subtask,) = bundle["subtasks"]
     assert subtask["status"] == "completed"
     assert subtask["output"].startswith("HUMAN-RESEARCH")
-    assert bundle["final_output"].startswith("FINAL")
+    assert bundle["final_output"] == subtask["output"]  # one subtask: its output is the deliverable
 
 
 def test_sensitive_tool_call_pauses_then_runs_after_approval(client):

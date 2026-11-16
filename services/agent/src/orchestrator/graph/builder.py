@@ -585,6 +585,12 @@ def build_graph(
                 if result.get("status") == "completed"
             }
             set_attr(span, "inputs", sorted(outputs))
+            planned = (state.get("plan") or {}).get("subtasks") or []
+            if len(planned) == 1 and len(outputs) == 1:
+                # a one-subtask plan's reviewed output is the deliverable; rewriting it adds nothing
+                set_attr(span, "synthesized", False)
+                return {"final_output": next(iter(outputs.values()))}
+            set_attr(span, "synthesized", True)
             return {"final_output": await supervisor.synthesize(state["request"], outputs)}
 
     def final_gate(state: TaskState) -> dict:

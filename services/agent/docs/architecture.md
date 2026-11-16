@@ -200,7 +200,8 @@ approval row → `interrupt()`.
 6. **Review** — every deliverable is scored by the cross-provider reviewer;
    rejections loop back with feedback.
 7. **Synthesis & delivery** — the supervisor composes the final output from
-   completed subtasks; the optional final gate runs; the task completes.
+   completed subtasks (a one-subtask plan's reviewed output is the final output,
+   with no synthesis call); the optional final gate runs; the task completes.
 8. **Memory write-back** — an extraction pass distills the episode, facts,
    and preferences into long-term memory; the task's working memory is cleared.
 9. **Throughout** — every step emits spans (see

@@ -260,9 +260,9 @@ async def test_a_normal_run_is_unchanged_under_the_default_ceilings(tmp_path):
     with task_run_span(task_id):
         state = await graph.ainvoke(initial(task_id, "look it up"), {"configurable": {"thread_id": task_id}})
 
-    assert state["final_output"] == "DONE"
+    assert state["final_output"] == "RESEARCH-OK"  # one subtask: no synthesis call
     assert repo.tasks[task_id]["status"] == "completed"
-    assert llm.usage(task_id) == (4, 0)  # plan, research, review, synthesis
+    assert llm.usage(task_id) == (3, 0)  # plan, research, review
 
 
 @pytest.fixture()

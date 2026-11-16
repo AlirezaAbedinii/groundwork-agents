@@ -166,14 +166,14 @@ flowchart LR
 2. **Plan** — the supervisor first retrieves similar past episodes, domain facts, and user preferences from long-term memory and plans with them in context. It sees a table of each specialist's tools, read from the tool registry, and plans the fewest subtasks that do the work: one when a single specialist owns every tool needed. Each subtask names its tools and its dependencies, and the plan reports a confidence score. Plans come back as native structured output, are validated (unique ids, resolvable dependencies, no cycles) and linted (each tool exists and belongs to its subtask's specialist, four subtasks at most by default), and are retried once with the errors if either check fails ([ADR 0017](../../docs/decisions/0017-plans-from-the-tools-checked-before-they-run.md)).
 3. **Schedule & execute** — independent subtasks run in parallel; each specialist runs a bounded loop of native tool calls, calling only the tools it owns: the model can ask for several tools in one turn, they run in parallel, and a failing tool comes back to the model as an error it can act on. Outputs, intermediate results, and errors land in shared working memory as they happen.
 4. **Review** — every deliverable is scored 1–5 by a reviewer running on a *different model provider* than the specialist that produced it, so a shared provider blind spot can't rubber-stamp its own output. Rejections go back to the specialist with feedback (up to 2 rework cycles).
-5. **Escalate or synthesize** — low plan confidence, two failures on the same subtask, exhausted rework, a sensitive tool call, or a user-requested review pauses the run: the graph checkpoints, the full decision context lands in the approval queue, and the reviewer is notified. Execution resumes from the exact pause point with the human's decision. Otherwise the supervisor synthesizes the final deliverable from the completed subtasks.
+5. **Escalate or synthesize** — low plan confidence, two failures on the same subtask, exhausted rework, a sensitive tool call, or a user-requested review pauses the run: the graph checkpoints, the full decision context lands in the approval queue, and the reviewer is notified. Execution resumes from the exact pause point with the human's decision. Otherwise the supervisor synthesizes the final deliverable from the completed subtasks; a one-subtask plan's reviewed output is the deliverable as it stands.
 6. **Remember** — the finished task is distilled (what was asked, what approach worked, tools used, facts discovered, preferences observed) into long-term memory, and the task's working memory is cleared. This is how the system gets better at repeated kinds of work.
 
 ## Agent hierarchy
 
 | Agent | Role | Model |
 |---|---|---|
-| **Supervisor** | Decomposes the request into a plan; synthesizes the final deliverable | Strong model (`gpt-4o`) |
+| **Supervisor** | Plans from the specialists' tools; synthesizes the final deliverable when a plan has several subtasks | Strong model (`gpt-4o`) |
 | **Research** | Web research, source gathering | Cheaper model (`gpt-4o-mini`) |
 | **Analysis** | Data extraction and computation (SQL + code) | Cheaper model (`gpt-4o-mini`) |
 | **Writing** | Drafts, summaries, memos | Cheaper model (`gpt-4o-mini`) |

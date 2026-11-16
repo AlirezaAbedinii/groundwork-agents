@@ -12,6 +12,7 @@ from langgraph.types import Command
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
 from orchestrator.hitl.queue import InMemoryApprovalQueue
+from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
@@ -145,6 +146,36 @@ async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, 
     assert (results["s1"]["output"], results["s2"]["output"]) == ("5415, 45, 7500, 5400", "REPORT-OK")
 
 
+@pytest.mark.parametrize(("specialists", "final", "synthesis_calls"), [
+    pytest.param(["research"], "OUT-research", 0, id="one subtask: its output, no synthesis"),
+    pytest.param(["research", "analysis"], "DONE", 1, id="two subtasks: synthesized"),
+])
+async def test_only_a_plan_of_several_subtasks_is_synthesized(tmp_path, repo, specialists, final, synthesis_calls):
+    fx(tmp_path, "plan", "supervisor",
+       plan_text([subtask(f"s{n}", name, f"step {n}") for n, name in enumerate(specialists, 1)], 0.9),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    for name in specialists:
+        fx(tmp_path, name, name, f"OUT-{name}")
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+    asked: list[str] = []
+    mock = MockLLMClient(tmp_path)
+
+    async def recording_chat(agent, messages, **kwargs):
+        asked.append(render_messages(messages))
+        return await MockLLMClient.chat(mock, agent, messages, **kwargs)
+
+    mock.chat = recording_chat
+    graph = build_graph(llm=mock, registry=build_default_registry(InMemoryInvocationStore()), repo=repo,
+                        checkpointer=None, approvals=InMemoryApprovalQueue())
+    task_id = repo.create_task("do the steps")
+    state = await graph.ainvoke({"task_id": task_id, "request": "do the steps", "subtask_results": {},
+                                 "dispatch_log": []})
+
+    assert state["final_output"] == repo.tasks[task_id]["final_output"] == final
+    assert sum("Synthesize the final deliverable" in prompt for prompt in asked) == synthesis_calls
+
+
 def test_each_payload_of_a_wave_carries_the_request():
     from orchestrator.graph.edges import compute_wave
 
@@ -187,7 +218,7 @@ async def test_two_tool_calls_in_one_turn_run_as_one_batch(tmp_path, repo, monke
     assert sorted(record.arguments["query"] for record in searches) == [
         "Chroma vector database", "Qdrant vector database",
     ]
-    assert state["final_output"] == "DONE"
+    assert state["final_output"] == "BOTH-FOUND"  # one subtask: its output is the deliverable
 
 
 async def test_two_sensitive_calls_in_one_turn_get_one_approval_each(tmp_path, repo):
@@ -220,7 +251,7 @@ async def test_two_sensitive_calls_in_one_turn_get_one_approval_each(tmp_path, r
     finished = await graph.ainvoke(Command(resume={"action": "approve", "payload": {}, "notes": ""}), config)
 
     assert finished["subtask_results"]["s1"]["output"] == "BOTH-POSTED"
-    assert finished["final_output"] == "DONE"
+    assert finished["final_output"] == "BOTH-POSTED"
     assert repo.tasks[task_id]["status"] == "completed"
 
 
@@ -273,7 +304,7 @@ async def test_two_specialist_failures_pause_then_human_takes_over(tmp_path, rep
     assert finished["subtask_results"]["s1"]["status"] == "completed"
     assert finished["subtask_results"]["s1"]["output"] == "HUMAN-OUT"
     assert finished["subtask_results"]["s1"]["human_provided"] is True
-    assert finished["final_output"] == "DONE"
+    assert finished["final_output"] == "HUMAN-OUT"
     assert repo.tasks[task_id]["status"] == "completed"
     assert repo.subtasks[task_id]["s1"]["output"] == "HUMAN-OUT"
 
@@ -313,7 +344,7 @@ async def test_low_plan_confidence_pauses_then_approve_resumes(tmp_path, repo):
     assert not state.get("subtask_results")  # nothing executed while pending
 
     finished = await graph.ainvoke(Command(resume={"action": "approve", "payload": {}, "notes": "go"}), config)
-    assert finished["final_output"] == "DONE"
+    assert finished["final_output"] == "RESEARCH-OK"
     assert repo.tasks[task_id]["status"] == "completed"
 
 
@@ -354,7 +385,7 @@ async def test_notify_level_records_but_never_pauses(tmp_path, repo, monkeypatch
     task_id, state, graph, config = await run_until_pause(tmp_path, repo, "do something vague", queue)
 
     assert "__interrupt__" not in state  # proceeded without pausing
-    assert state["final_output"] == "DONE"
+    assert state["final_output"] == "RESEARCH-OK"
     assert queue.list(status="pending") == []
     (row,) = queue.list(status="notified")
     assert row["trigger"] == "low_plan_confidence"
@@ -555,7 +586,7 @@ async def test_decisions_at_the_attempt_cap(tmp_path, repo, action, payload, sta
         assert not state.get("final_output")
     if status == "completed":
         assert state["subtask_results"]["s1"]["output"] == "HUMAN-OUT"
-        assert state["final_output"] == "DONE"
+        assert state["final_output"] == "HUMAN-OUT"
 
 
 @pytest.mark.parametrize("trigger", ["low_review_score", "specialist_double_failure"])
