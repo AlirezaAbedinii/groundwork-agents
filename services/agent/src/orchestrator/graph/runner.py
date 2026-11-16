@@ -87,6 +87,7 @@ async def run_task(task_id: str) -> None:
         "request": bundle["request"],
         "user_id": bundle["user_id"],
         "require_human_review": bundle["require_human_review"],
+        "rules_version": bundle["rules_version"],
         "subtask_results": {},
         "dispatch_log": [],
     }

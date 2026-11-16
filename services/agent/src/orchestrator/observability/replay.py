@@ -13,7 +13,8 @@ after runs live (the regular client), so the execution genuinely diverges.
 The replacement is text only: at a specialist's tool-calling step it ends that
 specialist's tool loop, and the text becomes its output.
 Replays and forks run as new tasks (tasks.replay_of points at the original)
-with long-term memory disabled — a replay must not learn.
+with long-term memory disabled — a replay must not learn — and under the
+original's rules version (orchestrator/rules.py).
 """
 
 from __future__ import annotations
@@ -128,6 +129,7 @@ def create_replay_task(original_task_id: str, llm_call_id: str | None = None) ->
         user_id=original["user_id"],
         require_human_review=False,
         replay_of=original_task_id,
+        rules_version=original["rules_version"],  # a replay runs under its original's rules
     )
     return new_task_id, mode
 
@@ -184,6 +186,7 @@ async def run_replay(
                         "request": bundle["request"],
                         "user_id": bundle["user_id"],
                         "require_human_review": False,
+                        "rules_version": bundle["rules_version"],
                         "subtask_results": {},
                         "dispatch_log": [],
                     },

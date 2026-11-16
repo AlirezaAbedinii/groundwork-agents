@@ -16,6 +16,7 @@ from orchestrator.memory.retrieval import MEMORIES_MARKER
 from orchestrator.memory.working import WorkingMemory
 from orchestrator.planning.decomposer import PLAN_MARKER
 from orchestrator.tools.defaults import build_default_registry
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 REQUEST_A = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
@@ -61,7 +62,7 @@ async def test_second_similar_task_plans_with_retrieved_memory():
     async def run(task_id: str, request: str):
         return await graph.ainvoke(
             {"task_id": task_id, "request": request, "user_id": "default",
-             "subtask_results": {}, "dispatch_log": []}
+             "subtask_results": {}, "dispatch_log": [], "rules_version": CURRENT_RULES_VERSION}
         )
 
     # task A: no memories exist yet, so planning sees none

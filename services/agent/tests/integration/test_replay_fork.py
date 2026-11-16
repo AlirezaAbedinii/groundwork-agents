@@ -2,8 +2,12 @@
 with zero API calls; a fork at step k replays the prefix, applies the human
 modification, diverges afterwards, and the comparison shows exactly that."""
 
+import json
+from datetime import datetime, timedelta, timezone
+
 import sqlalchemy as sa
 
+from orchestrator.db.repo import DBLLMCallStore, DBTaskRepo
 from orchestrator.db.session import get_engine
 
 REQUEST = (
@@ -120,3 +124,61 @@ def test_fork_requires_matching_call_and_paired_fields(client):
 
     # compare on a non-replay task -> 400
     assert client.get(f"/replay/{original_id}/compare").status_code == 400
+
+
+# --- recordings from before rules versions ---------------------------------------
+
+LEGACY_REQUEST = "A request recorded before the plan lint existed."
+
+
+def _legacy_recording(subtask: dict, specialist_output: str) -> str:
+    """A task as recorded before rules versions: no version, a plan whose subtask has no
+    `tools` key, and a synthesis call although the plan has one subtask."""
+    repo = DBTaskRepo()
+    task_id = repo.create_task(LEGACY_REQUEST, rules_version=None)
+    plan = {"task_summary": "legacy", "subtasks": [subtask], "confidence": 0.9}
+    calls = [
+        ("supervisor", "Create an execution plan (the old prompt)", json.dumps(plan)),
+        (subtask["specialist"], "Subtask: (the old prompt)", specialist_output),
+        ("reviewer", "Review (the old prompt)", json.dumps({"score": 5, "feedback": "fine"})),
+        ("supervisor", "Synthesize the final deliverable (the old prompt)", "OLD-FINAL"),
+        ("memory", "Extract memories (a replay never makes this call)", "{}"),
+    ]
+    start = datetime.now(timezone.utc)
+    for n, (agent, prompt, response) in enumerate(calls):
+        DBLLMCallStore().record(task_id=task_id, agent=agent, model="gpt-4o-mini", prompt=prompt,
+                                response=response, tool_calls=[], created_at=start + timedelta(seconds=n))
+    repo.set_final_output(task_id, "OLD-FINAL")
+    return task_id
+
+
+def _legacy_subtask(specialist: str, description: str) -> dict:
+    return {"id": "s1", "description": description, "specialist": specialist, "required_inputs": [],
+            "expected_output_format": "plain text", "estimated_complexity": "low", "depends_on": []}
+
+
+def _replay(client, original_id: str) -> dict:
+    replay_id = client.post(f"/replay/{original_id}", json={}).json()["replay_task_id"]
+    return client.get(f"/tasks/{replay_id}").json()
+
+
+def test_a_recording_from_before_the_lint_replays_without_it(client):
+    # its research subtask names no tools, which the current lint would send back for a retry
+    original = _legacy_recording(_legacy_subtask("research", "Look up what the cache command removes"), "NOTES")
+    assert client.get(f"/tasks/{original}").json()["rules_version"] == 1
+
+    replay = _replay(client, original)
+
+    assert (replay["status"], replay["error"]) == ("completed", None)
+    assert replay["rules_version"] == 1
+    assert replay["final_output"] == "OLD-FINAL"
+
+
+def test_a_one_subtask_recording_from_before_versions_replays_its_synthesis(client):
+    original = _legacy_recording(_legacy_subtask("writing", "Write the release note"), "WRITER-OUTPUT")
+
+    replay = _replay(client, original)
+
+    assert (replay["status"], replay["error"]) == ("completed", None)
+    assert replay["final_output"] == "OLD-FINAL"  # not the writer's output
+

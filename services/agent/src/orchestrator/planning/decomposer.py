@@ -8,7 +8,9 @@ Pydantic can run (unique ids, known dependencies, no cycles), and the plan lint
 (every tool exists and belongs to its subtask's specialist, a tool-bound subtask
 names its tools, the plan is within the size limit). A plan that fails either is
 retried exactly once with the errors appended to the prompt. With
-``plan_lint="off"`` the lint's findings are reported but reject nothing.
+``plan_lint="off"`` the lint's findings are reported but reject nothing, and
+without ``lint_plans`` (the rules of a task from before the lint, orchestrator/rules.py)
+the lint does not run.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ from langchain_core.messages import HumanMessage
 from orchestrator.config import get_settings
 from orchestrator.llm.clients import LLMClient
 from orchestrator.llm.structured import StructuredOutputError
-from orchestrator.planning.capabilities import lint, manifest, render_manifest
+from orchestrator.planning.capabilities import check, manifest, render_manifest
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.registry import ToolRegistry
 
@@ -85,7 +87,7 @@ class Planned:
 
 
 async def decompose(
-    llm: LLMClient, request: str, registry: ToolRegistry, memories: str | None = None
+    llm: LLMClient, request: str, registry: ToolRegistry, memories: str | None = None, *, lint_plans: bool = True
 ) -> Planned:
     settings = get_settings()
     prompt = PLAN_PROMPT.format(
@@ -96,14 +98,15 @@ async def decompose(
     )
     if memories:
         prompt = f"{prompt}\n{memories}\n"
-    enforce = settings.plan_lint == "enforce"
     found: list[str] = []
 
     async def attempt(text: str) -> ExecutionPlan:
         plan = await _plan(llm, text)
-        errors = lint(plan, registry, settings.max_plan_subtasks)
+        if not lint_plans:
+            return plan
+        errors, rejected = check(plan, registry)
         found.extend(errors)
-        if errors and enforce:
+        if rejected:
             raise _LintFailure(errors)
         return plan
 

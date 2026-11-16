@@ -113,6 +113,7 @@ async def main() -> None:
     from orchestrator.graph.builder import build_graph
     from orchestrator.hitl.queue import InMemoryApprovalQueue
     from orchestrator.llm.clients import RealLLMClient
+    from orchestrator.rules import CURRENT_RULES_VERSION
     from orchestrator.tools.defaults import build_registry
 
     args.out.mkdir(parents=True, exist_ok=True)
@@ -144,6 +145,7 @@ async def main() -> None:
             "require_human_review": args.require_human_review,
             "subtask_results": {},
             "dispatch_log": [],
+            "rules_version": CURRENT_RULES_VERSION,
         },
         config=config,
     )

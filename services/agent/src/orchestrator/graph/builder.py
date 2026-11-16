@@ -59,6 +59,7 @@ from orchestrator.memory.retrieval import retrieve_for_planning
 from orchestrator.observability.tracing import TaskBudgetExceeded, child_span, node_span, set_attr
 from orchestrator.planning.decomposer import PlanValidationError
 from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.rules import rules_for
 from orchestrator.tools.base import ToolContext
 from orchestrator.tools.registry import ToolRegistry
 
@@ -182,15 +183,20 @@ def build_graph(
                 if retrieved is not None:
                     memories_block, retrieved_ids = retrieved.block, retrieved.ids
             set_attr(span, "memories_injected", len(retrieved_ids))
+            lint_plans = rules_for(state.get("rules_version")).lint_plans
             try:
-                planned = await supervisor.plan(state["request"], registry, memories=memories_block)
+                planned = await supervisor.plan(
+                    state["request"], registry, memories=memories_block, lint_plans=lint_plans
+                )
             except PlanValidationError as error:
-                set_attr(span, "lint_errors", error.lint_errors)
+                if lint_plans:
+                    set_attr(span, "lint_errors", error.lint_errors)
                 span.set_attribute("orchestrator.status", "failure")
                 repo.set_status(state["task_id"], "failed", error=str(error))
                 return {"plan": None, "plan_error": str(error)}
             plan = planned.plan
-            set_attr(span, "lint_errors", planned.lint_errors)
+            if lint_plans:
+                set_attr(span, "lint_errors", planned.lint_errors)
             repo.save_plan(state["task_id"], plan)
             working.set_plan(state["task_id"], plan.model_dump())
             set_attr(span, "confidence", plan.confidence)
@@ -586,7 +592,8 @@ def build_graph(
             }
             set_attr(span, "inputs", sorted(outputs))
             planned = (state.get("plan") or {}).get("subtasks") or []
-            if len(planned) == 1 and len(outputs) == 1:
+            single = rules_for(state.get("rules_version")).deliver_single_output
+            if single and len(planned) == 1 and len(outputs) == 1:
                 # a one-subtask plan's reviewed output is the deliverable; rewriting it adds nothing
                 set_attr(span, "synthesized", False)
                 return {"final_output": next(iter(outputs.values()))}

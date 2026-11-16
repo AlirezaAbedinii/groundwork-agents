@@ -1,0 +1,46 @@
+"""The control rules a task runs under, by version.
+
+Every task records the version of the rules it was created under (``tasks.rules_version``;
+NULL, for a task from before versions were recorded, is version 1). A replay or fork runs
+under its original's version, and a resumed run under the version in its graph state, so
+a past run is re-run under the rules it ran with. Code reads the switches that
+``rules_for`` returns and never compares version numbers.
+
+A version changes only what decides which model calls happen or what is delivered. A
+change to prompt text needs no new version: a replay serves a recorded call whose prompt
+has drifted by its order among the agent's calls (observability/replay.py).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+CURRENT_RULES_VERSION = 2
+
+
+@dataclass(frozen=True)
+class Rules:
+    # The plan lint (planning/capabilities.py) checks the planner's plan and a plan a
+    # human modified; PLAN_LINT decides whether its findings reject the plan.
+    lint_plans: bool
+    # A one-subtask plan's reviewed output is the deliverable, with no synthesis call.
+    deliver_single_output: bool
+
+
+_SWITCHES = {
+    1: Rules(lint_plans=False, deliver_single_output=False),  # before ADR 0017
+    2: Rules(lint_plans=True, deliver_single_output=True),  # ADR 0017
+}
+
+
+def effective_version(stored: int | None) -> int:
+    """The version a task runs under: ``stored``, or 1 when none was recorded."""
+    return 1 if stored is None else stored
+
+
+def rules_for(version: int | None) -> Rules:
+    """The switches for ``version`` (None is version 1)."""
+    try:
+        return _SWITCHES[effective_version(version)]
+    except KeyError:
+        raise ValueError(f"Unknown rules version {version}; this build knows {sorted(_SWITCHES)}") from None

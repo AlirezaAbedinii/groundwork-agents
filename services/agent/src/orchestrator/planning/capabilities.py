@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from orchestrator.config import get_settings
 from orchestrator.llm.router import SPECIALISTS
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools.base import ToolSpec
@@ -103,3 +104,10 @@ def lint(plan: ExecutionPlan, registry: ToolRegistry, max_subtasks: int) -> list
                     "give this subtask to a specialist that owns all of its tools."
                 )
     return errors
+
+
+def check(plan: ExecutionPlan, registry: ToolRegistry) -> tuple[list[str], bool]:
+    """The lint's findings under ``MAX_PLAN_SUBTASKS``, and whether ``PLAN_LINT`` makes them reject the plan."""
+    settings = get_settings()
+    errors = lint(plan, registry, settings.max_plan_subtasks)
+    return errors, bool(errors) and settings.plan_lint == "enforce"

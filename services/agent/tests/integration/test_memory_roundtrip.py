@@ -9,6 +9,7 @@ from orchestrator.db.repo import DBTaskRepo, MemoryEventStore
 from orchestrator.graph.runner import production_graph
 from orchestrator.memory.longterm import LongTermMemory
 from orchestrator.memory.working import WorkingMemory
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 REQUEST = (
     "Compare open-source vector databases: gather facts about Chroma from the web, "
@@ -32,7 +33,7 @@ async def test_working_memory_lifecycle_and_extraction():
                 "request": REQUEST,
                 "user_id": "default",
                 "subtask_results": {},
-                "dispatch_log": [],
+                "dispatch_log": [], "rules_version": CURRENT_RULES_VERSION,
             },
             {"configurable": {"thread_id": task_id}},
             stream_mode="updates",

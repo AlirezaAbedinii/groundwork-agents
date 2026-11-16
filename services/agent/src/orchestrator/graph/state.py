@@ -19,6 +19,7 @@ def merge_results(left: dict | None, right: dict | None) -> dict:
 class TaskState(TypedDict, total=False):
     task_id: str
     request: str
+    rules_version: int  # orchestrator/rules.py; absent (a checkpoint from before versions) is version 1
     user_id: str
     require_human_review: bool
     plan: dict | None

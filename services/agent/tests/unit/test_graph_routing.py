@@ -16,6 +16,7 @@ from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 pytestmark = pytest.mark.anyio
 
@@ -77,7 +78,8 @@ async def run(tmp_path, repo, request_text: str, store: InMemoryInvocationStore 
     )
     task_id = repo.create_task(request_text)
     return task_id, await graph.ainvoke(
-        {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": []}
+        {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": [],
+         "rules_version": CURRENT_RULES_VERSION}
     )
 
 
@@ -97,7 +99,8 @@ async def run_until_pause(tmp_path, repo, request_text: str, queue, checkpointer
     task_id = repo.create_task(request_text)
     config = {"configurable": {"thread_id": task_id}}
     state = await graph.ainvoke(
-        {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": []},
+        {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": [],
+         "rules_version": CURRENT_RULES_VERSION},
         config,
     )
     return task_id, state, graph, config
@@ -170,10 +173,51 @@ async def test_only_a_plan_of_several_subtasks_is_synthesized(tmp_path, repo, sp
                         checkpointer=None, approvals=InMemoryApprovalQueue())
     task_id = repo.create_task("do the steps")
     state = await graph.ainvoke({"task_id": task_id, "request": "do the steps", "subtask_results": {},
-                                 "dispatch_log": []})
+                                 "dispatch_log": [], "rules_version": CURRENT_RULES_VERSION})
 
     assert state["final_output"] == repo.tasks[task_id]["final_output"] == final
     assert sum("Synthesize the final deliverable" in prompt for prompt in asked) == synthesis_calls
+
+
+async def test_under_version_1_a_plan_is_not_linted_and_one_subtask_is_synthesized(tmp_path, repo):
+    # the rules of a task from before the lint: this plan would fail it (research lists no tools)
+    tool_less = {**subtask("s1", "research", "look it up"), "tools": []}
+    fx(tmp_path, "plan", "supervisor", plan_text([tool_less], 0.9), match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "OLD-FINAL", match=["Synthesize the final deliverable"])
+    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+    graph = build_graph(llm=MockLLMClient(tmp_path), registry=build_default_registry(InMemoryInvocationStore()),
+                        repo=repo, checkpointer=None, approvals=InMemoryApprovalQueue())
+    task_id = repo.create_task("look it up", rules_version=1)
+
+    state = await graph.ainvoke({"task_id": task_id, "request": "look it up", "subtask_results": {},
+                                 "dispatch_log": [], "rules_version": 1})
+
+    assert state["subtask_results"]["s1"]["status"] == "completed"
+    assert state["final_output"] == "OLD-FINAL"
+
+
+@pytest.mark.parametrize(("in_state", "final"), [
+    pytest.param({}, "DONE", id="a checkpoint from before versions: version 1, synthesized"),
+    pytest.param({"rules_version": CURRENT_RULES_VERSION}, "RESEARCH-OK", id="current: delivered as reviewed"),
+])
+async def test_a_resumed_run_takes_its_rules_from_its_graph_state(tmp_path, repo, in_state, final):
+    fx(tmp_path, "plan", "supervisor", plan_text([subtask("s1", "research", "vague thing")], 0.3),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+    queue = InMemoryApprovalQueue()
+    graph = build(tmp_path, repo, queue, MemorySaver())
+    task_id = repo.create_task("do something vague")
+    config = {"configurable": {"thread_id": task_id}}
+    paused = await graph.ainvoke({"task_id": task_id, "request": "do something vague", "subtask_results": {},
+                                  "dispatch_log": [], **in_state}, config)
+    assert "__interrupt__" in paused  # low plan confidence
+
+    finished = await decide(graph, config, queue)
+
+    assert finished["final_output"] == final
 
 
 def test_each_payload_of_a_wave_carries_the_request():

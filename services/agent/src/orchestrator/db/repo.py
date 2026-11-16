@@ -21,6 +21,7 @@ from orchestrator.db.models import (
 )
 from orchestrator.db.session import get_sessionmaker
 from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.rules import CURRENT_RULES_VERSION, effective_version
 from orchestrator.tools.base import InvocationRecord
 
 
@@ -175,6 +176,7 @@ class DBTaskRepo:
         user_id: str = "default",
         require_human_review: bool = False,
         replay_of: str | None = None,
+        rules_version: int | None = CURRENT_RULES_VERSION,
     ) -> str:
         with self._sessions() as session, session.begin():
             task = Task(
@@ -182,6 +184,7 @@ class DBTaskRepo:
                 user_id=user_id,
                 require_human_review=require_human_review,
                 replay_of=replay_of,
+                rules_version=rules_version,
             )
             session.add(task)
             session.flush()
@@ -287,6 +290,7 @@ class DBTaskRepo:
                 "status": task.status,
                 "require_human_review": task.require_human_review,
                 "replay_of": task.replay_of,
+                "rules_version": effective_version(task.rules_version),
                 "plan": plan.raw if plan is not None else None,
                 "confidence": plan.confidence if plan is not None else None,
                 "subtasks": subtasks,
@@ -303,7 +307,13 @@ class InMemoryTaskRepo:
         self.plans: dict[str, list[dict]] = {}
         self.subtasks: dict[str, dict[str, dict]] = {}
 
-    def create_task(self, request: str, user_id: str = "default", require_human_review: bool = False) -> str:
+    def create_task(
+        self,
+        request: str,
+        user_id: str = "default",
+        require_human_review: bool = False,
+        rules_version: int | None = CURRENT_RULES_VERSION,
+    ) -> str:
         task_id = f"task-{len(self.tasks) + 1}"
         self.tasks[task_id] = {
             "task_id": task_id,
@@ -311,6 +321,7 @@ class InMemoryTaskRepo:
             "user_id": user_id,
             "status": "pending",
             "require_human_review": require_human_review,
+            "rules_version": effective_version(rules_version),
             "final_output": None,
             "error": None,
         }

@@ -18,6 +18,7 @@ from orchestrator.memory import working
 from orchestrator.memory.working import InMemoryWorkingMemory
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 
 def test_plan_roundtrip_and_user():
@@ -137,7 +138,8 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
     )
     task_id = repo.create_task("look up A and summarize", user_id="alice")
     await graph.ainvoke({"task_id": task_id, "request": "look up A and summarize",
-                         "user_id": "alice", "subtask_results": {}, "dispatch_log": []})
+                         "user_id": "alice", "subtask_results": {}, "dispatch_log": [],
+                         "rules_version": CURRENT_RULES_VERSION})
 
     assert ("start", task_id, "alice") in memory.calls
     assert ("set_plan", task_id) in memory.calls

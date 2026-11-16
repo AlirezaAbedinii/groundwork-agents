@@ -22,6 +22,7 @@ from orchestrator.llm.pricing import cost_usd
 from orchestrator.observability.tracing import TaskBudgetExceeded, TracedLLMClient, task_run_span
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
+from orchestrator.rules import CURRENT_RULES_VERSION
 
 pytestmark = pytest.mark.anyio
 
@@ -222,7 +223,8 @@ def graph_for(llm, repo, queue, checkpointer=None):
 
 
 def initial(task_id: str, request: str) -> dict:
-    return {"task_id": task_id, "request": request, "subtask_results": {}, "dispatch_log": []}
+    return {"task_id": task_id, "request": request, "subtask_results": {}, "dispatch_log": [],
+            "rules_version": CURRENT_RULES_VERSION}
 
 
 async def test_a_specialist_that_never_stops_ends_the_task_at_the_ceiling_not_the_attempt_cap(tmp_path, monkeypatch):

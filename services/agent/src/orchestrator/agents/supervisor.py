@@ -25,9 +25,11 @@ Write the final deliverable for the user. Respond with the deliverable text only
 class Supervisor(BaseAgent):
     name = "supervisor"
 
-    async def plan(self, request: str, registry: ToolRegistry, memories: str | None = None) -> Planned:
+    async def plan(
+        self, request: str, registry: ToolRegistry, memories: str | None = None, *, lint_plans: bool = True
+    ) -> Planned:
         """A plan for ``request`` from the tools in ``registry``, with what the lint found."""
-        return await decompose(self.llm, request, registry, memories=memories)
+        return await decompose(self.llm, request, registry, memories=memories, lint_plans=lint_plans)
 
     async def synthesize(self, request: str, outputs: dict[str, str]) -> str:
         rendered = "\n".join(f"[{sid}]\n{text}\n" for sid, text in sorted(outputs.items()))
