@@ -188,7 +188,7 @@ Every agent is a typed LangGraph node — Pydantic models in, Pydantic models ou
 |---|---|---|---|
 | `web_search` | Web search | research | Tavily if configured, DuckDuckGo fallback otherwise |
 | `file_read` / `file_write` | Read/write within the task's workspace | analysis, writing, code | Path traversal outside the workspace is rejected |
-| `code_exec` | Run a Python snippet | analysis, code | Sandboxed: no network, capped CPU/memory/pids/time |
+| `code_exec` | Run a Python snippet | analysis, code | Sandboxed: no network, capped CPU/memory/pids/time; the result says whether the exit code was 0 and notes code that printed nothing |
 | `db_query` | Read-only SQL | analysis | `SELECT`/`WITH` only, single statement, read-only transaction; the description lists the `demo` tables and columns, and unqualified names resolve to `demo` |
 | `api_call` | Call an allowlisted HTTP API | research | `POST` is flagged sensitive |
 | `rag_search` / `rag_ask` / `rag_list_sources` | Search and question answering over the team's indexed documents | research | From the retrieval service's MCP server when `MCP_RAG_URL` is set; 10 / 5 / 3 calls per task |

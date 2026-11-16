@@ -2,7 +2,7 @@ import pytest
 
 from orchestrator.tools.api_call import ApiCallInput, SPEC as API_SPEC, handle as api_handle
 from orchestrator.tools.base import ToolContext, ToolExecutionError
-from orchestrator.tools.code_exec import CodeExecInput, handle as code_handle
+from orchestrator.tools.code_exec import NOTHING_PRINTED, CodeExecInput, handle as code_handle
 from orchestrator.tools.db_query import STATIC_DESCRIPTION, DbQueryInput, describe, handle as db_handle
 from orchestrator.tools.file_io import (
     FileReadInput,
@@ -39,6 +39,26 @@ def test_code_exec_subprocess_runs_python(ctx):
     result = code_handle(CodeExecInput(code="print(6 * 7)"), ctx)
     assert result.exit_code == 0
     assert result.stdout.strip() == "42"
+
+
+def test_code_exec_reports_success_and_says_nothing_when_output_was_printed(ctx):
+    result = code_handle(CodeExecInput(code="print(6 * 7)"), ctx)
+    assert result.ok is True
+    assert result.note is None
+
+
+def test_code_exec_notes_code_that_ran_and_printed_nothing(ctx):
+    result = code_handle(CodeExecInput(code="def answer():\n    return 42\n"), ctx)
+    assert (result.exit_code, result.ok, result.stdout, result.stderr) == (0, True, "", "")
+    assert result.note == NOTHING_PRINTED
+
+
+def test_code_exec_reports_a_non_zero_exit_as_not_ok(ctx):
+    result = code_handle(CodeExecInput(code="raise ValueError('bad input')"), ctx)
+    assert result.exit_code != 0
+    assert result.ok is False
+    assert "bad input" in result.stderr
+    assert result.note is None  # it printed a traceback
 
 
 def test_code_exec_times_out(ctx):

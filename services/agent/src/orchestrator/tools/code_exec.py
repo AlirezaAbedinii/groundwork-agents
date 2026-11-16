@@ -20,6 +20,8 @@ from orchestrator.config import get_settings
 from orchestrator.tools.base import ToolContext, ToolExecutionError, ToolSpec
 
 _TRUNCATE = 10_000
+# Code that only defines things exits 0 with nothing to read; the model is told why.
+NOTHING_PRINTED = "The code ran and printed nothing. Print the values you need."
 
 
 class CodeExecInput(BaseModel):
@@ -31,6 +33,8 @@ class CodeExecOutput(BaseModel):
     stdout: str
     stderr: str
     exit_code: int
+    ok: bool  # exit_code == 0; the call itself succeeds either way
+    note: str | None = None
 
 
 def _run(command: list[str], code: str, timeout: int, cwd=None) -> CodeExecOutput:
@@ -43,7 +47,11 @@ def _run(command: list[str], code: str, timeout: int, cwd=None) -> CodeExecOutpu
     except FileNotFoundError as exc:
         raise ToolExecutionError(f"Execution backend unavailable: {exc}") from exc
     return CodeExecOutput(
-        stdout=proc.stdout[:_TRUNCATE], stderr=proc.stderr[:_TRUNCATE], exit_code=proc.returncode
+        stdout=proc.stdout[:_TRUNCATE],
+        stderr=proc.stderr[:_TRUNCATE],
+        exit_code=proc.returncode,
+        ok=proc.returncode == 0,
+        note=None if proc.stdout or proc.stderr else NOTHING_PRINTED,
     )
 
 
