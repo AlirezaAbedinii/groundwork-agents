@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -62,8 +63,12 @@ from textnorm import covered_items
 TOP_K = 10
 TOP_K_ASK = 5
 MODES = ("dense", "hybrid")
-# MCP `search` cuts each hit to its first SNIPPET_CHARS characters; the snippet-size
-# question is 3 hits of 300 chars against 5 hits of 150 (mcp/tool_models.py).
+# MCP `search` returns whole passages while its result fits a budget, then excerpts.
+# Each retrieval record says what every hit covers as `search` returns it for these
+# top_k (its largest is the most `search` takes), sized by the server's own code.
+SEARCH_TOP_KS = (3, 5, 8)
+# The snippets `search` returned before: each hit's first 300 characters, compared
+# with 150 characters for 5 hits.
 SNIPPETS = ((3, 300), (5, 150))
 RECALL_KS = (1, 3, 5, 10)
 # What one /v1/ask can cost at most, reserved against the cap before the call: a
@@ -80,6 +85,21 @@ NO_ANSWER_KINDS = ("near-miss", "knows-elsewhere", "out-of-scope")
 
 
 # --- shared -------------------------------------------------------------------------
+
+
+def _load_search_sizing() -> Any:
+    """mcp/tool_models.py, where `search` sizes its result; loaded by path, since the
+    mcp/ project is not a package. Measuring with the server's code keeps the table to
+    exactly what an agent is sent."""
+    path = Path(__file__).resolve().parents[1] / "mcp" / "tool_models.py"
+    spec = importlib.util.spec_from_file_location("mcp_tool_models", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # pydantic resolves the models' types through it
+    spec.loader.exec_module(module)
+    return module
+
+
+search_sizing = _load_search_sizing()
 
 
 def load_golden(path: Path) -> list[GoldenQuestion]:
@@ -336,6 +356,11 @@ def collect_answers(
 
 
 def _retrieval_record(q: GoldenQuestion, mode: str, raw: dict) -> dict:
+    # The hits as `search` returns them with each top_k; the search was this question.
+    returned = {
+        k: search_sizing.fit_hits(q.question, mode, raw["hits"][:k])["hits"]
+        for k in SEARCH_TOP_KS
+    }
     hits = [
         {
             "source": h["source_file"],
@@ -345,8 +370,13 @@ def _retrieval_record(q: GoldenQuestion, mode: str, raw: dict) -> dict:
                 f"covered_{chars}": sorted(covered_items(h["text"][:chars], q.evidence))
                 for _, chars in SNIPPETS
             },
+            **{
+                f"covered_search{k}": sorted(covered_items(shown[rank]["text"], q.evidence))
+                for k, shown in returned.items()
+                if rank < len(shown)
+            },
         }
-        for h in raw["hits"]
+        for rank, h in enumerate(raw["hits"])
     ]
     return {
         "record": "retrieval",
@@ -490,6 +520,20 @@ def snippet_scores(records: list[dict]) -> dict:
         ]
         out[f"R@{k} full"] = _mean(full)
         out[f"R@{k} {chars} chars"] = _mean(cut)
+    for k in SEARCH_TOP_KS:
+        field = f"covered_search{k}"
+        full = [metrics.recall_at_k(_ranked(r), r["n_items"], k) for r in records]
+        out.setdefault(f"R@{k} full", _mean(full))
+        # Records written before the field existed have it on no hit: no value. A hit
+        # without it in newer records is one `search` left out, so it shows nothing.
+        returned = [
+            metrics.recall_at_k(
+                [frozenset(hit.get(field, ())) for hit in r["hits"]], r["n_items"], k
+            )
+            for r in records
+        ]
+        known = any(field in hit for r in records for hit in r["hits"])
+        out[f"R@{k} as returned"] = _mean(returned) if known else None
     return out
 
 

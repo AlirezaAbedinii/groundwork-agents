@@ -253,8 +253,10 @@ beats dense (on the local MiniLM embeddings it led clearly): the reranker's edge
 exact tokens is matched by the stronger embeddings. Ambiguous questions score 0/6 in
 both modes, because the generation prompt never asks the model to name the readings.
 Hybrid's threshold sits on the steep end of the reranker's scores, so several
-answerable questions just under it are refused. MCP `search` keeps 3 hits of 300
-characters: 5 of 150 lost 8 points of recall.
+answerable questions just under it are refused. MCP `search` kept 3 hits of 300
+characters, since 5 of 150 lost 8 points of recall; it now returns whole passages
+within a budget, and at `top_k` 3 it shows as much evidence as whole chunks on the
+test split.
 
 ## Limits
 

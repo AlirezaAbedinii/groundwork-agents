@@ -1229,9 +1229,13 @@
         },
         "snippets": {
           "R@3 300 chars": 0.272059,
+          "R@3 as returned": 0.691176,
           "R@3 full": 0.691176,
           "R@5 150 chars": 0.120098,
+          "R@5 as returned": 0.730392,
           "R@5 full": 0.740196,
+          "R@8 as returned": 0.651961,
+          "R@8 full": 0.794118,
           "n": 34
         }
       },
@@ -1890,9 +1894,13 @@
         },
         "snippets": {
           "R@3 300 chars": 0.208333,
+          "R@3 as returned": 0.647059,
           "R@3 full": 0.647059,
           "R@5 150 chars": 0.125,
+          "R@5 as returned": 0.671569,
           "R@5 full": 0.72549,
+          "R@8 as returned": 0.681373,
+          "R@8 full": 0.784314,
           "n": 34
         }
       }

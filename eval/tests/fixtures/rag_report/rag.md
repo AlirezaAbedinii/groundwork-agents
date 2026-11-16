@@ -52,16 +52,27 @@ Synthetic questions were drafted from one chunk and share its wording, which fla
 | hybrid | dev | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
 | hybrid | test | 2 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
 
-## Snippet size for MCP search
+## What MCP search returns to an agent
 
-MCP `search` gives an agent each hit cut to its first characters. Evidence recall on the test split (2 answerable questions) with whole chunks and with the snippets an agent sees:
+MCP `search` returns whole passages, best first, while its result stays within 3600 characters, then for the remaining hits the lines that best match the query. Evidence recall on the test split (2 answerable questions) with whole chunks and as `search` returns them, for `top_k` 3, 5 and 8 (the most it takes), from the recorded hits sized by the server's own code:
 
-| mode | n | R@3 full | R@3 300 chars | R@5 full | R@5 150 chars |
-|---|---|---|---|---|---|
-| dense | 2 | 1.000 | 1.000 | 1.000 | 0.500 |
-| hybrid | 2 | 1.000 | 1.000 | 1.000 | 0.500 |
+| mode | n | R@3 full | R@3 as returned | R@5 full | R@5 as returned | R@8 full | R@8 as returned |
+|---|---|---|---|---|---|---|---|
+| dense | 2 | 1.000 | n/a | 1.000 | n/a | 1.000 | n/a |
+| hybrid | 2 | 1.000 | n/a | 1.000 | n/a | 1.000 | n/a |
 
-Rule: switch MCP from 3 hits of 300 characters to 5 of 150 only if that raises hybrid recall by at least 5 points. Here 5 × 150 is -50.0 points: **keep 3 × 300**.
+Every hit shares the one budget, so the more hits, the shorter the excerpts after the whole ones.
+
+These records were written before they held what `search` returns (n/a); scoring the run again fills those columns.
+
+Before, `search` cut each hit to its first characters. The snippets it compared:
+
+| mode | n | R@3 300 chars | R@5 150 chars |
+|---|---|---|---|
+| dense | 2 | 1.000 | 0.500 |
+| hybrid | 2 | 1.000 | 0.500 |
+
+The rule was to switch from 3 hits of 300 characters to 5 of 150 only if that raised hybrid recall by at least 5 points. 5 × 150 was -50.0 points, so `search` kept **3 × 300** until it returned whole passages.
 
 ## Refusal gate
 

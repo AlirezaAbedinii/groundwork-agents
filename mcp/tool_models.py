@@ -8,9 +8,10 @@ loop shows the model at most 4000 characters of each retrieval tool's JSON
 RESULT_BUDGET_CHARS, which leaves room for that, so they arrive whole; ``ask``
 leaves out the contexts its answer came from.
 
-``fit_hits`` and ``fit_sources`` do the sizing; they take and return plain dicts.
-Sizes are characters of ``json.dumps`` output with its defaults, as the agent loop
-counts them: each non-ASCII character is six.
+``fit_hits`` and ``fit_sources`` do the sizing. They take and return plain dicts,
+so the retrieval evaluation (eval/rag_eval.py) loads this module and measures
+exactly what an agent is sent. Sizes are characters of ``json.dumps`` output with
+its defaults, as the agent loop counts them: each non-ASCII character is six.
 """
 
 import json

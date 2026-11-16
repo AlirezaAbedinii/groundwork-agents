@@ -133,33 +133,53 @@ def _retrieval_section(header: dict, scores: dict, modes: list[str]) -> list[str
 
 
 def _snippet_section(scores: dict, modes: list[str]) -> list[str]:
-    cols = ["R@3 full", "R@3 300 chars", "R@5 full", "R@5 150 chars"]
-    n = scores[modes[0]]["snippets"]["n"] if modes else 0
+    snippets = {m: scores[m]["snippets"] for m in modes}
+    n = snippets[modes[0]]["n"] if modes else 0
+    ks = (3, 5, 8)
+    cols = [col for k in ks for col in (f"R@{k} full", f"R@{k} as returned")]
     lines = [
         "",
-        "## Snippet size for MCP search",
+        "## What MCP search returns to an agent",
         "",
-        "MCP `search` gives an agent each hit cut to its first characters. Evidence recall "
-        f"on the test split ({n} answerable questions) with whole chunks and with the "
-        "snippets an agent sees:",
+        "MCP `search` returns whole passages, best first, while its result stays within "
+        "3600 characters, then for the remaining hits the lines that best match the query. "
+        f"Evidence recall on the test split ({n} answerable questions) with whole chunks and "
+        "as `search` returns them, for `top_k` 3, 5 and 8 (the most it takes), from the "
+        "recorded hits sized by the server's own code:",
         "",
         *_table(
             ["mode", "n", *cols],
-            [
-                [m, str(scores[m]["snippets"]["n"]), *(_f(scores[m]["snippets"][c]) for c in cols)]
-                for m in modes
-            ],
+            [[m, str(snippets[m]["n"]), *(_f(snippets[m].get(c)) for c in cols)] for m in modes],
         ),
+        "",
+        "Every hit shares the one budget, so the more hits, the shorter the excerpts after "
+        "the whole ones.",
     ]
-    hybrid = scores.get("hybrid", {}).get("snippets", {})
-    if hybrid.get("R@5 150 chars") is not None and hybrid.get("R@3 300 chars") is not None:
-        gain = 100 * (hybrid["R@5 150 chars"] - hybrid["R@3 300 chars"])
-        verdict = "switch to 5 × 150" if gain >= 5 else "keep 3 × 300"
+    if any(snippets[m].get("R@3 as returned") is None for m in modes):
         lines += [
             "",
-            "Rule: switch MCP from 3 hits of 300 characters to 5 of 150 only if that raises "
-            f"hybrid recall by at least 5 points. Here 5 × 150 is {gain:+.1f} points: "
-            f"**{verdict}**.",
+            "These records were written before they held what `search` returns (n/a); "
+            "scoring the run again fills those columns.",
+        ]
+    old = ["R@3 300 chars", "R@5 150 chars"]
+    lines += [
+        "",
+        "Before, `search` cut each hit to its first characters. The snippets it compared:",
+        "",
+        *_table(
+            ["mode", "n", *old],
+            [[m, str(snippets[m]["n"]), *(_f(snippets[m][c]) for c in old)] for m in modes],
+        ),
+    ]
+    hybrid = snippets.get("hybrid", {})
+    if hybrid.get("R@5 150 chars") is not None and hybrid.get("R@3 300 chars") is not None:
+        gain = 100 * (hybrid["R@5 150 chars"] - hybrid["R@3 300 chars"])
+        verdict = "5 × 150" if gain >= 5 else "3 × 300"
+        lines += [
+            "",
+            "The rule was to switch from 3 hits of 300 characters to 5 of 150 only if that "
+            f"raised hybrid recall by at least 5 points. 5 × 150 was {gain:+.1f} points, so "
+            f"`search` kept **{verdict}** until it returned whole passages.",
         ]
     return lines
 

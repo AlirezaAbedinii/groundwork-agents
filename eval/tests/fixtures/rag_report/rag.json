@@ -696,9 +696,13 @@
         },
         "snippets": {
           "R@3 300 chars": 1.0,
+          "R@3 as returned": null,
           "R@3 full": 1.0,
           "R@5 150 chars": 0.5,
+          "R@5 as returned": null,
           "R@5 full": 1.0,
+          "R@8 as returned": null,
+          "R@8 full": 1.0,
           "n": 2
         }
       },
@@ -922,9 +926,13 @@
         },
         "snippets": {
           "R@3 300 chars": 1.0,
+          "R@3 as returned": null,
           "R@3 full": 1.0,
           "R@5 150 chars": 0.5,
+          "R@5 as returned": null,
           "R@5 full": 1.0,
+          "R@8 as returned": null,
+          "R@8 full": 1.0,
           "n": 2
         }
       }

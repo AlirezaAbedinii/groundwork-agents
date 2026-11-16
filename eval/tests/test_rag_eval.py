@@ -6,7 +6,8 @@ the judge's verdicts are scripted by answer text, so every number below can be w
 out by hand. The committed fixture under ``tests/fixtures/rag_report/`` is that run's
 records file (both stages, two human grades) and the report scored from it;
 ``python -m rag_eval score --records tests/fixtures/rag_report/rag-records.jsonl``
-rewrites the report files in place.
+rewrites the report files in place. Its records predate the fields that say what MCP
+``search`` returns, so it also checks that older records still score.
 """
 
 import json
@@ -338,6 +339,8 @@ def test_records_say_which_items_each_hit_covers_in_full_and_as_snippets(tmp_pat
     assert s002["hits"][0]["covered"] == [0]
     assert s002["hits"][0]["covered_300"] == [0]
     assert s002["hits"][0]["covered_150"] == []  # the quote starts past character 150
+    # Short hits: `search` returns them whole for every top_k.
+    assert [s002["hits"][0][f"covered_search{k}"] for k in (3, 5, 8)] == [[0], [0], [0]]
     q003 = next(r for r in rows if r["id"] == "q003" and r["mode"] == "hybrid")
     assert (q003["n_items"], q003["top_score"]) == (0, 0.10)
 
@@ -368,6 +371,49 @@ def test_the_snippet_check_cuts_hits_like_mcp(tmp_path, golden):
     assert snippets["n"] == 2
     assert snippets["R@3 full"] == snippets["R@3 300 chars"] == pytest.approx(1.0)
     assert snippets["R@5 150 chars"] == pytest.approx(0.5)  # s002's quote is cut off
+    for k in (3, 5, 8):
+        assert snippets[f"R@{k} as returned"] == snippets[f"R@{k} full"] == pytest.approx(1.0)
+
+
+FILLER = "Some words about projects.\n" * 40  # no word of "Which file holds the lock?"
+
+
+def test_records_measure_the_hits_with_the_servers_own_sizing():
+    assert Path(rag_eval.search_sizing.__file__).parts[-2:] == ("mcp", "tool_models.py")
+    question = next(row for row in GOLDEN if row.id == "s002")  # "Which file holds the lock?"
+    raw_hits = [
+        {
+            "chunk_id": f"c{n}",
+            "text": FILLER + (f"In short, {QUOTE_E} in the root.\n" if n == 3 else "") + FILLER,
+            "score": 1 - n / 10,
+            "source_file": "tool/x.md",
+            "section_heading": "",
+        }
+        for n in range(8)
+    ]
+
+    raw = {"hits": raw_hits, "timings_ms": {"total_ms": 12.5}}
+
+    record = rag_eval._retrieval_record(question, "dense", raw)
+
+    quoted = record["hits"][3]
+    assert quoted["covered"] == [0] and quoted["covered_300"] == []  # past character 300
+    # Fourth of five: an excerpt, centred on the line with the question's words.
+    assert quoted["covered_search5"] == [0]
+    assert "covered_search3" not in quoted  # a top_k=3 search doesn't return it
+    for k in (3, 5, 8):
+        shown = rag_eval.search_sizing.fit_hits(question.question, "dense", raw_hits[:k])
+        assert len(json.dumps(shown)) <= rag_eval.search_sizing.RESULT_BUDGET_CHARS
+        assert [f"covered_search{k}" in hit for hit in record["hits"]] == [n < k for n in range(8)]
+
+
+def test_older_records_score_with_no_as_returned_values():
+    records = rag_eval.read_jsonl(FIXTURE / "rag-records.jsonl")
+
+    snippets = rag_eval.score_records(records)["retrieval"]["hybrid"]["snippets"]
+
+    assert [snippets[f"R@{k} as returned"] for k in (3, 5, 8)] == [None, None, None]
+    assert snippets["R@8 full"] == pytest.approx(1.0)
 
 
 def test_refusal_thresholds_are_chosen_on_dev_and_measured_on_test(tmp_path, golden):

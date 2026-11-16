@@ -26,12 +26,17 @@ results to 3600 (`tool_models.py`), so they arrive whole:
   window of consecutive lines that holds the most distinct query words (of three
   or more characters), or the passage's start when no such window fits; a share
   a hit doesn't use passes to the next. `complete` is true for a whole passage.
-  With more hits, the later ones are shorter excerpts.
+  At the default `top_k` of 3, each of the evaluation's 150 searches of the
+  public docs corpus came back as three whole passages; with more hits, the
+  later ones are shorter excerpts.
 - `list_sources` sends the whole list when it fits. A longer one comes as a
   count of documents and chunks per directory, then the first documents and
   `truncated: {"shown", "of"}`; a directory is a `prefix` that lists its
   documents.
 - `ask` leaves out the passages it answered from.
+
+The evaluation measures `search`'s results with this same code: see "What MCP
+search returns to an agent" in [`eval/reports/rag.md`](../eval/reports/rag.md).
 
 When the RAG API fails, the tool returns an error the model can read and act on,
 not a crash: `retrieval service returned 503: <detail>`, or
