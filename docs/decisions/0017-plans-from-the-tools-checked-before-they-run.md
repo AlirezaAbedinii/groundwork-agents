@@ -62,7 +62,10 @@ paraphrase.
 - The limit is a setting. The showcase scenario (`make demo`) plans five subtasks by
   design, three research steps in parallel, then analysis, then the memo, so the compose
   stack sets `MAX_PLAN_SUBTASKS=5`, and the end-to-end tests that play it raise the limit
-  the same way. Elsewhere the default of 4 applies.
+  the same way. Elsewhere the default of 4 applies. Both demo plans also run code in the
+  sandbox, which the Azure deployment leaves out by design (ADR 0009), so the demo runs on
+  the compose stack only; `run_demo.py` reads `/config` and stops with the reason
+  elsewhere.
 - Research reads untrusted text and can now write files. Its writes stay inside the
   task's workspace, under the same path check as the other specialists' writes.
 - With one subtask, the deliverable is the specialist's reviewed text in the subtask's

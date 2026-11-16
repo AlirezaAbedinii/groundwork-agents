@@ -14,8 +14,14 @@ Drives the composed stack end-to-end over the HTTP API:
      rejecting the citation-free memo draft, the rework), then the final memo,
      memory influence, escalations, cost, and links to both UIs.
 
+Local only: it runs against the compose stack. Both of its plans run code in the
+sandbox (code_exec), and the showcase plans five subtasks, one more than the
+service's default; the compose stack has a sandbox and allows five. The Azure
+deployment has no sandbox by design (ADR 0009), so it cannot run this scenario.
+The script reads /config first and stops with the reason on a stack that can't.
+
 Usage:
-    docker compose up -d --build      # or: make infra + make dev (inline mode)
+    docker compose up -d --build      # or: make infra + MAX_PLAN_SUBTASKS=5 make dev (inline mode)
     python scripts/run_demo.py [--auto-approve]
 
 Only stdlib + httpx are used; the script runs from the host against the API.
@@ -201,11 +207,25 @@ class Demo:
 
     # ----------------------------------------------------------------- run --
 
+    def check_stack(self) -> None:
+        """Stop unless this stack can run both demo plans: a sandbox for code_exec, and room for five subtasks."""
+        config = self.api.get("/config").json()
+        reasons = []
+        if config.get("code_exec") == "disabled":
+            reasons.append("code_exec is disabled (no sandbox, as in the Azure deployment), and both demo plans run code")
+        limit = config.get("max_plan_subtasks")
+        if config.get("plan_lint") == "enforce" and limit is not None and limit < 5:
+            reasons.append(f"plans are limited to {limit} subtasks and the showcase plans five (MAX_PLAN_SUBTASKS=5)")
+        if reasons:
+            die("this stack can't run the demo: " + "; ".join(reasons)
+                + ". The demo is for the local compose stack: docker compose up -d --build.")
+
     def run(self) -> None:
         try:
             health = self.api.get("/health").json()
         except httpx.HTTPError as error:
             die(f"API not reachable at {self.args.api} ({error}). Run `docker compose up -d --build` first.")
+        self.check_stack()
         section(f"Agent orchestration demo — API {self.args.api} (run_mode={health['run_mode']})")
 
         if self.args.skip_warmup:

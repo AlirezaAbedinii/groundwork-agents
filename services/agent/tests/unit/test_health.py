@@ -35,8 +35,10 @@ def test_config_shows_the_backends(client, monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "working_memory_backend", "redis")
     monkeypatch.setattr(settings, "code_exec_backend", "docker")
+    monkeypatch.setattr(settings, "max_plan_subtasks", 5)
     body = client.get("/config").json()
     assert (body["working_memory"], body["code_exec"]) == ("redis", "docker")
+    assert (body["max_plan_subtasks"], body["plan_lint"]) == (5, "enforce")
 
     monkeypatch.setattr(settings, "working_memory_backend", "postgres")
     monkeypatch.setattr(settings, "code_exec_backend", "disabled")

@@ -42,6 +42,10 @@ Why it's shaped this way: [ADR 0009](../docs/decisions/0009-inline-runs-in-the-c
 (state, identities, secrets), [ADR 0012](../docs/decisions/0012-traces-to-application-insights.md)
 (telemetry) and [ADR 0013](../docs/decisions/0013-a-hard-time-limit-on-the-stack.md) (the guard).
 
+Without a sandbox the agent has no `code_exec`, so the agent's showcase scenario (`make demo`
+in `services/agent`) runs on the local compose stack only; its script stops with the reason
+against this deployment.
+
 ## What it costs
 
 | State | Monthly cost |

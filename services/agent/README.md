@@ -76,7 +76,7 @@ Two one-shot helpers run at startup and exit: `migrate` (Alembic upgrade + demo-
 <!-- Demo recording (<5 min): docs/demo.gif — capture per the shot list in docs/architecture.md -->
 > 🎬 **Demo recording:** coming with the final polish pass (`docs/demo.gif`). The scripted scenario below is exactly what it shows.
 
-`make demo` ([scripts/run_demo.py](scripts/run_demo.py)) drives the showcase end-to-end over the API:
+`make demo` ([scripts/run_demo.py](scripts/run_demo.py)) drives the showcase end-to-end over the API. It runs against the local compose stack only: both of its plans run code in the sandbox (`code_exec`), and the showcase plans five subtasks, which the compose stack allows (the service's default is four). The Azure deployment has no sandbox by design, so it can't run this scenario; the script reads `/config` first and stops with the reason.
 
 1. **Seeds long-term memory** by running a prior vector-database comparison task to completion — so step 2's planning is visibly memory-informed.
 2. **Submits the showcase task** — *"Research the top 3 open-source vector databases (Chroma, Qdrant, Weaviate), extract and compare their GitHub statistics, analyze the trade-offs, and produce a one-page recommendation memo with cited sources"* — with human review requested.
