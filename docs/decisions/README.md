@@ -25,6 +25,7 @@ supersedes it.
 | [0017](0017-plans-from-the-tools-checked-before-they-run.md) | Plans from the tools, checked before they run | accepted |
 | [0018](0018-a-rules-version-on-every-task.md) | A rules version on every task | accepted |
 | [0019](0019-required-files-checked-before-delivery.md) | Required files are checked before delivery, and synthesis adds nothing | accepted |
+| [0020](0020-review-from-the-evidence.md) | Review from the evidence, and no review when the tools returned nothing | accepted |
 
 ## Format
 

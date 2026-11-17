@@ -97,3 +97,12 @@ Version 3 adds one switch, `check_deliverables`, and keeps both of version 2's o
 it, the plan lint checks the plan's deliverables, and a verify step after synthesis
 checks that each was written (ADR 0019). A new task gets version 3; a task from version
 2 replays and resumes without either check.
+
+## Addendum (2026-11-17): version 4
+
+Version 4 adds one switch, `require_tool_results`, and keeps version 3's on. With it, a
+subtask that lists tools, none of which returned a result in an attempt, goes back for
+rework before any review (ADR 0020). A new task gets version 4; a task from version 3
+replays and resumes without the check. The dispatch payload now carries the task's rules
+version, so the execute node can read the switch; a payload from before that reads as
+version 1, which has the switch off, as every version before 4 does.
