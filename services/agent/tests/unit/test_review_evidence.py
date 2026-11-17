@@ -183,7 +183,7 @@ async def test_a_value_the_documentation_does_not_give_goes_back_when_no_tool_ra
     assert "2. When the user's request restricts the sources, do not credit facts from your own" in system
     assert "Rules:" not in user
     _, second = openings(llm.prompts("analysis"))
-    assert f"{NO_RESULT}: you did not call code_exec." in second
+    assert f"{NO_RESULT}: you did not call code_exec. Call it; if its result does not give" in second
     assert state["__interrupt__"][0].value["current_step"]["sid"] == "s2"
     assert repo.tasks[task_id]["final_output"] is None
 
@@ -265,6 +265,7 @@ def test_the_feedback_quotes_the_last_errors_of_the_listed_tools():
     feedback = no_result_feedback(["db_query"], receipts)
     assert feedback.startswith(f"{NO_RESULT} (db_query). Errors (the last 3 of 5):\n- db_query: error 3\n")
     assert "error 2" not in feedback and "not listed" not in feedback
-    assert no_result_feedback(["db_query", "code_exec"], []).startswith(
-        f"{NO_RESULT}: you called none of them (db_query, code_exec). Use them;"
+    assert no_result_feedback(["db_query", "code_exec"], []) == (
+        f"{NO_RESULT}: you called none of them (db_query, code_exec). Call them; if their results do not "
+        "give what the subtask needs, say so plainly and do not estimate it."
     )

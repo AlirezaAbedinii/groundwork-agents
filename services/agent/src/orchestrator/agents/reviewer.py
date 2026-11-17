@@ -116,9 +116,10 @@ def no_result_feedback(tools: list[str], receipts: list[dict]) -> str:
     if not errors:
         one = len(listed) == 1
         called = f"you did not call {names}" if one else f"you called none of them ({names})"
+        # an answer with no call is sent back again, so the call comes first, then the plain answer
         return (
-            f"{NO_RESULT}: {called}. Use {'it' if one else 'them'}; if {'it cannot' if one else 'they cannot'} "
-            "give what the subtask needs, say so plainly and do not estimate it."
+            f"{NO_RESULT}: {called}. Call {'it' if one else 'them'}; if {'its result does' if one else 'their results do'} "
+            "not give what the subtask needs, say so plainly and do not estimate it."
         )
     quoted = errors[-QUOTED_ERRORS:]
     count = f"the last {len(quoted)} of {len(errors)}" if len(errors) > len(quoted) else str(len(errors))
