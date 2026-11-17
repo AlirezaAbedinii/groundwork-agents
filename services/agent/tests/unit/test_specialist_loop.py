@@ -20,10 +20,12 @@ from orchestrator.agents.specialists import ResearchSpecialist
 from orchestrator.agents.specialists.base import (
     FEEDBACK_MARKER,
     LAST_TURN,
+    RECEIPT_CHARS,
     REPEAT_PREFIX,
     REQUEST_MARKER,
     SpecialistError,
     SpecialistResult,
+    receipt,
 )
 from orchestrator.config import get_settings
 from orchestrator.llm.mock import LLMResponse, ToolCall
@@ -217,7 +219,11 @@ async def test_a_tool_call_is_answered_by_one_tool_message(store):
 
     result = await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
 
-    assert result == SpecialistResult(output="DONE", tool_calls=["echo"])
+    # one receipt per call that ran: the tool, its status, the first RECEIPT_CHARS characters of the answer
+    digest = render_result({"msg": long_msg}, 2000)[:RECEIPT_CHARS]
+    assert result == SpecialistResult(
+        output="DONE", tool_calls=["echo"], receipts=[{"tool": "echo", "status": "success", "digest": digest}]
+    )
     (record,) = store.records  # the registry ran it, with the loop's context
     assert (record.tool_name, record.status, record.arguments) == ("echo", "success", {"msg": long_msg})
     assert (record.task_id, record.subtask_id) == (CTX.task_id, CTX.subtask_id)
@@ -267,7 +273,9 @@ async def test_two_calls_in_one_turn_run_together_and_count_as_one_turn(store, m
     result = await ResearchSpecialist(llm, registry).execute(SPEC, {}, None, CTX)
 
     assert [r.status for r in store.records] == ["success", "success"], "the two calls did not run concurrently"
-    assert result == SpecialistResult(output="BOTH", tool_calls=["echo", "echo"])
+    assert result == SpecialistResult(output="BOTH", tool_calls=["echo", "echo"], receipts=[
+        receipt("echo", "success", '{"msg": "first"}'), receipt("echo", "success", '{"msg": "second"}'),
+    ])
     assert len(llm.calls) == 2
     *_, assistant, first_answer, second_answer, notice = llm.calls[1]["messages"]  # turn 2 of 2 is the last
     assert len(assistant.tool_calls) == 2 and notice.text == LAST_TURN
@@ -288,8 +296,10 @@ async def test_tool_errors_go_back_to_the_model_and_other_errors_escape(store):
 
     # a ToolError becomes a result the model sees, and the attempt goes on;
     # the call still ran, so it is listed
-    assert result == SpecialistResult(output="RECOVERED", tool_calls=["boom"])
     (error,) = tool_messages(llm.calls[1]["messages"])
+    assert result == SpecialistResult(
+        output="RECOVERED", tool_calls=["boom"], receipts=[receipt("boom", "error", error.content)]
+    )
     assert error.status == "error"
     assert "boom failed: kaput" in error.content
     assert [r.status for r in store.records] == ["failure"]
@@ -313,9 +323,11 @@ async def test_a_rate_limited_call_comes_back_as_an_error_result(store):
 
     result = await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
 
-    assert result == SpecialistResult(output="DONE", tool_calls=["once", "once"])
     assert [r.status for r in store.records] == ["success", "rate_limited"]
     allowed, limited = tool_messages(llm.calls[2]["messages"])
+    assert result == SpecialistResult(output="DONE", tool_calls=["once", "once"], receipts=[
+        receipt("once", "success", allowed.content), receipt("once", "error", limited.content),
+    ])
     assert (allowed.status, limited.status) == ("success", "error")
     assert limited.content == (
         "Rate limit of 1 calls per task exceeded for 'once'; this tool is unavailable for the rest of this task."
@@ -405,6 +417,14 @@ async def test_the_failure_carries_a_digest_of_the_last_three_exchanges(store, m
     assert last == '-> echo returned: {"msg": "last"}'
 
 
+def test_a_receipt_keeps_the_start_of_the_answer_on_one_line():
+    answer = "relation \"stars\" does not exist\nLINE 1: SELECT  stars\tFROM stars\n" + "x" * 400
+    kept = receipt("db_query", "error", answer)
+    assert kept["tool"] == "db_query" and kept["status"] == "error"
+    assert kept["digest"].startswith('relation "stars" does not exist LINE 1: SELECT stars FROM stars x')
+    assert len(kept["digest"]) == RECEIPT_CHARS and "\n" not in kept["digest"]
+
+
 def test_a_digest_keeps_each_line_on_one_line():
     from orchestrator.agents.specialists.base import _digest
 
@@ -445,7 +465,14 @@ async def test_the_gate_decides_sensitive_calls_before_the_batch_runs(store):
 
     # rejected and taken-over calls never reach the registry; the modified one runs as edited
     assert [r.arguments for r in store.records] == [{"msg": "hello"}, {"msg": "edited"}]
-    assert result == SpecialistResult(output="DONE", tool_calls=["echo", "echo[human]", "echo"])
+    assert result.tool_calls == ["echo", "echo[human]", "echo"]
+    # a human's rejection is a receipt of its own kind: not a tool failure
+    assert result.receipts == [
+        receipt("echo", "success", '{"msg": "hello"}'),
+        receipt("echo", "denied", "denied by human reviewer: no external posts"),
+        receipt("echo", "success", "(human-provided) HUMAN-RESULT"),
+        receipt("echo", "success", '{"msg": "edited"}'),
+    ]
 
     hello, denied, by_hand, edited = tool_messages(llm.calls[3]["messages"])
     assert json.loads(hello.content) == {"msg": "hello"}
@@ -515,7 +542,10 @@ async def test_five_identical_calls_reach_the_registry_once(store):
     result = await ResearchSpecialist(llm, make_registry(store)).execute(SPEC, {}, None, CTX)
 
     assert [(r.tool_name, r.status) for r in store.records] == [("echo", "success")]
-    assert result == SpecialistResult(output="DONE", tool_calls=["echo"])  # repeats ran nothing
+    # repeats ran nothing: neither listed nor receipted
+    assert result == SpecialistResult(
+        output="DONE", tool_calls=["echo"], receipts=[receipt("echo", "success", '{"msg": "a"}')]
+    )
     first, *repeats = tool_messages(llm.calls[3]["messages"])  # still one answer per call, in order
     assert [m.tool_call_id for m in (first, *repeats)] == ["r1", "r2", "r3", "r4", "r5"]
     assert json.loads(first.content) == {"msg": "a"}

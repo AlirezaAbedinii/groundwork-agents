@@ -21,6 +21,12 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    with its rate limit is spent for the task: the answer says so, and the tool
    is not offered again in this attempt.
 
+Each call that reached the registry or the human gate leaves a receipt: the tool,
+whether it returned a result (``success``), failed (``error``) or was denied by a
+human (``denied``), and the first RECEIPT_CHARS characters of its answer. A repeat
+leaves none, since nothing ran; the receipt of the call it repeats stands. The
+graph checks the receipts before review, and the reviewer reads them.
+
 Before the last turn the model is told that it is the last. An attempt fails
 only when the turn budget runs out (``max_tool_iterations``; a batch of calls is
 one turn), with a digest of its last tool exchanges for the retry, or when
@@ -57,6 +63,9 @@ REPEAT_PREFIX = "Identical to an earlier call in this attempt; result unchanged:
 UNAVAILABLE = "this tool is unavailable for the rest of this task"
 LAST_TURN = "This is your last turn. Reply with the deliverable. State plainly anything you could not do."
 
+# How much of each answer a receipt keeps
+RECEIPT_CHARS = 200
+
 # What a failed attempt's retry is told: its last tool exchanges, in at most this many characters.
 DIGEST_LINES = 3
 DIGEST_CHARS = 600
@@ -90,6 +99,14 @@ class SpecialistError(RuntimeError):
 class SpecialistResult:
     output: str
     tool_calls: list[str] = field(default_factory=list)
+    # one per call that ran or that a human ruled on, in call order: {"tool", "status", "digest"}
+    receipts: list[dict] = field(default_factory=list)
+
+
+def receipt(tool: str, status: str, answer: str) -> dict:
+    """What a call left behind: ``status`` is success, error or denied; ``digest`` is the
+    start of the answer on one line, where the outcome and an error's reason are."""
+    return {"tool": tool, "status": status, "digest": " ".join(answer.split())[:RECEIPT_CHARS]}
 
 
 def _answer(call: ToolCall, content: str, *, error: bool = False) -> ToolMessage:
@@ -155,6 +172,7 @@ class SpecialistAgent(BaseAgent):
         budget = get_settings().max_tool_iterations
         transcript: list[str] = []
         executed: list[str] = []
+        receipts: list[dict] = []
         answered: dict[str, ToolMessage] = {}  # each call that reached the registry, by the arguments it ran with
         withdrawn: set[str] = set()  # tools that reached their rate limit
         for iteration in range(budget):
@@ -165,7 +183,7 @@ class SpecialistAgent(BaseAgent):
             offered = [tool for tool in tools if tool["function"]["name"] not in withdrawn]
             response = await self.chat(messages, tools=offered)
             if not response.tool_calls:
-                return SpecialistResult(output=response.text, tool_calls=executed)
+                return SpecialistResult(output=response.text, tool_calls=executed, receipts=receipts)
             messages.append(AIMessage(content=response.text, tool_calls=[
                 {"id": call.id, "name": call.name, "args": call.arguments, "type": "tool_call"}
                 for call in response.tool_calls
@@ -185,6 +203,7 @@ class SpecialistAgent(BaseAgent):
             # 1. The gate rules on every sensitive call before anything of this turn runs.
             arguments = {call.id: call.arguments for call in response.tool_calls}
             decided: dict[str, tuple[ToolMessage, str | None]] = {}  # answered by a human, with the name to list
+            denied: set[str] = set()  # call ids a human rejected
             for call in fresh:
                 if gate is None or not self.registry.is_sensitive_call(call.name, call.arguments):
                     continue
@@ -193,6 +212,7 @@ class SpecialistAgent(BaseAgent):
                 if action == "reject":
                     denial = f"denied by human reviewer: {decision.get('notes') or 'not permitted'}"
                     decided[call.id] = (_answer(call, denial, error=True), None)
+                    denied.add(call.id)
                 elif action == "take_over":
                     human = _answer(call, f"(human-provided) {payload.get('output', '')}")
                     decided[call.id] = (human, f"{call.name}[human]")
@@ -230,6 +250,7 @@ class SpecialistAgent(BaseAgent):
                     listed = None  # nothing ran
                 elif call.id in decided:
                     answer, listed = decided[call.id]
+                    receipts.append(receipt(call.name, "denied" if call.id in denied else answer.status, answer.content))
                 else:
                     outcome = ran[call.id]
                     if isinstance(outcome, RateLimitExceededError):
@@ -240,6 +261,7 @@ class SpecialistAgent(BaseAgent):
                     else:
                         answer = _answer(call, render_result(outcome, self.registry.get(call.name).result_budget_chars))
                     listed = call.name
+                    receipts.append(receipt(call.name, answer.status, answer.content))
                     if keep:
                         answered[_call_key(call.name, arguments[call.id])] = answer
                 if call.id not in repeats:
