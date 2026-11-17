@@ -20,7 +20,7 @@ is therefore idempotent (the approval queue is keyed by task_id + gate_key).
 Before a subtask's output is reviewed, its attempt's tool receipts are checked: a
 subtask that lists tools, none of which returned a result, goes back for rework
 with the tools' errors as feedback and no reviewer call (rules version 4,
-REVIEW_EVIDENCE).
+REVIEW_EVIDENCE). Otherwise the reviewer sees the request and the receipts too.
 
 `verify` checks that every file the plan lists as a deliverable was written at
 exactly its path. A missing one sends its producer back to `schedule` once, with
@@ -46,7 +46,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from orchestrator.agents.reviewer import Reviewer, no_result_feedback, required_tools_silent
+from orchestrator.agents.reviewer import Evidence, Reviewer, no_result_feedback, required_tools_silent
 from orchestrator.agents.specialists import SpecialistError, make_specialists
 from orchestrator.agents.supervisor import Supervisor
 from orchestrator.config import get_settings
@@ -417,11 +417,18 @@ def build_graph(
             tools = spec.get("tools") or []
             silent = check_tools and required_tools_silent(tools, result.receipts)
             if not silent:
+                evidence = None
+                if settings.review_evidence:
+                    evidence = Evidence(
+                        request=payload.get("request", ""), tools=tools, receipts=result.receipts,
+                        inputs=sorted(payload.get("inputs", {})),
+                    )
                 with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
                     verdict = await reviewer.review(
                         spec["description"],
                         spec.get("expected_output_format", "plain text"),
                         result.output,
+                        evidence=evidence,
                         producer_provider=route(spec["specialist"]).provider,
                     )
                     set_attr(review_span, "score", verdict.score)

@@ -1,5 +1,6 @@
 """Review with evidence: a subtask that lists tools, none of which returned a result in an
-attempt, goes back for rework with the tools' errors and no reviewer call.
+attempt, goes back for rework with the tools' errors and no reviewer call; every other
+output is reviewed with the user's request and the attempt's tool receipts in view.
 
 Two failure shapes run through the whole graph on a fake LLM. Their fixtures, in
 tests/fixtures/review_evidence, are written by hand from the shapes:
@@ -20,7 +21,16 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 
-from orchestrator.agents.reviewer import NO_RESULT, no_result_feedback, required_tools_silent
+from orchestrator.agents.reviewer import (
+    NO_RESULT,
+    RECEIPTS_HEADING,
+    REQUEST_HEADING,
+    REVIEW_MARKER,
+    Evidence,
+    no_result_feedback,
+    required_tools_silent,
+    review_prompt,
+)
 from orchestrator.agents.specialists.base import FEEDBACK_MARKER, receipt
 from orchestrator.config import get_settings
 from orchestrator.db.repo import InMemoryTaskRepo
@@ -158,9 +168,14 @@ async def test_a_value_the_documentation_does_not_give_goes_back_when_no_tool_ra
     assert results["s1"]["status"] == "completed"  # research ran its search and said what it found
     s2 = results["s2"]
     assert (s2["status"], s2["output"]) == ("rework", "The default idle timeout is 30 seconds.")
-    # only the research subtask was reviewed
+    # only the research subtask was reviewed, with the request and what its search returned
     (review,) = llm.prompts("reviewer")
-    assert "Look up the gateway's default idle timeout" in review
+    assert f"{REQUEST_HEADING}\n{TIMEOUT_REQUEST}\n\nSubtask: Look up the gateway's default idle timeout" in review
+    assert "Tools listed for this subtask: rag_search\nInputs from completed subtasks: none\n" in review
+    assert f"{RECEIPTS_HEADING}\n- rag_search success: " + '{"hits": [], "note": "no passage mentions' in review
+    assert "1. A claim with no receipt behind it is unsupported" in review
+    assert "findings scores below 3" in review  # the threshold, from the settings
+    assert "2. When the user's request restricts the sources, do not credit facts from your own" in review
     _, second = openings(llm.prompts("analysis"))
     assert f"{NO_RESULT}: you did not call code_exec." in second
     assert state["__interrupt__"][0].value["current_step"]["sid"] == "s2"
@@ -180,9 +195,29 @@ async def test_without_the_check_the_estimates_are_approved_and_delivered(monkey
     assert state["subtask_results"]["s1"]["score"] == 4
     assert len(llm.prompts("reviewer")) == 2
     assert repo.tasks[task_id]["final_output"].startswith("Chroma leads with 9,000 GitHub stars")
+    # the setting also takes the evidence out of the prompt; the rules version leaves it, as prompt text
+    s1_review, s2_review = llm.prompts("reviewer")
+    assert (RECEIPTS_HEADING in s1_review) is (off != "setting")
+    if off != "setting":
+        assert '- db_query error: relation "repos" does not exist' in s1_review
+        assert "Inputs from completed subtasks: s1 (their text is not shown)" in s2_review
+        assert "Tools listed for this subtask: none" in s2_review and "- none: no tool was called" in s2_review
 
 
 # --- the pure parts --------------------------------------------------------------------
+
+
+def test_without_evidence_the_prompt_is_the_one_from_before():
+    assert review_prompt("D", "F", "O") == (
+        f"{REVIEW_MARKER} for quality before it is returned to the supervisor.\n\n"
+        "Subtask: D\nExpected output format: F\n\nSpecialist output:\n---\nO\n---\n\n"
+        "Score the output 1-5 (5 = excellent, meets the subtask and format; 1 = unusable).\n"
+    )
+
+
+def test_an_empty_request_is_said_to_be_empty():
+    prompt = review_prompt("D", "F", "O", Evidence(request="  "))
+    assert f"{REQUEST_HEADING}\n(none)\n" in prompt
 
 
 def test_a_subtask_is_silent_when_none_of_its_tools_returned_a_result():

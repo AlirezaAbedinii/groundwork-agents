@@ -3,11 +3,13 @@
 The writing specialist's first memo draft is fixture-corrupted — it cites
 nothing ("trust me on the numbers"). The reviewer must reject it with
 actionable feedback, the rework loop must re-dispatch the specialist with that
-feedback, and the second attempt must pass.
+feedback, and the second attempt must pass. The reviewer judges each draft with
+the user's request and the attempt's tool receipts in view.
 """
 
 import asyncio
 
+from orchestrator.agents.reviewer import RECEIPTS_HEADING, REQUEST_HEADING
 from orchestrator.agents.specialists.base import FEEDBACK_MARKER
 
 DEMO_REQUEST = (
@@ -35,6 +37,17 @@ def test_reviewer_rejects_citation_free_draft_then_rework_passes(client, showcas
     )
     assert [span["attributes"]["score"] for span in w1_reviews] == [2, 5]
     assert "Missing citations" in w1_reviews[0]["attributes"]["feedback"]
+
+    # each review saw the request and the draft's file_write receipt, not only the output
+    w1_review_prompts = [
+        call["prompt"]
+        for call in trace["llm_calls"]
+        if call["agent"] == "reviewer" and "recommendation memo with cited sources, saved as" in call["prompt"]
+    ]
+    assert len(w1_review_prompts) == 2
+    for prompt in w1_review_prompts:
+        assert f"{REQUEST_HEADING}\n{DEMO_REQUEST}\n" in prompt
+        assert f"{RECEIPTS_HEADING}\n- file_write success: " in prompt
 
     # the rework prompt carried the reviewer's feedback back to the specialist
     rework_prompts = [
