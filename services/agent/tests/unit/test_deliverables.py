@@ -134,6 +134,25 @@ async def test_a_missing_file_gets_one_corrective_dispatch_then_the_task_fails_n
     assert state["deliverables_redispatched"] == ["s2"]
 
 
+async def test_a_corrective_attempt_that_writes_nothing_is_reviewed_and_the_task_fails(fixtures):
+    """The check for a tool result skips verify's corrective attempt (ADR 0020), so a file still
+    missing after it fails the task as ADR 0019 says, instead of escalating for more attempts."""
+    two_step_plan(fixtures)
+    writes_elsewhere(fixtures)
+    fx(fixtures, "w_corrective", "writing", "STILL NO FILE", match=["write the notes", FEEDBACK])
+
+    task, state, llm, _ = await run(fixtures)
+
+    assert task["status"] == "failed"
+    assert task["error"] == "Required file not written: `notes.md`; s2 was already sent back once to write it"
+    assert state["dispatch_log"] == [["s1"], ["s2"], ["s2"]]
+    s2 = state["subtask_results"]["s2"]
+    assert (s2["status"], s2["output"], s2["score"]) == ("completed", "STILL NO FILE", 5)
+    assert "no_tool_result" not in s2
+    assert len(llm.prompts("reviewer")) == 3  # s1, s2, and s2's corrective attempt
+    assert "__interrupt__" not in state
+
+
 async def test_a_file_written_under_the_wrong_name_is_corrected(fixtures, workspace):
     two_step_plan(fixtures)
     fx(fixtures, "w_a", "writing", match=["write the notes"], writes=["docs/notes.md"])

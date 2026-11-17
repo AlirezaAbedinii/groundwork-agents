@@ -412,8 +412,14 @@ def build_graph(
                 spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate,
                 request=payload.get("request", ""),  # absent from a wave dispatched before it was added
             )
-            # absent from a wave dispatched before it was added, which ran under rules without the check
-            check_tools = settings.review_evidence and rules_for(payload.get("rules_version")).require_tool_results
+            # absent from a wave dispatched before it was added, which ran under rules without the check.
+            # Verify's corrective attempt is reviewed as before, so a file still missing after it
+            # fails the task (ADR 0019) instead of escalating for more attempts.
+            check_tools = (
+                settings.review_evidence
+                and rules_for(payload.get("rules_version")).require_tool_results
+                and not payload.get("sent_back_by_verify")
+            )
             tools = spec.get("tools") or []
             silent = check_tools and required_tools_silent(tools, result.receipts)
             if not silent:

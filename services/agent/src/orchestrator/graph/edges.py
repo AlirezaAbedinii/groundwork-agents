@@ -61,6 +61,7 @@ def compute_wave(state: TaskState) -> list[dict]:
     plan = ExecutionPlan.model_validate(state["plan"])
     results = state.get("subtask_results", {})
     completed = {sid for sid, r in results.items() if r.get("status") == "completed"}
+    sent_back = set(state.get("deliverables_redispatched") or [])
     default_allowance = get_settings().initial_attempt_allowance
 
     wave = []
@@ -77,6 +78,8 @@ def compute_wave(state: TaskState) -> list[dict]:
                 "task_id": state["task_id"],
                 "request": state.get("request", ""),
                 "rules_version": state.get("rules_version"),
+                # verify sent it back for a missing file: verify, not the tool-result check, judges the retry
+                "sent_back_by_verify": subtask.id in sent_back,
                 "spec": subtask.model_dump(),
                 "inputs": {dep: results[dep].get("output", "") for dep in subtask.depends_on},
                 "feedback": prior.get("feedback") if prior else None,
