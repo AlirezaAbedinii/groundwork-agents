@@ -109,7 +109,10 @@ flowchart LR
     escalate_subtask -->|"approve at the<br/>attempt cap"| FAILED2((failed))
     schedule -->|"only held<br/>subtasks left"| gather
 
-    schedule -->|"nothing left to run"| synthesize --> final_gate
+    schedule -->|"nothing left to run"| synthesize --> verify
+    verify -->|"every planned<br/>file written"| final_gate
+    verify -->|"a file missing:<br/>its producer once more"| schedule
+    verify -->|"still missing"| FAILED3((failed))
     final_gate -->|"approve / modify /<br/>take over"| deliver
     final_gate -->|reject| REJ3((rejected))
     deliver --> DONE((delivered))
@@ -186,7 +189,9 @@ approval row → `interrupt()`.
    complexity, `depends_on`, plan confidence). Pydantic validation enforces unique ids,
    resolvable dependencies, and acyclicity; the plan lint then checks that each
    tool exists and belongs to its subtask's specialist, that research, analysis
-   and code subtasks name their tools, and the size (`MAX_PLAN_SUBTASKS`, 4).
+   and code subtasks name their tools, the size (`MAX_PLAN_SUBTASKS`, 4), and
+   the plan's `deliverables`: every back-quoted file name the request asks to
+   save is listed, each with a producing subtask that owns and lists `file_write`.
    One retry with the errors in-prompt, then the task fails rather than
    executing a broken plan; `PLAN_LINT=off` records the lint's findings on the
    plan span without rejecting.
@@ -201,7 +206,12 @@ approval row → `interrupt()`.
    rejections loop back with feedback.
 7. **Synthesis & delivery** — the supervisor composes the final output from
    completed subtasks (a one-subtask plan's reviewed output is the final output,
-   with no synthesis call); the optional final gate runs; the task completes.
+   with no synthesis call). `verify` then checks that each planned deliverable
+   has a successful `file_write` at exactly its path; a missing one sends its
+   producer back once with feedback naming the path, and the outputs are
+   synthesized again; if it is still missing, the task fails naming the file
+   (`VERIFY_DELIVERABLES=false` skips the check). The optional final gate runs;
+   the task completes.
 8. **Memory write-back** — an extraction pass distills the episode, facts,
    and preferences into long-term memory; the task's working memory is cleared.
 9. **Throughout** — every step emits spans (see

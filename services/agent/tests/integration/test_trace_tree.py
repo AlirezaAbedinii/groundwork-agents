@@ -36,7 +36,13 @@ def test_trace_tree_is_complete_with_intact_links(client):
 
     # all required span kinds are present
     kinds = {span["kind"] for span in spans}
-    assert {"task", "planning", "specialist", "review", "tool", "memory", "synthesis", "llm"} <= kinds
+    assert {"task", "planning", "specialist", "review", "tool", "memory", "synthesis", "verification", "llm"} <= kinds
+
+    # the plan's deliverable was checked after synthesis and found
+    (verify_span,) = [span for span in spans if span["kind"] == "verification"]
+    assert verify_span["parent_id"] == roots[0]["id"]
+    assert json.loads(verify_span["attributes"]["deliverables"]) == ["memo.md"]
+    assert json.loads(verify_span["attributes"]["missing"]) == []
 
     # planning hangs off the root; memory retrieval hangs off planning
     plan_span = next(span for span in spans if span["kind"] == "planning")

@@ -58,6 +58,27 @@ class DBInvocationStore:
                 )
             )
 
+    def for_task(self, task_id: str) -> list[InvocationRecord]:
+        columns = (
+            ToolInvocation.task_id, ToolInvocation.subtask_sid, ToolInvocation.specialist, ToolInvocation.tool_name,
+            ToolInvocation.arguments, ToolInvocation.status, ToolInvocation.error, ToolInvocation.latency_ms,
+            ToolInvocation.sensitive,
+        )
+        with self._sessions() as session:
+            rows = session.execute(
+                sa.select(*columns)
+                .where(ToolInvocation.task_id == task_id)
+                .order_by(ToolInvocation.created_at, ToolInvocation.id)
+            ).all()
+        return [
+            InvocationRecord(
+                task_id=row.task_id, subtask_id=row.subtask_sid, specialist=row.specialist,
+                tool_name=row.tool_name, arguments=row.arguments or {}, status=row.status, error=row.error,
+                latency_ms=row.latency_ms, sensitive=row.sensitive,
+            )
+            for row in rows
+        ]
+
 
 class DBLLMCallStore:
     """Durable record of every LLM call (prompt, response, usage, cost)."""

@@ -43,6 +43,10 @@ class ToolRegistry:
     def tools_for(self, specialist: str) -> list[ToolSpec]:
         return [s for s in self._specs.values() if specialist in s.owners]
 
+    def invocations(self, task_id: str) -> list[InvocationRecord]:
+        """Every call the task has logged, oldest first, without outputs."""
+        return self._store.for_task(task_id)
+
     def is_sensitive_call(self, tool_name: str, arguments: dict) -> bool:
         """Whether this specific invocation would be sensitive (pre-flight check)."""
         try:

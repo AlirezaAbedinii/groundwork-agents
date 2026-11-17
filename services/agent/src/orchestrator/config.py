@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     # plan that fails the lint is sent back for the one retry ("enforce") or only recorded ("off")
     max_plan_subtasks: int = Field(4, ge=1)
     plan_lint: Literal["enforce", "off"] = "enforce"
+    # After synthesis, each file the plan lists as a deliverable must have been written at
+    # exactly its path; a missing one sends its producer back once, then fails the task.
+    # False skips the check (graph/edges.py check_deliverables).
+    verify_deliverables: bool = True
 
     # Thresholds
     plan_confidence_threshold: float = 0.7

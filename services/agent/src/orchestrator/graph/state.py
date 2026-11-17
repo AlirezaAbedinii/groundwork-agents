@@ -34,3 +34,5 @@ class TaskState(TypedDict, total=False):
     escalation_reason: str | None
     hitl_decision: dict | None
     final_output: str | None
+    deliverables_outcome: str | None  # the last verify step's: "ok", "redispatch" or "failed"
+    deliverables_redispatched: list[str]  # producers already sent back once for a missing file

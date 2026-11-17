@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Protocol
 
@@ -89,6 +89,10 @@ class InvocationStore(Protocol):
         """Number of attempted executions (success or failure) for rate limiting."""
         ...
 
+    def for_task(self, task_id: str) -> list[InvocationRecord]:
+        """Every logged attempt for the task, oldest first, without outputs."""
+        ...
+
 
 @dataclass
 class InMemoryInvocationStore:
@@ -107,3 +111,6 @@ class InMemoryInvocationStore:
             and r.tool_name == tool_name
             and r.status in ("success", "failure")
         )
+
+    def for_task(self, task_id: str) -> list[InvocationRecord]:
+        return [replace(r, output=None) for r in self.records if r.task_id == task_id]

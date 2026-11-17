@@ -1,13 +1,18 @@
-"""Conditional-edge functions and wave computation for the task graph."""
+"""Conditional-edge functions, wave computation and the deliverables check for the task graph."""
 
 from __future__ import annotations
+
+from collections.abc import Iterable
+from dataclasses import dataclass, field
 
 from langgraph.types import Send
 
 from orchestrator.config import get_settings
 from orchestrator.graph.state import TaskState
 from orchestrator.hitl.triggers import attempts_spent, plan_escalation
+from orchestrator.planning.capabilities import FILE_WRITE
 from orchestrator.planning.schemas import ExecutionPlan
+from orchestrator.tools.base import InvocationRecord
 
 
 def plan_gate(state: TaskState) -> str:
@@ -101,3 +106,79 @@ def dispatch(state: TaskState) -> list[Send] | str:
 
 def after_gather(state: TaskState) -> str:
     return "escalate" if state.get("needs_escalation") else "schedule"
+
+
+def route_after_verify(state: TaskState) -> str:
+    """A missing deliverable sends its producer back once, then ends the run."""
+    outcome = state.get("deliverables_outcome")
+    if outcome == "failed":
+        return "end"
+    return "schedule" if outcome == "redispatch" else "final_gate"
+
+
+def written_paths(invocations: Iterable[InvocationRecord]) -> set[str]:
+    """The paths that successful file_write calls wrote, exactly as each call gave them."""
+    return {
+        path
+        for record in invocations
+        if record.tool_name == FILE_WRITE
+        and record.status == "success"
+        and isinstance(path := record.arguments.get("path"), str)
+    }
+
+
+def _listed(paths: list[str]) -> str:
+    return ", ".join(f"`{path}`" for path in paths)
+
+
+def deliverable_feedback(paths: list[str]) -> str:
+    """What a producer sent back for a missing deliverable is told: the exact paths to write."""
+    one = len(paths) == 1
+    return (
+        f"Required {'file' if one else 'files'} not written: {_listed(paths)}. Call {FILE_WRITE} with exactly "
+        f"{'that path' if one else 'each of those paths'} and the complete content, then reply with your deliverable."
+    )
+
+
+@dataclass(frozen=True)
+class DeliverablesCheck:
+    missing: list[str] = field(default_factory=list)  # deliverable paths with no successful write
+    redispatch: dict[str, list[str]] = field(default_factory=dict)  # producer -> the paths it is to write
+    failure: str | None = None  # the task's error when a missing file cannot be asked for again
+
+
+def check_deliverables(state: TaskState, written: set[str], max_attempts: int) -> DeliverablesCheck:
+    """Which of the plan's deliverables are missing from ``written``, and what to do about them.
+
+    A path counts only if a successful file_write gave exactly that path; files written
+    under other names do not matter. A missing file's producer is sent back once, with
+    feedback naming the path, if it still has an attempt under ``max_attempts`` (the
+    hard cap of ADR 0015) and its output is not a human's take-over. Otherwise, or if
+    it was already sent back once, the task fails, naming every missing file; nothing
+    is re-run then, since the task cannot complete.
+    """
+    plan = ExecutionPlan.model_validate(state["plan"])
+    missing = [d for d in plan.deliverables if d.path not in written]
+    if not missing:
+        return DeliverablesCheck()
+    by_producer: dict[str, list[str]] = {}
+    for deliverable in missing:
+        by_producer.setdefault(deliverable.producer, []).append(deliverable.path)
+    results = state.get("subtask_results") or {}
+    sent_back = set(state.get("deliverables_redispatched") or [])
+    blocked: list[str] = []
+    for sid in by_producer:
+        result = results.get(sid)
+        if result is None:
+            blocked.append(f"{sid} never ran")
+        elif sid in sent_back:
+            blocked.append(f"{sid} was already sent back once to write it")
+        elif result.get("human_provided"):
+            blocked.append(f"{sid}'s output was a human's take-over")
+        elif result.get("attempts", 0) >= max_attempts:
+            blocked.append(f"{sid} has made all {max_attempts} attempts it may")
+    paths = [d.path for d in missing]
+    if blocked:
+        noun = "file" if len(paths) == 1 else "files"
+        return DeliverablesCheck(paths, failure=f"Required {noun} not written: {_listed(paths)}; {'; '.join(blocked)}")
+    return DeliverablesCheck(paths, redispatch=by_producer)

@@ -97,7 +97,8 @@ def test_a_modified_plan_that_fails_the_lint_is_refused_and_the_approval_stays_p
     pending = client.get("/approvals", params={"status": "pending"}).json()["approvals"]
     (approval,) = [a for a in pending if a["task_id"] == task_id]
     star_ranking = next(s for s in bundle["plan"]["subtasks"] if s["tools"] == ["db_query"])
-    misassigned = {**bundle["plan"], "subtasks": [{**star_ranking, "specialist": "research"}]}
+    # one subtask, so the planned memo.md deliverable (whose producer is gone) goes too
+    misassigned = {**bundle["plan"], "subtasks": [{**star_ranking, "specialist": "research"}], "deliverables": []}
 
     refused = client.post(f"/approvals/{approval['id']}/resolve",
                           json={"action": "modify", "payload": {"plan": misassigned}})

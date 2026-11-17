@@ -1,7 +1,7 @@
 """LangGraph state machine.
 
 intake → plan → (plan gate) → schedule ⇄ execute/gather loops → synthesize
-→ (final gate) → deliver, with conditional edges for rework and
+→ verify → (final gate) → deliver, with conditional edges for rework and
 retry-with-revised-approach, and four human-in-the-loop decision points:
 
   escalate_plan     — low plan confidence / user-requested review
@@ -16,6 +16,11 @@ after enqueueing a durable approval with the full decision context; resolution
 resumes the graph with the human decision. Note that an interrupted node
 re-executes its pre-interrupt code on resume — everything before an interrupt
 is therefore idempotent (the approval queue is keyed by task_id + gate_key).
+
+`verify` checks that every file the plan lists as a deliverable was written at
+exactly its path. A missing one sends its producer back to `schedule` once, with
+feedback naming the path, and the outputs are synthesized again; if it is still
+missing, or the producer cannot run again, the task fails naming the file.
 
 The nodes that call the LLM (plan, execute, synthesize, deliver) are
 coroutines and the graph runs under ``ainvoke``; the other nodes only do
@@ -42,12 +47,16 @@ from orchestrator.agents.supervisor import Supervisor
 from orchestrator.config import get_settings
 from orchestrator.graph.edges import (
     after_gather,
+    check_deliverables,
     compute_wave,
+    deliverable_feedback,
     dispatch,
     plan_gate,
     route_after_final_gate,
     route_after_plan_escalation,
     route_after_subtask_escalation,
+    route_after_verify,
+    written_paths,
 )
 from orchestrator.graph.state import TaskState
 from orchestrator.hitl.levels import ApprovalLevel, level_for
@@ -615,6 +624,41 @@ def build_graph(
             set_attr(span, "synthesized", True)
             return {"final_output": await supervisor.synthesize(state["request"], outputs)}
 
+    def verify(state: TaskState) -> dict:
+        deliverables = (state.get("plan") or {}).get("deliverables")
+        if not (deliverables and settings.verify_deliverables and rules_for(state.get("rules_version")).check_deliverables):
+            return {"deliverables_outcome": "ok"}
+        with node_span(state["task_id"], "verify", kind="verification") as span:
+            written = written_paths(registry.invocations(state["task_id"]))
+            check = check_deliverables(state, written, settings.max_subtask_attempts)
+            set_attr(span, "deliverables", [d["path"] for d in deliverables])
+            set_attr(span, "missing", check.missing)
+            if not check.missing:
+                return {"deliverables_outcome": "ok"}
+            if check.failure:
+                repo.set_status(state["task_id"], "failed", error=check.failure)
+                span.set_attribute("orchestrator.status", "failure")
+                set_attr(span, "error", check.failure)
+                return {"deliverables_outcome": "failed"}
+            # One corrective attempt per producer, granted like an approval (ADR 0015):
+            # the allowance rises by exactly one, and the counters stay as they are.
+            span.set_attribute("orchestrator.status", "warning")
+            set_attr(span, "redispatched", sorted(check.redispatch))
+            results = state["subtask_results"]
+            return {
+                "deliverables_outcome": "redispatch",
+                "deliverables_redispatched": sorted({*(state.get("deliverables_redispatched") or []), *check.redispatch}),
+                "subtask_results": {
+                    sid: {
+                        **results[sid],
+                        "status": "rework",
+                        "feedback": deliverable_feedback(paths),
+                        "attempt_allowance": results[sid].get("attempts", 0) + 1,
+                    }
+                    for sid, paths in check.redispatch.items()
+                },
+            }
+
     def final_gate(state: TaskState) -> dict:
         if not state.get("require_human_review"):
             return {}
@@ -705,6 +749,7 @@ def build_graph(
     graph.add_node("gather", gather)
     graph.add_node("escalate_subtask", escalate_subtask)
     graph.add_node("synthesize", synthesize)
+    graph.add_node("verify", verify)
     graph.add_node("final_gate", final_gate)
     graph.add_node("deliver", deliver)
 
@@ -726,7 +771,10 @@ def build_graph(
     graph.add_conditional_edges(
         "escalate_subtask", route_after_subtask_escalation, {"schedule": "schedule", "end": END}
     )
-    graph.add_edge("synthesize", "final_gate")
+    graph.add_edge("synthesize", "verify")
+    graph.add_conditional_edges(
+        "verify", route_after_verify, {"final_gate": "final_gate", "schedule": "schedule", "end": END}
+    )
     graph.add_conditional_edges(
         "final_gate", route_after_final_gate, {"deliver": "deliver", "end": END}
     )

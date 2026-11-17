@@ -5,6 +5,7 @@ The rate-limited case runs with the MCP server in test_mcp_rag_tools.py.
 
 import sqlalchemy as sa
 
+from orchestrator.db.repo import DBInvocationStore
 from orchestrator.db.session import get_engine
 
 REQUEST = (
@@ -43,6 +44,20 @@ def test_a_completed_tasks_tool_calls_match_the_invocation_log(client):
     assert {"web_search", "db_query", "code_exec", "file_write"} <= {c["tool_name"] for c in calls}
     assert [c["created_at"] for c in calls] == sorted(c["created_at"] for c in calls)
     assert all(isinstance(c["latency_ms"], float) and isinstance(c["sensitive"], bool) for c in calls)
+
+
+def test_the_store_returns_a_tasks_invocations_in_order_without_outputs(client):
+    task_id = client.post("/tasks", json={"request": REQUEST}).json()["task_id"]
+    assert client.get(f"/tasks/{task_id}").json()["status"] == "completed"
+
+    records = DBInvocationStore().for_task(task_id)
+
+    assert [(r.tool_name, r.status, r.specialist, r.subtask_id, r.arguments, r.error) for r in records] == [
+        (tool, status, specialist, sid, arguments, error) for tool, status, specialist, sid, arguments, _, error in logged(task_id)
+    ]
+    assert all(r.task_id == task_id and r.output is None for r in records)
+    assert ("file_write", "success", "memo.md") in {(r.tool_name, r.status, r.arguments.get("path")) for r in records}
+    assert DBInvocationStore().for_task("0123456789abcdef0123456789abcdef") == []
 
 
 def test_an_unknown_task_is_404(client):
