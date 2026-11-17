@@ -71,3 +71,36 @@ def test_a_subtask_lists_its_tools_and_defaults_to_none():
     assert named.tools == ["web_search", "file_write"]
     assert Subtask.model_validate(_subtask("s2", "writing")).tools == []
     assert "tools" in ExecutionPlan.model_json_schema()["$defs"]["Subtask"]["properties"]
+
+
+def test_a_plan_lists_no_deliverables_unless_it_says_so():
+    plan = ExecutionPlan(subtasks=[_subtask("s1")], confidence=0.8)
+
+    assert plan.deliverables == []
+    assert "deliverables" in ExecutionPlan.model_json_schema()["properties"]
+
+
+def test_a_deliverable_names_its_path_and_producer():
+    plan = ExecutionPlan(
+        subtasks=[_subtask("s1"), _subtask("s2", "writing", depends_on=["s1"])],
+        deliverables=[{"path": "memo.md", "producer": "s2"}],
+        confidence=0.8,
+    )
+
+    assert [(d.path, d.producer) for d in plan.deliverables] == [("memo.md", "s2")]
+
+
+def test_a_deliverable_from_an_unknown_subtask_rejected():
+    with pytest.raises(ValidationError, match="Deliverable 'memo.md' has unknown producer 's9'"):
+        ExecutionPlan(
+            subtasks=[_subtask("s1")], deliverables=[{"path": "memo.md", "producer": "s9"}], confidence=0.8
+        )
+
+
+def test_duplicate_deliverable_paths_rejected():
+    with pytest.raises(ValidationError, match="Duplicate deliverable paths"):
+        ExecutionPlan(
+            subtasks=[_subtask("s1")],
+            deliverables=[{"path": "memo.md", "producer": "s1"}, {"path": "memo.md", "producer": "s1"}],
+            confidence=0.8,
+        )

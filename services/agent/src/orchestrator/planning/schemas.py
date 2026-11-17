@@ -2,7 +2,8 @@
 
 The supervisor emits these via native structured output: the provider is
 given this schema, field descriptions included. Validation enforces unique
-subtask ids, resolvable dependencies, and an acyclic dependency graph.
+subtask ids, resolvable dependencies, an acyclic dependency graph, and
+deliverables with unique paths whose producers are subtasks of the plan.
 """
 
 from __future__ import annotations
@@ -34,9 +35,21 @@ class Subtask(BaseModel):
     )
 
 
+class Deliverable(BaseModel):
+    path: str = Field(
+        min_length=1, description="The file's path exactly as the task gives it, relative to the task workspace"
+    )
+    producer: str = Field(min_length=1, description="Id of the subtask that writes it with file_write")
+
+
 class ExecutionPlan(BaseModel):
     task_summary: str = Field("", description="One sentence summarising the task")
     subtasks: list[Subtask] = Field(min_length=1)
+    deliverables: list[Deliverable] = Field(
+        default_factory=list,
+        description="Every file the task asks to be saved or written, with the subtask that writes it; "
+        "empty when the task asks for no file",
+    )
     confidence: float = Field(
         ge=0.0, le=1.0, description="Your confidence, from 0.0 to 1.0, that this plan solves the task"
     )
@@ -53,6 +66,12 @@ class ExecutionPlan(BaseModel):
                 raise ValueError(f"Subtask {subtask.id!r} depends on unknown ids {unknown}")
             if subtask.id in subtask.depends_on:
                 raise ValueError(f"Subtask {subtask.id!r} depends on itself")
+        paths = [d.path for d in self.deliverables]
+        if len(paths) != len(set(paths)):
+            raise ValueError(f"Duplicate deliverable paths: {paths}")
+        for deliverable in self.deliverables:
+            if deliverable.producer not in known:
+                raise ValueError(f"Deliverable {deliverable.path!r} has unknown producer {deliverable.producer!r}")
         self.topological_waves()  # raises on cycles
         return self
 

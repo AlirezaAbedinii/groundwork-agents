@@ -184,10 +184,12 @@ def build_graph(
                 if retrieved is not None:
                     memories_block, retrieved_ids = retrieved.block, retrieved.ids
             set_attr(span, "memories_injected", len(retrieved_ids))
-            lint_plans = rules_for(state.get("rules_version")).lint_plans
+            rules = rules_for(state.get("rules_version"))
+            lint_plans = rules.lint_plans
             try:
                 planned = await supervisor.plan(
-                    state["request"], registry, memories=memories_block, lint_plans=lint_plans
+                    state["request"], registry, memories=memories_block,
+                    lint_plans=lint_plans, check_deliverables=rules.check_deliverables,
                 )
             except PlanValidationError as error:
                 if lint_plans:
@@ -258,10 +260,13 @@ def build_graph(
             }
         if action == "modify":
             new_plan = ExecutionPlan.model_validate(payload["plan"])
-            if rules_for(state.get("rules_version")).lint_plans:
+            rules = rules_for(state.get("rules_version"))
+            if rules.lint_plans:
                 # the approvals API refuses such a plan and keeps the approval pending;
                 # one that reaches the graph another way ends the run here
-                errors, rejected = check(new_plan, registry)
+                errors, rejected = check(
+                    new_plan, registry, state["request"], deliverables=rules.check_deliverables
+                )
                 set_attr(espan, "lint_errors", errors)
                 if rejected:
                     error = "Modified plan fails the plan lint: " + " ".join(errors)

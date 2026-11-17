@@ -26,10 +26,19 @@ class Supervisor(BaseAgent):
     name = "supervisor"
 
     async def plan(
-        self, request: str, registry: ToolRegistry, memories: str | None = None, *, lint_plans: bool = True
+        self,
+        request: str,
+        registry: ToolRegistry,
+        memories: str | None = None,
+        *,
+        lint_plans: bool = True,
+        check_deliverables: bool = True,
     ) -> Planned:
         """A plan for ``request`` from the tools in ``registry``, with what the lint found."""
-        return await decompose(self.llm, request, registry, memories=memories, lint_plans=lint_plans)
+        return await decompose(
+            self.llm, request, registry, memories=memories,
+            lint_plans=lint_plans, check_deliverables=check_deliverables,
+        )
 
     async def synthesize(self, request: str, outputs: dict[str, str]) -> str:
         rendered = "\n".join(f"[{sid}]\n{text}\n" for sid, text in sorted(outputs.items()))

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-CURRENT_RULES_VERSION = 2
+CURRENT_RULES_VERSION = 3
 
 
 class UnknownRulesVersion(ValueError):
@@ -29,11 +29,16 @@ class Rules:
     lint_plans: bool
     # A one-subtask plan's reviewed output is the deliverable, with no synthesis call.
     deliver_single_output: bool
+    # Files the plan must deliver: the lint requires the files the request asks to save
+    # to be listed, each with a producer that owns file_write, and the verify step after
+    # synthesis checks each was written (VERIFY_DELIVERABLES can switch the step off).
+    check_deliverables: bool
 
 
 _SWITCHES = {
-    1: Rules(lint_plans=False, deliver_single_output=False),  # before ADR 0017
-    2: Rules(lint_plans=True, deliver_single_output=True),  # ADR 0017
+    1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False),  # before ADR 0017
+    2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False),  # ADR 0017
+    3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True),  # ADR 0019
 }
 
 

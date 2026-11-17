@@ -5,18 +5,20 @@ decompose and saw no tools: work given to a specialist that does not own the too
 it needs, tool-less research and analysis steps, code written in one subtask and
 run in another, and four to eight subtasks that open with research. Each must
 fail. A plan with one subtask, or one subtask per owner of the tools it needs,
-must pass.
+must pass. Files the request asks to save must be the plan's deliverables, each
+written by a subtask that owns and lists file_write.
 """
 
 import json
 from dataclasses import replace
+from pathlib import Path
 
 import pytest
 
 from orchestrator.config import get_settings
 from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
-from orchestrator.planning.capabilities import lint, manifest, render_manifest, summary
+from orchestrator.planning.capabilities import lint, manifest, render_manifest, requested_files, summary
 from orchestrator.planning.decomposer import PLAN_MARKER, PlanValidationError, decompose
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools import api_call, code_exec, db_query, file_io, web_search
@@ -47,8 +49,9 @@ def step(sid: str, specialist: str, tools: list[str], description: str = "", dep
             "description": description or f"step {sid}", "depends_on": list(depends_on)}
 
 
-def plan(*subtasks: dict) -> ExecutionPlan:
-    return ExecutionPlan.model_validate({"subtasks": list(subtasks), "confidence": 0.9})
+def plan(*subtasks: dict, deliverables: dict[str, str] | None = None) -> ExecutionPlan:
+    listed = [{"path": path, "producer": producer} for path, producer in (deliverables or {}).items()]
+    return ExecutionPlan.model_validate({"subtasks": list(subtasks), "deliverables": listed, "confidence": 0.9})
 
 
 # --- the manifest ---------------------------------------------------------------
@@ -257,4 +260,121 @@ async def test_with_the_lint_off_its_findings_are_reported_but_reject_nothing(tm
 
     assert planned.plan == WRONG_OWNER
     assert planned.lint_errors == lint(WRONG_OWNER, registry(), 4)
+    assert len(llm.prompts) == 1
+
+
+# --- deliverables ------------------------------------------------------------------
+
+AGENT_TASKS = Path(__file__).resolve().parents[4] / "eval" / "tasks" / "agent_tasks.jsonl"
+
+
+def required_files(task: dict) -> list[str]:
+    """The paths a task's must_call requires file_write to write, as the harness reads them."""
+    return [
+        entry["args"]["path"]
+        for entry in task["must_call"]
+        if "file_write" in ([entry["tool"]] if isinstance(entry["tool"], str) else entry["tool"])
+        and "path" in entry.get("args", {})
+    ]
+
+
+def test_the_request_scan_finds_each_evaluation_tasks_required_file_or_nothing():
+    tasks = [json.loads(line) for line in AGENT_TASKS.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+    assert tasks
+    for task in tasks:
+        found, required = requested_files(task["request"]), required_files(task)
+        assert found in ([], required), task["id"]  # never a file the task does not require
+        if required and "save" in task["request"].lower():
+            assert found == required, task["id"]  # a request that says save is not missed
+
+
+@pytest.mark.parametrize(("request_text", "expected"), [
+    ("Save the note as `notes.md`.", ["notes.md"]),
+    ("Write a memo, saved as `out/memo.md`, then stop.", ["out/memo.md"]),
+    ("save `report.txt` when done", ["report.txt"]),
+    ("Saving the results to `results.csv` is enough.", ["results.csv"]),
+    ("Save it as `a.md`; also save the table as `b.csv`. Save it as `a.md` again.", ["a.md", "b.csv"]),
+    ("Read `requirements.txt` and save the plan as `plan.md`.", ["plan.md"]),
+])
+def test_the_request_scan_finds_a_back_quoted_name_the_request_asks_to_save(request_text, expected):
+    assert requested_files(request_text) == expected
+
+
+@pytest.mark.parametrize("request_text", [
+    "Write a comparison memo saved as memo.md.",  # not back-quoted
+    "Migrate files such as `pyproject.toml` and `poetry.lock`.",  # mentioned, not saved
+    "Put the explanation in `notes.md`.",  # no save: missed, never invented
+    "Save time: explain how `BaseModel.model_dump_json` differs.",  # not a file name
+    "Save the summary. Then read `config.yaml`.",  # another sentence
+])
+def test_the_request_scan_ignores_a_name_it_is_not_asked_to_save(request_text):
+    assert requested_files(request_text) == []
+
+
+def test_a_file_the_request_asks_to_save_must_be_a_deliverable():
+    request = "Summarise the docs and save the summary as `summary.md`."
+    unlisted = plan(step("s1", "research", ["rag_search", "file_write"]))
+    listed = plan(step("s1", "research", ["rag_search", "file_write"]), deliverables={"summary.md": "s1"})
+
+    assert lint(unlisted, registry(), 4, request) == [
+        "The task asks to save `summary.md`; list it in deliverables with exactly that path and the id "
+        "of the subtask that writes it with file_write."
+    ]
+    assert lint(listed, registry(), 4, request) == []
+
+
+def test_a_deliverable_the_request_does_not_name_is_allowed():
+    shape = plan(step("s1", "writing", ["file_write"]), deliverables={"memo.md": "s1"})
+
+    assert lint(shape, registry(), 4, "Write a comparison memo saved as memo.md.") == []
+
+
+def test_a_deliverables_producer_must_list_file_write():
+    shape = plan(step("s1", "research", ["rag_search"]), deliverables={"notes.md": "s1"})
+
+    assert lint(shape, registry(), 4) == ["s1: it is to write `notes.md`; list file_write in its tools."]
+
+
+def test_a_deliverables_producer_must_own_file_write():
+    shape = plan(step("s1", "research", ["rag_search"]), deliverables={"notes.md": "s1"})
+
+    (error,) = lint(shape, registry(without=("file_write",)), 4)
+    assert error == (
+        "s1: it is to write `notes.md`, but research cannot call file_write (owned here by: nobody); "
+        "give the file to a subtask whose specialist owns it."
+    )
+
+
+def test_without_the_deliverables_switch_deliverables_are_not_linted():
+    shape = plan(step("s1", "research", ["rag_search"]), deliverables={"notes.md": "s1"})
+
+    assert lint(shape, registry(), 4, "Save it as `other.md`.", deliverables=False) == []
+
+
+@pytest.mark.anyio
+async def test_the_planner_is_asked_for_deliverables_and_retried_without_them(tmp_path):
+    request = "Rank the databases by stars and save the ranking as `ranking.md`."
+    unlisted = plan(step("s1", "analysis", ["db_query", "file_write"], "Rank and save as ranking.md"))
+    listed = plan(step("s1", "analysis", ["db_query", "file_write"], "Rank and save as ranking.md"),
+                  deliverables={"ranking.md": "s1"})
+    llm = fixtures(tmp_path, unlisted, listed)
+
+    planned = await decompose(llm, request, registry())
+
+    assert planned.plan == listed
+    first, retry = llm.prompts
+    assert "In deliverables, list every file the task asks to be saved or written" in first
+    assert "The task asks to save `ranking.md`" in retry
+
+
+@pytest.mark.anyio
+async def test_a_plan_under_rules_without_deliverables_is_not_retried_for_them(tmp_path):
+    request = "Rank the databases by stars and save the ranking as `ranking.md`."
+    unlisted = plan(step("s1", "analysis", ["db_query", "file_write"]))
+    llm = fixtures(tmp_path, unlisted, unlisted)
+
+    planned = await decompose(llm, request, registry(), check_deliverables=False)
+
+    assert planned.plan == unlisted and planned.lint_errors == []
     assert len(llm.prompts) == 1

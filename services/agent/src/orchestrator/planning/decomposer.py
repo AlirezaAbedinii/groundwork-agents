@@ -6,11 +6,12 @@ fewest subtasks that do the work. The plan comes back as native structured outpu
 constrained to the ExecutionPlan schema. Two kinds of check follow: the ones only
 Pydantic can run (unique ids, known dependencies, no cycles), and the plan lint
 (every tool exists and belongs to its subtask's specialist, a tool-bound subtask
-names its tools, the plan is within the size limit). A plan that fails either is
+names its tools, the plan is within the size limit, each deliverable's producer owns
+file_write, and every file the request asks to save is a deliverable). A plan that fails either is
 retried exactly once with the errors appended to the prompt. With
 ``plan_lint="off"`` the lint's findings are reported but reject nothing, and
 without ``lint_plans`` (the rules of a task from before the lint, orchestrator/rules.py)
-the lint does not run.
+the lint does not run; without ``check_deliverables`` it leaves deliverables alone.
 """
 
 from __future__ import annotations
@@ -53,6 +54,10 @@ Rules:
    of the subtask that needs them, word for word.
 6. Subtask ids are unique. depends_on may only reference other subtask ids and must
    form no cycles. Subtasks that do not depend on each other run in parallel.
+7. In deliverables, list every file the task asks to be saved or written, with its
+   path exactly as the task gives it and the id of the subtask that writes it. That
+   subtask lists file_write in its tools. If the task asks for no file, leave
+   deliverables empty.
 """
 
 RETRY_SUFFIX = """
@@ -87,7 +92,13 @@ class Planned:
 
 
 async def decompose(
-    llm: LLMClient, request: str, registry: ToolRegistry, memories: str | None = None, *, lint_plans: bool = True
+    llm: LLMClient,
+    request: str,
+    registry: ToolRegistry,
+    memories: str | None = None,
+    *,
+    lint_plans: bool = True,
+    check_deliverables: bool = True,
 ) -> Planned:
     settings = get_settings()
     prompt = PLAN_PROMPT.format(
@@ -104,7 +115,7 @@ async def decompose(
         plan = await _plan(llm, text)
         if not lint_plans:
             return plan
-        errors, rejected = check(plan, registry)
+        errors, rejected = check(plan, registry, request, deliverables=check_deliverables)
         found.extend(errors)
         if rejected:
             raise _LintFailure(errors)

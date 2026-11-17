@@ -81,12 +81,15 @@ async def _lint_modified_plan(approval: dict, body: ResolveRequest) -> None:
     if body.action != "modify" or approval["gate_key"] != "plan":
         return
     task = DBTaskRepo().get_task(approval["task_id"]) or {}
-    if not rules_for(task.get("rules_version")).lint_plans:
+    rules = rules_for(task.get("rules_version"))
+    if not rules.lint_plans:
         return
     from orchestrator.graph.runner import current_registry
 
     plan = ExecutionPlan.model_validate((body.payload or {}).get("plan"))  # the schema was checked first
-    errors, rejected = check(plan, await current_registry())
+    errors, rejected = check(
+        plan, await current_registry(), task.get("request", ""), deliverables=rules.check_deliverables
+    )
     if rejected:
         raise HTTPException(status_code=422, detail="Modified plan fails the plan lint: " + " ".join(errors))
 
