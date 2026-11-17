@@ -90,3 +90,10 @@ through its run.
   keep the meaning of a version in one place.
 - **Leave old replays broken and say so.** Replay is meant to reproduce any past run,
   and the failure was silent in one of the two cases.
+
+## Addendum (2026-11-17): version 3
+
+Version 3 adds one switch, `check_deliverables`, and keeps both of version 2's on. With
+it, the plan lint checks the plan's deliverables, and a verify step after synthesis
+checks that each was written (ADR 0019). A new task gets version 3; a task from version
+2 replays and resumes without either check.
