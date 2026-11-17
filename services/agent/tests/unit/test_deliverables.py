@@ -14,13 +14,14 @@ import pytest
 from orchestrator.config import get_settings
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
-from orchestrator.graph.edges import check_deliverables, deliverable_feedback, route_after_verify, written_paths
+from orchestrator.graph.edges import check_deliverables, deliverable_feedback, route_after_verify
 from orchestrator.hitl.queue import InMemoryApprovalQueue
 from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
 from orchestrator.rules import CURRENT_RULES_VERSION
 from orchestrator.tools.base import InMemoryInvocationStore, InvocationRecord
 from orchestrator.tools.defaults import build_default_registry
+from orchestrator.tools.file_io import written_paths
 
 pytestmark = pytest.mark.anyio
 

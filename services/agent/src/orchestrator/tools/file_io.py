@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from orchestrator.tools.base import ToolContext, ToolExecutionError, ToolSpec
+from orchestrator.tools.base import InvocationRecord, ToolContext, ToolExecutionError, ToolSpec
 
 _OWNERS = frozenset({"research", "analysis", "writing", "code"})
 
@@ -73,3 +74,14 @@ WRITE_SPEC = ToolSpec(
     handler=handle_write,
     changes_state=True,
 )
+
+
+def written_paths(invocations: Iterable[InvocationRecord]) -> set[str]:
+    """The paths that successful file_write calls wrote, exactly as each call gave them."""
+    return {
+        path
+        for record in invocations
+        if record.tool_name == WRITE_SPEC.name
+        and record.status == "success"
+        and isinstance(path := record.arguments.get("path"), str)
+    }

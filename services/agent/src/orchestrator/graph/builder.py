@@ -56,7 +56,6 @@ from orchestrator.graph.edges import (
     route_after_plan_escalation,
     route_after_subtask_escalation,
     route_after_verify,
-    written_paths,
 )
 from orchestrator.graph.state import TaskState
 from orchestrator.hitl.levels import ApprovalLevel, level_for
@@ -71,6 +70,7 @@ from orchestrator.planning.decomposer import PlanValidationError
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.rules import rules_for
 from orchestrator.tools.base import ToolContext
+from orchestrator.tools.file_io import written_paths
 from orchestrator.tools.registry import ToolRegistry
 
 logger = logging.getLogger(__name__)
@@ -622,7 +622,10 @@ def build_graph(
                 set_attr(span, "synthesized", False)
                 return {"final_output": next(iter(outputs.values()))}
             set_attr(span, "synthesized", True)
-            return {"final_output": await supervisor.synthesize(state["request"], outputs)}
+            plan = ExecutionPlan.model_validate(state["plan"])
+            invocations = registry.invocations(state["task_id"])
+            final = await supervisor.synthesize(state["request"], plan, state.get("subtask_results", {}), invocations)
+            return {"final_output": final}
 
     def verify(state: TaskState) -> dict:
         deliverables = (state.get("plan") or {}).get("deliverables")

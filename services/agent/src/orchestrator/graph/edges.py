@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from langgraph.types import Send
@@ -12,7 +11,6 @@ from orchestrator.graph.state import TaskState
 from orchestrator.hitl.triggers import attempts_spent, plan_escalation
 from orchestrator.planning.capabilities import FILE_WRITE
 from orchestrator.planning.schemas import ExecutionPlan
-from orchestrator.tools.base import InvocationRecord
 
 
 def plan_gate(state: TaskState) -> str:
@@ -114,17 +112,6 @@ def route_after_verify(state: TaskState) -> str:
     if outcome == "failed":
         return "end"
     return "schedule" if outcome == "redispatch" else "final_gate"
-
-
-def written_paths(invocations: Iterable[InvocationRecord]) -> set[str]:
-    """The paths that successful file_write calls wrote, exactly as each call gave them."""
-    return {
-        path
-        for record in invocations
-        if record.tool_name == FILE_WRITE
-        and record.status == "success"
-        and isinstance(path := record.arguments.get("path"), str)
-    }
 
 
 def _listed(paths: list[str]) -> str:
