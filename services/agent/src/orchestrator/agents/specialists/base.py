@@ -23,9 +23,11 @@ turn is answered with exactly one ToolMessage before the model's next turn:
 
 Each call that reached the registry or the human gate leaves a receipt: the tool,
 whether it returned a result (``success``), failed (``error``) or was denied by a
-human (``denied``), and the first RECEIPT_CHARS characters of its answer. A repeat
-leaves none, since nothing ran; the receipt of the call it repeats stands. The
-graph checks the receipts before review, and the reviewer reads them.
+human (``denied``), and the first RECEIPT_CHARS characters of its answer, with
+credential-shaped text replaced (``redact``): the reviewer may run on another
+provider than the one that called the tool. A repeat leaves none, since nothing
+ran; the receipt of the call it repeats stands. The graph checks the receipts
+before review, and the reviewer reads them.
 
 Before the last turn the model is told that it is the last. An attempt fails
 only when the turn budget runs out (``max_tool_iterations``; a batch of calls is
@@ -37,6 +39,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
@@ -65,6 +68,25 @@ LAST_TURN = "This is your last turn. Reply with the deliverable. State plainly a
 
 # How much of each answer a receipt keeps
 RECEIPT_CHARS = 200
+
+# Credential-shaped text a receipt never shows. A pattern list, not a guarantee: it covers
+# named secrets, passwords in URLs, bearer tokens and common provider key formats.
+REDACTED = "[redacted]"
+_SECRET_NAME = (
+    r"(?:secret|secret[_-]?key|password|passwd|api[_-]?key|access[_-]?key|private[_-]?key|account[_-]?key"
+    r"|(?:access|auth|refresh|session|api)[_-]?token)"
+)
+SECRET_PATTERNS: list[tuple[re.Pattern[str], str]] = [
+    (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)"), REDACTED),
+    # scheme://user:password@host keeps the user
+    (re.compile(r"\b([A-Za-z][A-Za-z0-9+.-]{0,20}://[^\s/:@]+):[^\s/@]+@"), rf"\1:{REDACTED}@"),
+    (re.compile(r"(?i)\b(bearer\s+)(?=[\w.~+/=-]*\d)[\w.~+/=-]{8,}"), rf"\1{REDACTED}"),
+    # NAME=value, NAME: value and "NAME": "value", with or without a prefix (OPENAI_API_KEY, db_password)
+    (re.compile(rf"(?i)(?<![\w-])([\w-]*{_SECRET_NAME}[\"']?\s*[:=]\s*[\"']?)[^\s\"',;&}}]+"), rf"\1{REDACTED}"),
+    # provider key formats that appear without a name
+    (re.compile(r"\b(?:sk-[\w-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|AKIA[0-9A-Z]{16}"
+                r"|xox[abposr]-[A-Za-z0-9-]{10,}|AIza[\w-]{30,}|eyJ[\w-]{10,}\.[\w-]{10,}\.[\w-]{10,})"), REDACTED),
+]
 
 # What a failed attempt's retry is told: its last tool exchanges, in at most this many characters.
 DIGEST_LINES = 3
@@ -103,10 +125,19 @@ class SpecialistResult:
     receipts: list[dict] = field(default_factory=list)
 
 
+def redact(text: str) -> str:
+    """``text`` with its credential-shaped parts replaced by [redacted]."""
+    for pattern, replacement in SECRET_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def receipt(tool: str, status: str, answer: str) -> dict:
     """What a call left behind: ``status`` is success, error or denied; ``digest`` is the
-    start of the answer on one line, where the outcome and an error's reason are."""
-    return {"tool": tool, "status": status, "digest": " ".join(answer.split())[:RECEIPT_CHARS]}
+    start of the answer on one line, where the outcome and an error's reason are. One line,
+    so a tool's text cannot start a line of the review prompt; redacted before the cut, so
+    a key that straddles it is still found."""
+    return {"tool": tool, "status": status, "digest": redact(" ".join(answer.split()))[:RECEIPT_CHARS]}
 
 
 def _answer(call: ToolCall, content: str, *, error: bool = False) -> ToolMessage:

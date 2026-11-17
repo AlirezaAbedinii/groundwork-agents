@@ -26,6 +26,7 @@ from orchestrator.agents.specialists.base import (
     SpecialistError,
     SpecialistResult,
     receipt,
+    redact,
 )
 from orchestrator.config import get_settings
 from orchestrator.llm.mock import LLMResponse, ToolCall
@@ -423,6 +424,26 @@ def test_a_receipt_keeps_the_start_of_the_answer_on_one_line():
     assert kept["tool"] == "db_query" and kept["status"] == "error"
     assert kept["digest"].startswith('relation "stars" does not exist LINE 1: SELECT stars FROM stars x')
     assert len(kept["digest"]) == RECEIPT_CHARS and "\n" not in kept["digest"]
+
+
+def test_a_receipt_shows_no_credentials():
+    # built at run time, so this file holds nothing shaped like a real key
+    key = "sk-" + "proj-" + "a1B2c3D4" * 4
+    token = "eyJ" + "hbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2QT4"
+    answer = (
+        f"OPENAI_API_KEY={key}\nDATABASE_URL=postgresql://app:hunter2@db:5432/agent\n"
+        f'{{"password": "s3cret", "rows": 3}} Authorization: Bearer {token} and {key}'
+    )
+    assert receipt("file_read", "success", answer)["digest"] == (
+        "OPENAI_API_KEY=[redacted] DATABASE_URL=postgresql://app:[redacted]@db:5432/agent "
+        '{"password": "[redacted]", "rows": 3} Authorization: Bearer [redacted] and [redacted]'
+    )
+    # redacted before the cut: a key the cut would shorten past recognition is still found
+    kept = receipt("code_exec", "success", "y" * 190 + " " + key)["digest"]
+    assert len(kept) == RECEIPT_CHARS and "sk-" not in kept
+    # text that only names a secret is left as it is
+    prose = "the secrets: none were found; a password field is required; max tokens: 128"
+    assert redact(prose) == prose
 
 
 def test_a_digest_keeps_each_line_on_one_line():
