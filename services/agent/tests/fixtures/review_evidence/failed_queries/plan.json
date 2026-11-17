@@ -1,0 +1,9 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Create an execution plan"
+  ],
+  "response": {
+    "text": "{\"task_summary\": \"Rank the vector databases by stars and compare them\", \"subtasks\": [{\"required_inputs\": [], \"expected_output_format\": \"a ranked list with star counts\", \"estimated_complexity\": \"low\", \"depends_on\": [], \"id\": \"s1\", \"description\": \"Rank the three vector databases by GitHub stars from the demo data\", \"specialist\": \"analysis\", \"tools\": [\"db_query\"]}, {\"required_inputs\": [], \"expected_output_format\": \"plain text\", \"estimated_complexity\": \"low\", \"depends_on\": [\"s1\"], \"id\": \"s2\", \"description\": \"Write a short comparison of the three from the ranking\", \"specialist\": \"writing\", \"tools\": []}], \"deliverables\": [], \"confidence\": 0.9}"
+  }
+}

@@ -73,6 +73,18 @@ def low_review_score(
     return None
 
 
+def no_tool_result(sid: str, tools: list[str], rework_count: int, max_retries: int) -> Escalation | None:
+    """A subtask reworked because none of the tools it lists returned a result (graph/builder.py):
+    a review outcome reached without a reviewer, so it escalates as a low review score does."""
+    if rework_count >= max_retries:
+        return Escalation(
+            Trigger.LOW_REVIEW_SCORE,
+            f"Subtask {sid}: none of its tools ({', '.join(tools)}) returned a result "
+            f"after {rework_count} rework cycles",
+        )
+    return None
+
+
 def plan_escalation(
     confidence: float, require_human_review: bool, threshold: float
 ) -> Escalation | None:
@@ -111,6 +123,8 @@ def subtask_escalation(
         escalation = specialist_double_failure(
             sid, result.get("error_count", 0), result.get("error"), max_failures
         )
+    elif status == "rework" and result.get("no_tool_result"):
+        escalation = no_tool_result(sid, result["no_tool_result"], result.get("rework_count", 0), max_retries)
     elif status == "rework":
         escalation = low_review_score(
             sid, result.get("score"), result.get("rework_count", 0), review_threshold, max_retries
@@ -124,6 +138,12 @@ def subtask_escalation(
             escalation = Escalation(
                 Trigger.SPECIALIST_DOUBLE_FAILURE,
                 f"Subtask {sid} failed on attempt {attempts}, the last one it was allowed{detail}",
+            )
+        elif result.get("no_tool_result"):
+            escalation = Escalation(
+                Trigger.LOW_REVIEW_SCORE,
+                f"Subtask {sid}: none of its tools ({', '.join(result['no_tool_result'])}) returned a result "
+                f"on attempt {attempts}, the last one it was allowed",
             )
         else:
             escalation = Escalation(

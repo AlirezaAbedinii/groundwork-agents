@@ -1,0 +1,10 @@
+{
+  "agent": "research",
+  "match": [
+    "Look up the gateway's default idle timeout in the team documentation",
+    "-> rag_search returned"
+  ],
+  "response": {
+    "text": "Not documented: no passage in the team documentation gives a default idle timeout for the gateway's connection pool."
+  }
+}

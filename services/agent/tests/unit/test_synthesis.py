@@ -132,7 +132,8 @@ async def test_the_graphs_synthesis_sees_the_tasks_invocations(tmp_path, monkeyp
             "deliverables": [{"path": "memo.md", "producer": "s2"}], "confidence": 0.9}
     fx("plan", "supervisor", json.dumps(plan), match=["Create an execution plan"])
     fx("synth", "supervisor", "DONE", match=[SYNTH_MARKER])
-    fx("research", "research", "NOT DOCUMENTED")
+    fx("research", "research", tool_calls=[{"name": "web_search", "arguments": {"query": "it"}}])
+    fx("r_answer", "research", "NOT DOCUMENTED", match=["-> web_search returned"])
     fx("w_a", "writing", match=["write the memo"],
        tool_calls=[{"name": "file_write", "arguments": {"path": "memo.md", "content": "memo"}}])
     fx("w_b", "writing", "MEMO WRITTEN", match=["write the memo", "-> file_write returned"])
@@ -154,7 +155,7 @@ async def test_the_graphs_synthesis_sees_the_tasks_invocations(tmp_path, monkeyp
                          "rules_version": CURRENT_RULES_VERSION})
 
     (prompt,) = [text for agent, text in llm.prompts if agent == "supervisor" and SYNTH_MARKER in text]
-    assert "[s1] research: look it up\nTool calls: none\nReported by research:\nNOT DOCUMENTED" in prompt
+    assert "[s1] research: look it up\nTool calls: web_search succeeded\nReported by research:\nNOT DOCUMENTED" in prompt
     assert "[s2] writing: write the memo\nTool calls: file_write `memo.md` succeeded\n" in prompt
     assert "- `memo.md` (by s2): written" in prompt
     assert repo.tasks[task_id]["status"] == "completed"

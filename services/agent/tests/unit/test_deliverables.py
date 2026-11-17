@@ -29,13 +29,16 @@ FEEDBACK = "Required file not written: `notes.md`"
 
 
 def fx(directory, name: str, agent: str, text: str = "", match: list[str] | None = None,
-       writes: list[str] | None = None) -> None:
-    """A fixture; ``writes`` makes it a turn that calls file_write once per path."""
+       writes: list[str] | None = None, search: bool = False) -> None:
+    """A fixture; ``writes`` makes it a turn that calls file_write once per path, ``search`` one
+    that runs a web search (canned under MOCK_LLM)."""
     response: dict = {"text": text}
     if writes:
         response["tool_calls"] = [
             {"name": "file_write", "arguments": {"path": path, "content": f"content of {path}"}} for path in writes
         ]
+    if search:
+        response["tool_calls"] = [{"name": "web_search", "arguments": {"query": "the topic"}}]
     payload = {"agent": agent, "response": response}
     if match:
         payload["match"] = match
@@ -58,8 +61,21 @@ def two_step_plan(directory) -> None:
     }
     fx(directory, "plan", "supervisor", json.dumps(plan), match=["Create an execution plan"])
     fx(directory, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    fx(directory, "research", "research", "FACTS")
+    fx(directory, "research", "research", search=True)
+    fx(directory, "research_answer", "research", "FACTS", match=["-> web_search returned"])
     fx(directory, "reviewer", "reviewer", json.dumps({"score": 5, "feedback": "fine"}))
+
+
+def writes_elsewhere(directory) -> None:
+    """The writer saves a draft under another name and never writes notes.md. (One that writes
+    nothing at all is sent back before review, so verify would not see it: agents/reviewer.py.)"""
+    fx(directory, "w_draft", "writing", match=["write the notes"], writes=["draft.md"])
+    fx(directory, "w_reply", "writing", "NOTES WITHOUT A FILE", match=["write the notes", "-> file_write returned"])
+
+
+def openings(prompts: list[str]) -> list[str]:
+    """The first prompt of each attempt: no tool has answered yet."""
+    return [prompt for prompt in prompts if "-> file_write" not in prompt]
 
 
 class Recording:
@@ -102,7 +118,7 @@ async def run(fixtures, request: str = "write notes", rules_version: int = CURRE
 
 async def test_a_missing_file_gets_one_corrective_dispatch_then_the_task_fails_naming_it(fixtures):
     two_step_plan(fixtures)
-    fx(fixtures, "writing", "writing", "NOTES WITHOUT A FILE")
+    writes_elsewhere(fixtures)
 
     task, state, llm, _ = await run(fixtures)
 
@@ -110,7 +126,7 @@ async def test_a_missing_file_gets_one_corrective_dispatch_then_the_task_fails_n
     assert task["error"] == "Required file not written: `notes.md`; s2 was already sent back once to write it"
     assert task["final_output"] is None  # nothing delivered
     assert state["dispatch_log"] == [["s1"], ["s2"], ["s2"]]  # the producer alone, once more
-    first, corrective = llm.prompts("writing")
+    first, corrective = openings(llm.prompts("writing"))
     assert FEEDBACK not in first
     assert f"Reviewer feedback: {FEEDBACK}. Call file_write with exactly that path" in corrective
     assert len(llm.prompts("supervisor", "Synthesize the final deliverable")) == 2  # synthesized again
@@ -149,12 +165,14 @@ async def test_stray_files_beside_the_deliverable_do_not_fail(fixtures):
 
 async def test_a_failed_write_does_not_count(fixtures):
     two_step_plan(fixtures)
-    fx(fixtures, "w_a", "writing", match=["write the notes"], writes=["../notes.md"])  # escapes the workspace
+    # the first escapes the workspace; the draft gives the attempt a result to review
+    fx(fixtures, "w_a", "writing", match=["write the notes"], writes=["../notes.md", "draft.md"])
     fx(fixtures, "w_b", "writing", "TRIED", match=["write the notes", "-> file_write failed"])
 
     task, state, _, store = await run(fixtures)
 
-    assert [r.status for r in store.records if r.tool_name == "file_write"] == ["failure", "failure"]
+    escaped = [r.status for r in store.records if r.tool_name == "file_write" and r.arguments["path"] == "../notes.md"]
+    assert escaped == ["failure", "failure"]
     assert task["status"] == "failed"
     assert task["error"].startswith("Required file not written: `notes.md`")
 
@@ -162,14 +180,14 @@ async def test_a_failed_write_does_not_count(fixtures):
 async def test_a_producer_with_no_attempt_left_is_not_sent_back(fixtures, monkeypatch):
     monkeypatch.setattr(get_settings(), "max_subtask_attempts", 1)
     two_step_plan(fixtures)
-    fx(fixtures, "writing", "writing", "NOTES WITHOUT A FILE")
+    writes_elsewhere(fixtures)
 
     task, state, llm, _ = await run(fixtures)
 
     assert task["status"] == "failed"
     assert task["error"] == "Required file not written: `notes.md`; s2 has made all 1 attempts it may"
     assert state["dispatch_log"] == [["s1"], ["s2"]]
-    assert len(llm.prompts("writing")) == 1
+    assert len(openings(llm.prompts("writing"))) == 1
 
 
 async def test_a_one_subtask_plan_delivers_the_corrected_output_without_synthesis(fixtures):
@@ -177,7 +195,8 @@ async def test_a_one_subtask_plan_delivers_the_corrected_output_without_synthesi
             "deliverables": [{"path": "notes.md", "producer": "s1"}], "confidence": 0.9}
     fx(fixtures, "plan", "supervisor", json.dumps(plan), match=["Create an execution plan"])
     fx(fixtures, "reviewer", "reviewer", json.dumps({"score": 5, "feedback": "fine"}))
-    fx(fixtures, "r_a", "research", "FORGOT THE FILE", match=["write the notes"])
+    fx(fixtures, "r_search", "research", match=["write the notes"], search=True)
+    fx(fixtures, "r_a", "research", "FORGOT THE FILE", match=["write the notes", "-> web_search returned"])
     fx(fixtures, "r_b", "research", match=["write the notes", FEEDBACK], writes=["notes.md"])
     fx(fixtures, "r_c", "research", "NOTES SAVED", match=["write the notes", FEEDBACK, "-> file_write returned"])
 
@@ -191,7 +210,7 @@ async def test_a_one_subtask_plan_delivers_the_corrected_output_without_synthesi
 async def test_with_the_setting_off_a_missing_file_is_not_checked(fixtures, monkeypatch):
     monkeypatch.setattr(get_settings(), "verify_deliverables", False)
     two_step_plan(fixtures)
-    fx(fixtures, "writing", "writing", "NOTES WITHOUT A FILE")
+    writes_elsewhere(fixtures)
 
     task, state, _, _ = await run(fixtures)
 
@@ -201,7 +220,7 @@ async def test_with_the_setting_off_a_missing_file_is_not_checked(fixtures, monk
 
 async def test_a_task_under_rules_without_deliverables_is_not_checked(fixtures):
     two_step_plan(fixtures)
-    fx(fixtures, "writing", "writing", "NOTES WITHOUT A FILE")
+    writes_elsewhere(fixtures)
 
     task, state, _, _ = await run(fixtures, rules_version=2)
 
@@ -213,7 +232,7 @@ async def test_a_plan_without_deliverables_is_not_checked(fixtures):
     two_step_plan(fixtures)
     plan = json.loads(json.loads((fixtures / "plan.json").read_text())["response"]["text"])
     fx(fixtures, "plan", "supervisor", json.dumps({**plan, "deliverables": []}), match=["Create an execution plan"])
-    fx(fixtures, "writing", "writing", "NOTES WITHOUT A FILE")
+    writes_elsewhere(fixtures)
 
     task, state, _, _ = await run(fixtures)
 

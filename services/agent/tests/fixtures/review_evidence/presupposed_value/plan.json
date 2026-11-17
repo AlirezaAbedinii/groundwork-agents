@@ -1,0 +1,9 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Create an execution plan"
+  ],
+  "response": {
+    "text": "{\"task_summary\": \"Find the gateway's default idle timeout in the documentation\", \"subtasks\": [{\"required_inputs\": [], \"expected_output_format\": \"plain text\", \"estimated_complexity\": \"low\", \"depends_on\": [], \"id\": \"s1\", \"description\": \"Look up the gateway's default idle timeout in the team documentation\", \"specialist\": \"research\", \"tools\": [\"rag_search\"]}, {\"required_inputs\": [], \"expected_output_format\": \"plain text\", \"estimated_complexity\": \"low\", \"depends_on\": [\"s1\"], \"id\": \"s2\", \"description\": \"Extract the default idle timeout value in seconds\", \"specialist\": \"analysis\", \"tools\": [\"code_exec\"]}], \"deliverables\": [], \"confidence\": 0.9}"
+  }
+}

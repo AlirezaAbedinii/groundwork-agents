@@ -13,17 +13,27 @@ from orchestrator.rules import CURRENT_RULES_VERSION, Rules, effective_version, 
 def test_no_version_is_version_1_the_rules_from_before_the_lint():
     assert effective_version(None) == 1
     assert rules_for(None) == rules_for(1) == Rules(
-        lint_plans=False, deliver_single_output=False, check_deliverables=False
+        lint_plans=False, deliver_single_output=False, check_deliverables=False, require_tool_results=False
     )
 
 
 def test_version_2_lints_plans_and_delivers_a_single_output():
-    assert rules_for(2) == Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False)
+    assert rules_for(2) == Rules(
+        lint_plans=True, deliver_single_output=True, check_deliverables=False, require_tool_results=False
+    )
 
 
 def test_version_3_also_checks_deliverables():
-    assert CURRENT_RULES_VERSION == 3
-    assert rules_for(3) == Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True)
+    assert rules_for(3) == Rules(
+        lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=False
+    )
+
+
+def test_version_4_also_requires_a_result_from_a_subtasks_tools():
+    assert CURRENT_RULES_VERSION == 4
+    assert rules_for(4) == Rules(
+        lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True
+    )
 
 
 def test_an_unknown_version_is_refused():

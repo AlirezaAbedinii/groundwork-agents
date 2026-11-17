@@ -1,0 +1,12 @@
+{
+  "agent": "analysis",
+  "match": [
+    "Rank the three vector databases by GitHub stars from the demo data",
+    "-> db_query failed: relation",
+    "-> db_query failed: column",
+    "-> db_query failed: syntax error"
+  ],
+  "response": {
+    "text": "I could not retrieve the star counts from the database. Approximate figures from general knowledge: 1. Chroma, about 9,000 stars; 2. Qdrant, about 7,000; 3. Weaviate, about 5,000."
+  }
+}

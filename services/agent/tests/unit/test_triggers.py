@@ -102,6 +102,23 @@ def test_subtask_escalation_when_the_allowance_is_spent(result, expected):
         assert "the last one it was allowed" in escalation.reason
 
 
+@pytest.mark.parametrize(
+    ("result", "reason"),
+    [
+        ({"status": "rework", "score": None, "rework_count": 2, "no_tool_result": ["db_query", "code_exec"]},
+         "Subtask s1: none of its tools (db_query, code_exec) returned a result after 2 rework cycles"),
+        ({"status": "rework", "score": None, "rework_count": 1, "no_tool_result": ["db_query"], "attempts": 3},
+         "Subtask s1: none of its tools (db_query) returned a result on attempt 3, the last one it was allowed"),
+    ],
+)
+def test_a_rework_for_no_tool_result_escalates_as_a_review_does(result, reason):
+    # sent back before review (graph/builder.py): no score, so the reason names the tools instead
+    escalation = subtask_escalation("s1", result, review_threshold=3, max_retries=2, default_allowance=3)
+    assert (escalation.trigger, escalation.reason) == (Trigger.LOW_REVIEW_SCORE, reason)
+    below = {**result, "rework_count": 1, "attempts": 2}
+    assert subtask_escalation("s1", below, review_threshold=3, max_retries=2, default_allowance=3) is None
+
+
 def test_the_default_allowance_stands_in_for_a_missing_one():
     result = {"status": "failed_attempt", "error_count": 1, "attempts": 2}
     assert subtask_escalation("s1", result, review_threshold=3, max_retries=2, default_allowance=3) is None

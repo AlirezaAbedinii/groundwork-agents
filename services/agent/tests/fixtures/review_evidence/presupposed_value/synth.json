@@ -1,0 +1,9 @@
+{
+  "agent": "supervisor",
+  "match": [
+    "Synthesize the final deliverable"
+  ],
+  "response": {
+    "text": "The default idle timeout is 30 seconds."
+  }
+}

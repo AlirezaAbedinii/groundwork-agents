@@ -1,0 +1,6 @@
+{
+  "agent": "reviewer",
+  "response": {
+    "text": "{\"score\": 4, \"feedback\": \"Clear ranking with counts; note the figures are approximate.\"}"
+  }
+}

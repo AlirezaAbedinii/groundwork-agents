@@ -194,7 +194,8 @@ def fx(directory, name: str, agent: str, text: str, match=None, tool_calls=None)
 
 
 def one_subtask_plan(tmp_path, *, endless: bool) -> None:
-    """One research subtask; with ``endless`` the specialist calls a missing tool on every turn."""
+    """One research subtask; with ``endless`` the specialist calls a missing tool on every turn, without
+    it one web search (canned under MOCK_LLM) and then the answer."""
     plan = {
         "task_summary": "test", "confidence": 0.9,
         "subtasks": [{
@@ -208,7 +209,8 @@ def one_subtask_plan(tmp_path, *, endless: bool) -> None:
     if endless:
         fx(tmp_path, "research", "research", "", tool_calls=[{"name": "bogus_tool", "arguments": {}}])
     else:
-        fx(tmp_path, "research", "research", "RESEARCH-OK")
+        fx(tmp_path, "research", "research", "", tool_calls=[{"name": "web_search", "arguments": {"query": "it"}}])
+        fx(tmp_path, "research_answer", "research", "RESEARCH-OK", match=["-> web_search returned"])
     fx(tmp_path, "reviewer", "reviewer", json.dumps({"score": 5, "feedback": ""}))
 
 
@@ -264,7 +266,7 @@ async def test_a_normal_run_is_unchanged_under_the_default_ceilings(tmp_path):
 
     assert state["final_output"] == "RESEARCH-OK"  # one subtask: no synthesis call
     assert repo.tasks[task_id]["status"] == "completed"
-    assert llm.usage(task_id) == (3, 0)  # plan, research, review
+    assert llm.usage(task_id) == (4, 0)  # plan, research (a search, then the answer), review
 
 
 @pytest.fixture()

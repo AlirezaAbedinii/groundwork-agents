@@ -95,7 +95,7 @@ def test_full_lifecycle_demo_scenario(client, showcase_plan_limit):
     assert costs["tool_calls"]["web_search"]["success"] == 3
     assert costs["tool_calls"]["db_query"]["success"] == 1
     assert costs["tool_calls"]["code_exec"]["success"] == 1
-    assert costs["tool_calls"]["file_write"]["success"] == 1
+    assert costs["tool_calls"]["file_write"]["success"] == 2  # the rejected draft and the rewrite
     assert costs["escalations"] == 2
     assert costs["human_review_seconds"] >= 0
 

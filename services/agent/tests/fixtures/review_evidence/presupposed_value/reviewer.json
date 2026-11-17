@@ -1,0 +1,6 @@
+{
+  "agent": "reviewer",
+  "response": {
+    "text": "{\"score\": 5, \"feedback\": \"States plainly that the documentation does not give it.\"}"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "agent": "analysis",
+  "match": [
+    "Rank the three vector databases by GitHub stars from the demo data"
+  ],
+  "response": {
+    "text": "",
+    "tool_calls": [
+      {
+        "name": "db_query",
+        "arguments": {
+          "sql": "SELECT name, stars FROM repos ORDER BY stars DESC"
+        }
+      }
+    ]
+  }
+}

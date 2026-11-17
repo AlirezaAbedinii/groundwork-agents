@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     # exactly its path; a missing one sends its producer back once, then fails the task.
     # False skips the check (graph/edges.py check_deliverables).
     verify_deliverables: bool = True
+    # Review with evidence: a subtask that lists tools, none of which returned a result in an
+    # attempt, is reworked with no reviewer call, and the reviewer is shown the request and
+    # the attempt's tool receipts. False restores the earlier review (agents/reviewer.py).
+    review_evidence: bool = True
 
     # Thresholds
     plan_confidence_threshold: float = 0.7

@@ -159,8 +159,10 @@ the model before its next turn. A tool error is one of those results, not a
 failure. A call identical to one that already ran in the attempt is answered
 with that result again, without running, unless a call that changes state
 (`file_write`, `code_exec`, `api_call`) has run since; a tool that reaches its rate limit is
-no longer offered; and the model is told when its last turn comes. Then the
-reviewer scores the deliverable. Score ≥ threshold → completed; below →
+no longer offered; and the model is told when its last turn comes. A subtask
+that lists tools, none of which returned a result in the attempt (all failed, or
+none was called), then goes back as `rework` with their errors as feedback and
+no reviewer call. Otherwise the reviewer scores the deliverable. Score ≥ threshold → completed; below →
 `rework` with feedback (max `MAX_SPECIALIST_RETRIES` cycles); running out of
 turns → `failed_attempt` whose retry is told the attempt's last three tool
 exchanges; an error outside the tools → `failed_attempt` with a
@@ -202,8 +204,10 @@ approval row → `interrupt()`.
    (permission + rate-limit checks, full I/O logging), and write results back.
    The retrieval service's tools (`rag_*`) arrive over MCP and go through the
    same registry.
-6. **Review** — every deliverable is scored by the cross-provider reviewer;
-   rejections loop back with feedback.
+6. **Review** — a subtask whose listed tools returned nothing goes back with
+   their errors before any review (`REVIEW_EVIDENCE=false` turns this off); every
+   other deliverable is scored by the cross-provider reviewer; rejections loop
+   back with feedback.
 7. **Synthesis & delivery** — the supervisor composes the final output from a
    manifest of the run: each subtask's tool-call outcomes from the invocation
    log, what it reported, and the deliverables with whether each was written. It

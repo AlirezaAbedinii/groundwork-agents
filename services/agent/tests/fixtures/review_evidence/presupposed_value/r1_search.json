@@ -1,0 +1,17 @@
+{
+  "agent": "research",
+  "match": [
+    "Look up the gateway's default idle timeout in the team documentation"
+  ],
+  "response": {
+    "text": "",
+    "tool_calls": [
+      {
+        "name": "rag_search",
+        "arguments": {
+          "query": "gateway connection pool default idle timeout"
+        }
+      }
+    ]
+  }
+}

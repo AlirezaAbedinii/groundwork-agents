@@ -100,8 +100,8 @@ class RecordingWorkingMemory(InMemoryWorkingMemory):
         super().clear(task_id)
 
 
-def _fx(directory, name, agent, text, match=None):
-    payload = {"agent": agent, "response": {"text": text}}
+def _fx(directory, name, agent, text, match=None, tool_calls=None):
+    payload = {"agent": agent, "response": {"text": text, **({"tool_calls": tool_calls} if tool_calls else {})}}
     if match:
         payload["match"] = match
     (directory / f"{name}.json").write_text(json.dumps(payload), encoding="utf-8")
@@ -123,7 +123,8 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
     }
     _fx(tmp_path, "plan", "supervisor", json.dumps(plan), match=["Create an execution plan"])
     _fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    _fx(tmp_path, "research", "research", "A-FACTS")
+    _fx(tmp_path, "research", "research", "", tool_calls=[{"name": "web_search", "arguments": {"query": "A"}}])
+    _fx(tmp_path, "research_answer", "research", "A-FACTS", match=["-> web_search returned"])
     _fx(tmp_path, "writing", "writing", "SUMMARY")
     _fx(tmp_path, "reviewer", "reviewer", json.dumps({"score": 5, "feedback": ""}))
 

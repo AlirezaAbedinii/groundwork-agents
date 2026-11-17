@@ -1,0 +1,9 @@
+{
+  "agent": "analysis",
+  "match": [
+    "Extract the default idle timeout value in seconds"
+  ],
+  "response": {
+    "text": "The default idle timeout is 30 seconds."
+  }
+}

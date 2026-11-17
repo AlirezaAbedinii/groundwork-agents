@@ -1,0 +1,19 @@
+{
+  "agent": "analysis",
+  "match": [
+    "Rank the three vector databases by GitHub stars from the demo data",
+    "-> db_query failed: relation",
+    "-> db_query failed: column"
+  ],
+  "response": {
+    "text": "",
+    "tool_calls": [
+      {
+        "name": "db_query",
+        "arguments": {
+          "sql": "SELECT name, star_count FROM repositories ORDER star_count"
+        }
+      }
+    ]
+  }
+}

@@ -2,7 +2,8 @@
   "agent": "writing",
   "match": ["recommendation memo"],
   "response": {
-    "text": "RECOMMENDATION-DRAFT: Qdrant seems best overall, Chroma is nice for Python, Weaviate does hybrid search. Trust me on the numbers.",
+    "text": "",
+    "tool_calls": [{"name": "file_write", "arguments": {"path": "recommendation.md", "content": "# Recommendation\n\nQdrant seems best overall, Chroma is nice for Python, Weaviate does hybrid search. Trust me on the numbers.\n"}}],
     "model": "mock-gpt-4o-mini", "prompt_tokens": 650, "completion_tokens": 60
   }
 }

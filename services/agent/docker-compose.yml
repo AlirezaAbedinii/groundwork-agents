@@ -24,6 +24,7 @@ x-app-env: &app-env
   MAX_PLAN_SUBTASKS: ${MAX_PLAN_SUBTASKS:-5}
   PLAN_LINT: ${PLAN_LINT:-enforce}
   VERIFY_DELIVERABLES: ${VERIFY_DELIVERABLES:-true}
+  REVIEW_EVIDENCE: ${REVIEW_EVIDENCE:-true}
   APPROVAL_WEBHOOK_URL: ${APPROVAL_WEBHOOK_URL:-}
   # Retrieval tools over MCP; empty disables them. The RAG stack's MCP server
   # runs in another compose project: http://host.docker.internal:8001/mcp.

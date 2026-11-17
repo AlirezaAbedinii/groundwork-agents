@@ -9,6 +9,7 @@ import pytest
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import Command
 
+from orchestrator.config import get_settings
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
 from orchestrator.hitl.queue import InMemoryApprovalQueue
@@ -57,6 +58,13 @@ def subtask(sid: str, specialist: str, description: str, depends_on: list[str] |
 def tool_call(tool: str, arguments: dict) -> dict:
     """A native tool call for fx(..., tool_calls=[...])."""
     return {"name": tool, "arguments": arguments}
+
+
+def searched(directory, text: str) -> None:
+    """The research specialist runs one web search (canned under MOCK_LLM), then replies ``text``.
+    A subtask whose listed tools returned nothing is sent back before review (agents/reviewer.py)."""
+    fx(directory, "research", "research", "", tool_calls=[tool_call("web_search", {"query": "the subtask"})])
+    fx(directory, "research_answer", "research", text, match=["-> web_search returned"])
 
 
 def verdict(score: int, feedback: str = "") -> str:
@@ -113,7 +121,7 @@ async def test_happy_path_with_parallel_wave(tmp_path, repo):
                   subtask("s3", "writing", "write summary", depends_on=["s1", "s2"])], 0.9),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    searched(tmp_path, "RESEARCH-OK")
     fx(tmp_path, "writing", "writing", "SUMMARY-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5, "solid"))
 
@@ -127,9 +135,10 @@ async def test_happy_path_with_parallel_wave(tmp_path, repo):
     assert repo.tasks[task_id]["final_output"] == "DONE"
 
 
-async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, repo):
+async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, repo, monkeypatch):
     # the plan drops the inputs the request names; each specialist's fixture answers only
     # when its prompt carries them, and the agent defaults answer when it does not
+    monkeypatch.setattr(get_settings(), "review_evidence", False)  # the scripted code specialist runs nothing
     request = "Write parse_duration and run it on 1h30m15s, 45s, 2h5m and 90m; report the seconds."
     fx(tmp_path, "plan", "supervisor",
        plan_text([subtask("s1", "code", "Run the function on the provided duration strings"),
@@ -151,15 +160,15 @@ async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, 
 
 @pytest.mark.parametrize(("specialists", "final", "synthesis_calls"), [
     pytest.param(["research"], "OUT-research", 0, id="one subtask: its output, no synthesis"),
-    pytest.param(["research", "analysis"], "DONE", 1, id="two subtasks: synthesized"),
+    pytest.param(["research", "writing"], "DONE", 1, id="two subtasks: synthesized"),
 ])
 async def test_only_a_plan_of_several_subtasks_is_synthesized(tmp_path, repo, specialists, final, synthesis_calls):
     fx(tmp_path, "plan", "supervisor",
        plan_text([subtask(f"s{n}", name, f"step {n}") for n, name in enumerate(specialists, 1)], 0.9),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    for name in specialists:
-        fx(tmp_path, name, name, f"OUT-{name}")
+    searched(tmp_path, "OUT-research")
+    fx(tmp_path, "writing", "writing", "OUT-writing")
     fx(tmp_path, "reviewer", "reviewer", verdict(5))
     asked: list[str] = []
     mock = MockLLMClient(tmp_path)
@@ -184,7 +193,7 @@ async def test_under_version_1_a_plan_is_not_linted_and_one_subtask_is_synthesiz
     tool_less = {**subtask("s1", "research", "look it up"), "tools": []}
     fx(tmp_path, "plan", "supervisor", plan_text([tool_less], 0.9), match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "OLD-FINAL", match=["Synthesize the final deliverable"])
-    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    searched(tmp_path, "RESEARCH-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5))
     graph = build_graph(llm=MockLLMClient(tmp_path), registry=build_default_registry(InMemoryInvocationStore()),
                         repo=repo, checkpointer=None, approvals=InMemoryApprovalQueue())
@@ -205,7 +214,7 @@ async def test_a_resumed_run_takes_its_rules_from_its_graph_state(tmp_path, repo
     fx(tmp_path, "plan", "supervisor", plan_text([subtask("s1", "research", "vague thing")], 0.3),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    searched(tmp_path, "RESEARCH-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5))
     queue = InMemoryApprovalQueue()
     graph = build(tmp_path, repo, queue, MemorySaver())
@@ -285,7 +294,7 @@ async def test_two_tool_calls_in_one_turn_run_as_one_batch(tmp_path, repo, monke
 async def test_two_sensitive_calls_in_one_turn_get_one_approval_each(tmp_path, repo):
     posts = [tool_call("api_call", {"method": "POST", "url": f"https://api.github.com/announce/{n}"}) for n in "ab"]
     fx(tmp_path, "plan", "supervisor",
-       plan_text([subtask("s1", "research", "Post both announcements")], 0.9),
+       plan_text([{**subtask("s1", "research", "Post both announcements"), "tools": ["api_call"]}], 0.9),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
     fx(tmp_path, "r_posts", "research", "", match=["Post both announcements"], tool_calls=posts)
@@ -389,7 +398,7 @@ async def test_low_plan_confidence_pauses_then_approve_resumes(tmp_path, repo):
        plan_text([subtask("s1", "research", "vague thing")], 0.3),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    searched(tmp_path, "RESEARCH-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5))
 
     queue = InMemoryApprovalQueue()
@@ -439,7 +448,7 @@ async def test_notify_level_records_but_never_pauses(tmp_path, repo, monkeypatch
        plan_text([subtask("s1", "research", "vague thing")], 0.3),
        match=["Create an execution plan"])
     fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
-    fx(tmp_path, "research", "research", "RESEARCH-OK")
+    searched(tmp_path, "RESEARCH-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5))
 
     queue = InMemoryApprovalQueue()

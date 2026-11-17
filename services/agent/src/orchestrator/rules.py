@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-CURRENT_RULES_VERSION = 3
+CURRENT_RULES_VERSION = 4
 
 
 class UnknownRulesVersion(ValueError):
@@ -33,12 +33,20 @@ class Rules:
     # to be listed, each with a producer that owns file_write, and the verify step after
     # synthesis checks each was written (VERIFY_DELIVERABLES can switch the step off).
     check_deliverables: bool
+    # A subtask that lists tools, none of which returned a result in an attempt, is sent
+    # back for rework with no reviewer call (REVIEW_EVIDENCE can switch the check off).
+    require_tool_results: bool
 
 
 _SWITCHES = {
-    1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False),  # before ADR 0017
-    2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False),  # ADR 0017
-    3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True),  # ADR 0019
+    # before ADR 0017
+    1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False, require_tool_results=False),
+    # ADR 0017
+    2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False, require_tool_results=False),
+    # ADR 0019
+    3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=False),
+    # ADR 0020
+    4: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True),
 }
 
 

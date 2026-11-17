@@ -17,6 +17,11 @@ resumes the graph with the human decision. Note that an interrupted node
 re-executes its pre-interrupt code on resume — everything before an interrupt
 is therefore idempotent (the approval queue is keyed by task_id + gate_key).
 
+Before a subtask's output is reviewed, its attempt's tool receipts are checked: a
+subtask that lists tools, none of which returned a result, goes back for rework
+with the tools' errors as feedback and no reviewer call (rules version 4,
+REVIEW_EVIDENCE).
+
 `verify` checks that every file the plan lists as a deliverable was written at
 exactly its path. A missing one sends its producer back to `schedule` once, with
 feedback naming the path, and the outputs are synthesized again; if it is still
@@ -41,7 +46,7 @@ from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from orchestrator.agents.reviewer import Reviewer
+from orchestrator.agents.reviewer import Reviewer, no_result_feedback, required_tools_silent
 from orchestrator.agents.specialists import SpecialistError, make_specialists
 from orchestrator.agents.supervisor import Supervisor
 from orchestrator.config import get_settings
@@ -407,15 +412,20 @@ def build_graph(
                 spec, payload.get("inputs", {}), payload.get("feedback"), ctx, gate=tool_gate,
                 request=payload.get("request", ""),  # absent from a wave dispatched before it was added
             )
-            with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
-                verdict = await reviewer.review(
-                    spec["description"],
-                    spec.get("expected_output_format", "plain text"),
-                    result.output,
-                    producer_provider=route(spec["specialist"]).provider,
-                )
-                set_attr(review_span, "score", verdict.score)
-                set_attr(review_span, "feedback", verdict.feedback[:300])
+            # absent from a wave dispatched before it was added, which ran under rules without the check
+            check_tools = settings.review_evidence and rules_for(payload.get("rules_version")).require_tool_results
+            tools = spec.get("tools") or []
+            silent = check_tools and required_tools_silent(tools, result.receipts)
+            if not silent:
+                with child_span(f"review:{sid}", kind="review", sid=sid) as review_span:
+                    verdict = await reviewer.review(
+                        spec["description"],
+                        spec.get("expected_output_format", "plain text"),
+                        result.output,
+                        producer_provider=route(spec["specialist"]).provider,
+                    )
+                    set_attr(review_span, "score", verdict.score)
+                    set_attr(review_span, "feedback", verdict.feedback[:300])
         except GraphInterrupt:
             # the sensitive-tool gate paused the run — not a specialist failure
             raise
@@ -439,6 +449,26 @@ def build_graph(
             return {"subtask_results": {sid: entry}}
 
         set_attr(span, "tool_calls", result.tool_calls)
+        if silent:
+            # nothing to review: none of the tools it lists returned a result
+            feedback = no_result_feedback(tools, result.receipts)
+            span.set_attribute("orchestrator.status", "warning")
+            set_attr(span, "no_tool_result", tools)
+            repo.record_subtask(
+                task_id, sid,
+                status="rework", attempts=attempts, output=result.output,
+                review_score=None, review_feedback=feedback,  # an earlier attempt's score no longer stands
+            )
+            return {"subtask_results": {sid: {
+                **base,
+                "status": "rework",
+                "output": result.output,
+                "score": None,
+                "feedback": feedback,
+                "tool_calls": result.tool_calls,
+                "no_tool_result": tools,
+                "rework_count": base["rework_count"] + 1,
+            }}}
         set_attr(span, "review_score", verdict.score)
         approved = verdict.score >= settings.review_score_threshold
         if not approved:
