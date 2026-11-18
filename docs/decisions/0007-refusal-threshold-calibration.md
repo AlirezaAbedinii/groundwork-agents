@@ -85,3 +85,39 @@ collected against; every other number, and both thresholds, are unchanged. On th
 test split, `top_k` 3 now shows the agent as much evidence as the whole chunks
 hold: 0.691 in dense mode and 0.647 in hybrid, against 0.272 and 0.208 as
 300-character snippets.
+
+## Addendum, 2026-11-18: refusals of answerable questions and paired mode comparison
+
+Refusal F1 on the test split says how well the gate separates the two classes. It does
+not say how often a covered question goes unanswered, nor which refuser was
+responsible, and the model refuses some questions the gate lets through. Comparing
+the two modes by their separate means and intervals also leaves out the fact that both
+modes answer the same questions. Three statistics are now computed from the records
+with no model call. They are printed by `rag_eval stats` and enter the published
+report when it is next republished:
+
+- **Answerable questions refused**, over every split, split into refused by the gate
+  and refused by the model, each with a 95 % Wilson interval. Every split counts
+  because each such refusal is a failure, whichever split it falls in. The threshold
+  choice above still uses dev alone.
+- **Hybrid against dense, question by question.** Correctness uses an exact McNemar
+  test over every question, with correctness as the report scores it, so a no_answer
+  question is correct only if refused. The test uses only the questions one mode gets
+  right and the other wrong; the exact binomial form is used because a set this size
+  gives too few such questions for the chi-square approximation. Each retrieval metric
+  (R@1, R@3, R@5, R@10, MRR@10, nDCG@10) gets the mean per-question difference, hybrid
+  minus dense, over the answerable questions. Its interval is a 95 % paired bootstrap
+  percentile interval: 10,000 resamples of questions, each question keeping its two
+  scores together, with a fixed seed (0) so the interval can be recomputed from the
+  records. A different seed moves the ends by about 0.002. The percentile interval was
+  chosen over a normal approximation because per-question differences in R@k take a
+  handful of values, not a bell shape.
+- **Readings of ambiguous questions.** Each evidence item of an ambiguous question is
+  one reading, and the statistic counts how many readings each mode's top 5 hits
+  cover (`/ask` runs with 5 contexts), beside how the answer came out. This separates
+  a retrieval miss (one query finds one reading) from a generation miss (both readings
+  were retrieved and the answer still covered one).
+
+Each statistic is also given per category, split and origin. These statistics change
+no existing number and no threshold. They provide the measurements for choosing a
+refusal objective that counts false refusals directly.

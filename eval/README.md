@@ -100,6 +100,15 @@ counts the demo database doesn't hold; under `cross`, the same failure was rejec
   required file was written at its exact path. They locate where a run's work went
   missing; they don't change how a run is scored. Records collected before a field
   existed show `n/a` for what needs it.
+- **RAG statistics**, printed by `rag_eval stats` from a records file with no model
+  call, and not yet part of the report: the answerable questions each mode refused,
+  by the gate and by the model, with Wilson intervals; hybrid against dense question
+  by question, an exact McNemar test on correctness and a paired bootstrap interval
+  (10,000 resamples, seed 0) for the difference in each retrieval metric; and how
+  many readings of each ambiguous question each mode's top 5 covers. Each is given
+  over all questions and per category, split and origin
+  ([ADR 0007](../docs/decisions/0007-refusal-threshold-calibration.md), addendum of
+  2026-11-18).
 
 ## The corpus and the golden set
 
@@ -187,7 +196,8 @@ runs resume, and a recorded verdict is never paid for twice:
 
 `agent_eval score --scoring 2` scores a run collected under the first rules by the
 current ones, for $0; give it its own `--out` so the published report stays as it was.
-`agent_eval diagnose --run-id my-run` writes `diagnostics.md` and `diagnostics.json`
+`rag_eval stats --records reports/rag-records.jsonl` prints the RAG statistics as
+markdown and writes nothing ($0, no services). `agent_eval diagnose --run-id my-run` writes `diagnostics.md` and `diagnostics.json`
 into `runs/my-run/`, from the run's records alone ($0, no services).
 
 The published runs cost $2.31 in all: indexing $0.01, synthetic drafts $0.004, the
@@ -287,10 +297,10 @@ test split.
 | `dataset/synthesize.py`, `dataset/review.py` | Draft synthetic candidates from single chunks (paid), and accept, edit or reject them by hand; `review.py --targeted` checks the targeted candidates in place |
 | `dataset/grade.py` | Grades a sample of judged answers by hand, blind to the judge, for the judge-human κ |
 | `llm.py`, `budget.py` | Structured completions from OpenAI or Anthropic, priced, under a spending cap |
-| `metrics.py` | Retrieval, refusal, answer, agreement and agent metrics: pure functions over recorded runs |
+| `metrics.py` | Retrieval, refusal, answer, agreement, paired-comparison and agent metrics: pure functions over recorded runs |
 | `judge.py`, `judge_prompts.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
 | `judge_fake.py` | A scripted judge for tests and keyless runs |
-| `rag_eval.py` | Collects searches and answers from the RAG API into `runs/` and scores them |
+| `rag_eval.py` | Collects searches and answers from the RAG API into `runs/`, scores them, and prints the paired statistics |
 | `agent_eval.py` | Runs agent tasks through the agent API into `runs/`, scores them, and diagnoses them |
 | `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, the agent diagnostics, and the refusal curves |
 | `reports/` | The published reports and their records |
