@@ -44,7 +44,7 @@ def build_chunks_for_file(
     doc: RawDocument = normalize_document(load_path(path, source_name))
     if persist:
         persist_processed(doc, settings.data_processed_dir)
-    return chunk_document(doc, chunker)
+    return chunk_document(doc, chunker, heading_path=settings.chunk_heading_path)
 
 
 def build_chunks_for_dir(

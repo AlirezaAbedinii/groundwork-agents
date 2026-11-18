@@ -5,7 +5,8 @@ The public entrypoint is :func:`build_retriever`, which routes on ``mode``:
 * ``dense``  — embed query -> pgvector top-k (cosine).
 * ``hybrid`` — dense and BM25 candidate lists -> Reciprocal Rank Fusion
   (configurable weights) -> local cross-encoder rerank (top-20 -> top-5 by
-  default).
+  default). The BM25 leg and the rerank stage switch off independently
+  (``sparse_enabled``, ``rerank_enabled``), so each one's effect can be measured.
 
 Both retrievers expose the same
 ``retrieve(query, top_k, stopwatch) -> list[ScoredChunk]`` interface so callers
@@ -13,7 +14,7 @@ Both retrievers expose the same
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from ..config import Settings, get_settings
 from ..indexing.vector_store import ScoredChunk
@@ -46,11 +47,15 @@ class HybridRetriever:
     with the configured dense/sparse weights; the reranker keeps the best
     ``top_k``. Per-stage latency lands in the stopwatch as ``embed``/``dense``
     (inside the dense retriever), ``sparse``, ``fusion``, and ``rerank``.
+
+    Without ``sparse`` the candidates are the dense ranking alone. Without
+    ``reranker`` the best ``top_k`` candidates are returned in fused order, each
+    scored by its RRF score, and there is no ``rerank`` stage.
     """
 
     dense: DenseRetriever
-    sparse: SparseRetriever
-    reranker: Reranker
+    sparse: SparseRetriever | None
+    reranker: Reranker | None
     dense_weight: float = 0.7
     sparse_weight: float = 0.3
     rrf_k: int = 60
@@ -68,21 +73,25 @@ class HybridRetriever:
         sw = stopwatch or Stopwatch()
 
         dense_hits = self.dense.retrieve(query, top_k=self.candidates, stopwatch=sw)
-        sparse_hits = self.sparse.retrieve(query, top_k=self.candidates, stopwatch=sw)
+        legs = [(dense_hits, self.dense_weight)]
+        if self.sparse is not None:
+            sparse_hits = self.sparse.retrieve(query, top_k=self.candidates, stopwatch=sw)
+            legs.append((sparse_hits, self.sparse_weight))
 
         with sw.time("fusion"):
             fused = rrf_fuse(
-                [[c.chunk_id for c in dense_hits], [c.chunk_id for c in sparse_hits]],
-                weights=[self.dense_weight, self.sparse_weight],
+                [[c.chunk_id for c in hits] for hits, _ in legs],
+                weights=[weight for _, weight in legs],
                 k=self.rrf_k,
-            )
-            # Resolve fused ids back to chunks (dense text wins on overlap).
-            by_id = {c.chunk_id: c for c in sparse_hits}
-            by_id.update({c.chunk_id: c for c in dense_hits})
-            candidates = [by_id[cid] for cid, _ in fused[: self.candidates]]
+            )[: self.candidates]
+            # Resolve fused ids back to chunks (dense text wins on overlap): the dense
+            # leg is first, so it's applied last.
+            by_id = {c.chunk_id: c for hits, _ in reversed(legs) for c in hits}
 
+        if self.reranker is None:
+            return [replace(by_id[cid], score=score) for cid, score in fused[:k]]
         with sw.time("rerank"):
-            return self.reranker.rerank(query, candidates, top_k=k)
+            return self.reranker.rerank(query, [by_id[cid] for cid, _ in fused], top_k=k)
 
 
 def build_retriever(
@@ -138,20 +147,25 @@ def _build(
         return dense
 
     # mode == "hybrid"
-    if sparse_index is not None:
-        sparse = SparseRetriever(index=sparse_index, default_top_k=settings.top_k)
-    else:
-        sparse = SparseRetriever.from_settings(settings, store=store)
+    sparse = None
+    if settings.sparse_enabled:
+        if sparse_index is not None:
+            sparse = SparseRetriever(index=sparse_index, default_top_k=settings.top_k)
+        else:
+            sparse = SparseRetriever.from_settings(settings, store=store)
 
-    if scorer is None:
-        from .rerank import CrossEncoderScorer
+    reranker = None
+    if settings.rerank_enabled:
+        if scorer is None:
+            from .rerank import CrossEncoderScorer
 
-        scorer = CrossEncoderScorer(settings.reranker_model)
+            scorer = CrossEncoderScorer(settings.reranker_model)
+        reranker = Reranker(scorer=scorer, top_k=settings.rerank_top_k)
 
     return HybridRetriever(
         dense=dense,
         sparse=sparse,
-        reranker=Reranker(scorer=scorer, top_k=settings.rerank_top_k),
+        reranker=reranker,
         dense_weight=settings.rrf_dense_weight,
         sparse_weight=settings.rrf_sparse_weight,
         rrf_k=settings.rrf_k,

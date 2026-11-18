@@ -220,6 +220,18 @@ class IndexInfo(BaseModel):
     chunks: int
 
 
+class HybridInfo(BaseModel):
+    """How hybrid mode retrieves: which optional stages run, and with what."""
+
+    sparse_enabled: bool
+    rerank_enabled: bool
+    reranker_model: str | None = Field(description="null when rerank_enabled is false.")
+    rerank_candidates: int
+    rrf_k: int
+    rrf_dense_weight: float
+    rrf_sparse_weight: float
+
+
 class ConfigResponse(BaseModel):
     """Response of ``GET /v1/config``: what this service runs with. No secrets."""
 
@@ -235,6 +247,7 @@ class ConfigResponse(BaseModel):
         description="The refusal gate's threshold per retrieval mode (dense, hybrid)."
     )
     citation_verification: bool
+    hybrid: HybridInfo
     index: IndexInfo | None = Field(
         default=None, description="The served collection's registry row; null until it's seeded."
     )

@@ -92,3 +92,48 @@ def test_unsupported_format_raises(tmp_path: Path) -> None:
     assert not is_supported(weird)
     with pytest.raises(UnsupportedFormatError):
         load_path(weird)
+
+
+def test_load_markdown_tracks_the_heading_path(tmp_path: Path) -> None:
+    page = tmp_path / "page.md"
+    page.write_text(
+        "# Guide\nintro\n## Install\nsteps\n### Linux\napt\n"
+        "```\n# not a heading\n```\n## Use\nrun it\n#\nstill Use\n",
+        encoding="utf-8",
+    )
+
+    doc = load_markdown(page)
+
+    assert [(b.section_heading, b.heading_path) for b in doc.blocks] == [
+        ("Guide", ("Guide",)),
+        ("Install", ("Guide", "Install")),
+        ("Linux", ("Guide", "Install", "Linux")),  # the fenced '#' line opens nothing
+        ("Use", ("Guide", "Use")),  # a level-2 heading closes Install and Linux
+        ("Use", ("Guide", "Use")),  # an empty heading changes neither
+    ]
+
+
+def test_load_html_tracks_the_heading_path() -> None:
+    pytest.importorskip("bs4")
+    doc = load_html(FIXTURES / "sample.html")
+    paths = {b.section_heading: b.heading_path for b in doc.blocks}
+    assert paths["Sample HTML Doc"] == ("Sample HTML Doc",)
+    assert paths["Setup"] == ("Sample HTML Doc", "Setup")  # the <title> encloses the h2s
+    assert paths["Limits"] == ("Sample HTML Doc", "Limits")
+
+
+def test_the_heading_path_leaves_out_mkdocs_anchors(tmp_path: Path) -> None:
+    page = tmp_path / "page.md"
+    page.write_text(
+        "# Body { #body }\nintro\n## Fields {.note}\ntext\n## `{item_id}` path\nmore\n",
+        encoding="utf-8",
+    )
+
+    blocks = load_markdown(page).blocks
+
+    assert blocks[1].section_heading == "Fields {.note}"  # chunk ids hash it: unchanged
+    assert [b.heading_path for b in blocks] == [
+        ("Body",),
+        ("Body", "Fields"),
+        ("Body", "`{item_id}` path"),  # braces that aren't an attribute list stay
+    ]

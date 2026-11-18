@@ -268,12 +268,31 @@ def get_chunker(
     raise ValueError(f"Unknown chunk_strategy: {strategy!r}")
 
 
-def chunk_document(doc: RawDocument, chunker: Chunker) -> list[Chunk]:
-    """Split a normalized document into ordered, metadata-tagged chunks."""
+HEADING_PATH_SEPARATOR = " > "
+
+
+def with_heading_path(piece: str, heading_path: tuple[str, ...]) -> str:
+    """``piece`` under a first line naming its headings, outermost first."""
+    if not heading_path:
+        return piece
+    return f"{HEADING_PATH_SEPARATOR.join(heading_path)}\n\n{piece}"
+
+
+def chunk_document(
+    doc: RawDocument, chunker: Chunker, *, heading_path: bool = False
+) -> list[Chunk]:
+    """Split a normalized document into ordered, metadata-tagged chunks.
+
+    With ``heading_path``, each chunk's text starts with its block's heading path,
+    so whatever embeds or indexes the text sees where in the page it sits. The
+    chunker splits the block's text first: the path adds to the chunk size.
+    """
     chunks: list[Chunk] = []
     ordinal = 0
     for block in doc.blocks:
         for piece in chunker.split_text(block.text):
+            if heading_path:
+                piece = with_heading_path(piece, block.heading_path)
             chunk_id = make_chunk_id(
                 doc.source_file, chunker.strategy, ordinal, block.section_heading, block.page, piece
             )

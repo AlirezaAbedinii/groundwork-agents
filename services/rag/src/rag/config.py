@@ -113,6 +113,19 @@ class Settings(BaseSettings):
     rrf_sparse_weight: float = Field(
         default=0.3, ge=0.0, description="RRF weight on the sparse (BM25) ranking (V1)."
     )
+    # Hybrid mode's two optional stages, each switched on its own so their effect can
+    # be measured apart. Dense mode uses neither.
+    sparse_enabled: bool = Field(
+        default=True,
+        description="Hybrid mode: fuse a BM25 ranking with the dense one. Off, the "
+        "candidates are the dense ranking alone and no BM25 index is built.",
+    )
+    rerank_enabled: bool = Field(
+        default=True,
+        description="Hybrid mode: re-rank the fused candidates with RERANKER_MODEL. Off, "
+        "hits keep the fused order and carry their RRF scores, which the hybrid refusal "
+        "threshold was not calibrated on.",
+    )
 
     # -- Chunking ----------------------------------------------------------
     chunk_strategy: ChunkStrategy = Field(
@@ -120,6 +133,12 @@ class Settings(BaseSettings):
     )
     chunk_size: int = Field(default=800, ge=1, description="Target chunk size (chars/tokens).")
     chunk_overlap: int = Field(default=120, ge=0, description="Overlap between adjacent chunks.")
+    chunk_heading_path: bool = Field(
+        default=False,
+        description="Start each chunk's text with its heading path ('Page > Section > "
+        "Subsection'), so the path is embedded, BM25-indexed and stored with it. The "
+        "collection records it with the strategy; it adds to CHUNK_SIZE, not within it.",
+    )
     semantic_breakpoint_threshold: float = Field(
         default=0.5,
         ge=0.0,

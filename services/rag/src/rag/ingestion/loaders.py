@@ -4,7 +4,8 @@ Each loader returns a :class:`RawDocument` made of one or more :class:`RawBlock`
 units. A *block* is a span of text that already carries the metadata we can know
 at load time:
 
-* Markdown -> one block per heading section (``section_heading`` set).
+* Markdown -> one block per heading section (``section_heading`` set, and
+  ``heading_path``: the headings above it, outermost first).
 * Text     -> a single block (no heading, no page).
 * PDF      -> one block per page (``page`` set, 1-indexed).
 * HTML     -> one block per ``<h1>``-``<h6>`` section (``section_heading`` set);
@@ -20,6 +21,7 @@ different folders stay distinct.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -41,6 +43,31 @@ class RawBlock:
     text: str
     section_heading: str | None = None
     page: int | None = None
+    # The enclosing headings, outermost first, ending with section_heading.
+    heading_path: tuple[str, ...] = ()
+
+
+# A trailing Markdown attribute list naming an anchor or a class, as MkDocs pages write
+# them: "Path Parameters { #path-parameters }". Kept in section_heading (chunk ids hash
+# it), left out of the heading path, which is text for retrieval to read.
+_ATTR_LIST = re.compile(r"\s*\{\s*[#.][^{}]*\}\s*$")
+
+
+class _HeadingPath:
+    """The open headings while a document is read: a heading closes every heading at
+    its own level or deeper, then opens its own."""
+
+    def __init__(self) -> None:
+        self._open: list[tuple[int, str]] = []
+
+    def enter(self, level: int, title: str) -> None:
+        while self._open and self._open[-1][0] >= level:
+            self._open.pop()
+        self._open.append((level, _ATTR_LIST.sub("", title) or title))
+
+    @property
+    def path(self) -> tuple[str, ...]:
+        return tuple(title for _, title in self._open)
 
 
 @dataclass
@@ -68,7 +95,8 @@ def load_markdown(path: Path, source_name: str | None = None) -> RawDocument:
 
     Uses a simple, deterministic ATX-heading (``#``) parser — no external
     dependency. Each block's ``section_heading`` is the nearest preceding
-    heading (the document title for any preamble before the first heading).
+    heading (the document title for any preamble before the first heading), and
+    its ``heading_path`` the headings enclosing it, by their ``#`` level.
     Fenced code blocks are not interpreted as headings.
     """
     path = Path(path)
@@ -76,13 +104,16 @@ def load_markdown(path: Path, source_name: str | None = None) -> RawDocument:
 
     blocks: list[RawBlock] = []
     current_heading: str | None = None
+    headings = _HeadingPath()
     buffer: list[str] = []
     in_fence = False
 
     def flush() -> None:
         text = "\n".join(buffer).strip()
         if text:
-            blocks.append(RawBlock(text=text, section_heading=current_heading))
+            blocks.append(
+                RawBlock(text=text, section_heading=current_heading, heading_path=headings.path)
+            )
         buffer.clear()
 
     for line in lines:
@@ -94,13 +125,18 @@ def load_markdown(path: Path, source_name: str | None = None) -> RawDocument:
         if not in_fence and stripped.startswith("#"):
             # Heading line: close the previous section, start a new one.
             flush()
-            current_heading = stripped.lstrip("#").strip() or current_heading
+            title = stripped.lstrip("#").strip()
+            if title:
+                current_heading = title
+                headings.enter(len(stripped) - len(stripped.lstrip("#")), title)
             continue
         buffer.append(line)
     flush()
 
     if not blocks:  # document had a heading but no body text
-        blocks.append(RawBlock(text="", section_heading=current_heading))
+        blocks.append(
+            RawBlock(text="", section_heading=current_heading, heading_path=headings.path)
+        )
     return RawDocument(source_file=source_name or path.name, doc_type="markdown", blocks=blocks)
 
 
@@ -151,19 +187,27 @@ def load_html(path: Path, source_name: str | None = None) -> RawDocument:
 
     blocks: list[RawBlock] = []
     current_heading: str | None = title
+    headings = _HeadingPath()
+    if title:
+        headings.enter(0, title)  # the <title> encloses every section, like a level-0 heading
     buffer: list[str] = []
 
     def flush() -> None:
         text = "\n".join(buffer).strip()
         if text:
-            blocks.append(RawBlock(text=text, section_heading=current_heading))
+            blocks.append(
+                RawBlock(text=text, section_heading=current_heading, heading_path=headings.path)
+            )
         buffer.clear()
 
     heading_names = {"h1", "h2", "h3", "h4", "h5", "h6"}
     for element in body.find_all(["h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "pre", "td"]):
         if element.name in heading_names:
             flush()
-            current_heading = element.get_text(" ", strip=True) or current_heading
+            heading = element.get_text(" ", strip=True)
+            if heading:
+                current_heading = heading
+                headings.enter(int(element.name[1]), heading)
             continue
         text = element.get_text(" ", strip=True)
         if text:
@@ -171,7 +215,13 @@ def load_html(path: Path, source_name: str | None = None) -> RawDocument:
     flush()
 
     if not blocks:  # no recognizable content elements — fall back to full text
-        blocks.append(RawBlock(text=body.get_text(" ", strip=True), section_heading=title))
+        blocks.append(
+            RawBlock(
+                text=body.get_text(" ", strip=True),
+                section_heading=title,
+                heading_path=(title,) if title else (),
+            )
+        )
     return RawDocument(source_file=source_name or path.name, doc_type="html", blocks=blocks)
 
 

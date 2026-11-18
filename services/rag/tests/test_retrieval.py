@@ -305,3 +305,96 @@ def test_a_failed_build_leaves_an_injected_store_open() -> None:
         )
 
     assert not store.closed  # the caller owns it
+
+
+# --- hybrid's optional stages: BM25 and the reranker switch off independently ---
+def _hybrid_with(**overrides) -> object:
+    settings = Settings(_env_file=None, rerank_candidates=10, **overrides)
+    return _hybrid(settings)
+
+
+def test_both_hybrid_stages_are_on_by_default() -> None:
+    retriever = _hybrid_with()
+    assert retriever.sparse is not None
+    assert retriever.reranker is not None
+
+
+def test_hybrid_without_reranker_keeps_the_fused_order_and_rrf_scores() -> None:
+    from rag.retrieval.fusion import rrf_fuse
+
+    query = "worker XQJ-429 exact code"
+    retriever = _hybrid_with(rerank_enabled=False, rrf_dense_weight=0.6, rrf_sparse_weight=0.4)
+    sw = Stopwatch()
+
+    hits = retriever.retrieve(query, top_k=3, stopwatch=sw)
+
+    dense = retriever.dense.retrieve(query, top_k=10)
+    sparse = retriever.sparse.retrieve(query, top_k=10)
+    fused = rrf_fuse(
+        [[c.chunk_id for c in dense], [c.chunk_id for c in sparse]], weights=[0.6, 0.4], k=60
+    )
+    assert retriever.reranker is None
+    assert [(c.chunk_id, c.score) for c in hits] == fused[:3]
+    assert "rerank" not in sw.stages
+    assert {"embed", "dense", "sparse", "fusion"} <= set(sw.stages)
+
+
+def test_hybrid_without_sparse_reranks_the_dense_candidates_alone() -> None:
+    query = "worker XQJ-429 exact code"
+    retriever = _hybrid_with(sparse_enabled=False)
+    sw = Stopwatch()
+
+    hits = retriever.retrieve(query, top_k=3, stopwatch=sw)
+
+    assert retriever.sparse is None
+    # Only BM25 sees 'XQJ-429', so the reranker never gets the 'exact' chunk as a
+    # candidate unless dense ranked it; the KeywordScorer still re-scores what it gets.
+    dense_ids = [c.chunk_id for c in retriever.dense.retrieve(query, top_k=10)]
+    assert {c.chunk_id for c in hits} <= set(dense_ids)
+    assert all(0.0 <= c.score <= 1.0 for c in hits)  # sigmoid of the reranker
+    assert "sparse" not in sw.stages
+    assert "rerank" in sw.stages
+
+
+def test_hybrid_with_both_stages_off_returns_the_dense_order() -> None:
+    query = "rate limit worker"
+    retriever = _hybrid_with(sparse_enabled=False, rerank_enabled=False)
+
+    hits = retriever.retrieve(query, top_k=3)
+
+    dense = retriever.dense.retrieve(query, top_k=3)
+    assert [c.chunk_id for c in hits] == [c.chunk_id for c in dense]
+
+
+def test_hybrid_without_sparse_builds_no_bm25_index(monkeypatch) -> None:
+    # all_chunks() is only read to build BM25; a store that can't serve it still works.
+    store = ChunkStore(HYBRID_CORPUS, fail=AssertionError("BM25 index built"))
+    _store_from_settings(monkeypatch, store)
+
+    retriever = build_retriever(
+        "hybrid",
+        settings=Settings(_env_file=None, sparse_enabled=False),
+        embedder=FakeEmbedder(),
+        scorer=KeywordScorer(),
+    )
+
+    assert retriever.sparse is None
+    assert retriever.retrieve("rate limit", top_k=2)
+
+
+def test_hybrid_without_reranker_loads_no_model(monkeypatch) -> None:
+    import rag.retrieval.rerank as rerank
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a cross-encoder was constructed")
+
+    monkeypatch.setattr(rerank, "CrossEncoderScorer", refuse)
+    retriever = build_retriever(
+        "hybrid",
+        settings=Settings(_env_file=None, rerank_enabled=False),
+        embedder=FakeEmbedder(),
+        store=FakeStore(HYBRID_CORPUS),
+        sparse_index=FakeBM25(HYBRID_CORPUS),
+    )
+
+    assert retriever.reranker is None

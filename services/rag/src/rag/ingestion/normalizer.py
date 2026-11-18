@@ -13,6 +13,7 @@ can be re-indexed without re-loading/re-parsing the originals.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 from dataclasses import asdict
@@ -38,9 +39,7 @@ def normalize_document(doc: RawDocument) -> RawDocument:
     for block in doc.blocks:
         cleaned = normalize_text(block.text)
         if cleaned:
-            blocks.append(
-                RawBlock(text=cleaned, section_heading=block.section_heading, page=block.page)
-            )
+            blocks.append(dataclasses.replace(block, text=cleaned))
     return RawDocument(source_file=doc.source_file, doc_type=doc.doc_type, blocks=blocks)
 
 

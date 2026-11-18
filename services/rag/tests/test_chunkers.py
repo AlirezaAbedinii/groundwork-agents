@@ -164,3 +164,36 @@ def test_get_chunker_factory() -> None:
     )
     assert isinstance(semantic, SemanticChunker)
     assert semantic.breakpoint_threshold == 0.4
+
+
+def test_chunk_document_can_prefix_the_heading_path() -> None:
+    doc = RawDocument(
+        source_file="guide.md",
+        doc_type="markdown",
+        blocks=[
+            RawBlock(text="body one", section_heading="Linux", heading_path=("Guide", "Linux")),
+            RawBlock(text="preamble"),  # no heading: nothing to prefix
+        ],
+    )
+    chunker = FixedSizeChunker(chunk_size=400, overlap=50)
+
+    plain = chunk_document(doc, chunker)
+    prefixed = chunk_document(doc, chunker, heading_path=True)
+
+    assert [c.text for c in plain] == ["body one", "preamble"]  # the default is unchanged
+    assert [c.text for c in prefixed] == ["Guide > Linux\n\nbody one", "preamble"]
+    assert prefixed[0].chunk_id != plain[0].chunk_id  # ids hash the text they store
+    assert prefixed[1].chunk_id == plain[1].chunk_id
+
+
+def test_heading_path_chunking_is_its_own_registry_strategy() -> None:
+    from rag.indexing.vector_store import Chunking
+
+    plain = Chunking.from_settings(Settings(_env_file=None, chunk_strategy="recursive"))
+    prefixed = Chunking.from_settings(
+        Settings(_env_file=None, chunk_strategy="recursive", chunk_heading_path=True)
+    )
+
+    assert plain.strategy == "recursive"
+    assert prefixed.strategy == "recursive+heading_path"
+    assert prefixed != plain  # so index_path refuses to mix them in one collection

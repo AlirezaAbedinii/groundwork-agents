@@ -35,6 +35,8 @@ if TYPE_CHECKING:
 Vector = list[float]
 
 REGISTRY_TABLE = "rag_collections"
+# Appended to the registry's chunk strategy when chunks start with their heading path.
+HEADING_PATH_SUFFIX = "+heading_path"
 
 _NAME_RE = re.compile(COLLECTION_NAME_PATTERN)
 _CONNECT_TIMEOUT_S = 5
@@ -80,7 +82,12 @@ class Chunking:
 
     @classmethod
     def from_settings(cls, settings: Settings) -> Chunking:
-        return cls(settings.chunk_strategy, settings.chunk_size, settings.chunk_overlap)
+        # Chunks that start with their heading path are another strategy's output: the
+        # registry names it, so the two are never mixed in one collection.
+        strategy = settings.chunk_strategy
+        if settings.chunk_heading_path:
+            strategy += HEADING_PATH_SUFFIX
+        return cls(strategy, settings.chunk_size, settings.chunk_overlap)
 
 
 @dataclass(frozen=True)

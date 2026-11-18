@@ -35,6 +35,7 @@ from .schemas import (
     ContextModel,
     DocumentInfo,
     DocumentsResponse,
+    HybridInfo,
     IndexInfo,
     IngestRequest,
     IngestResponse,
@@ -345,6 +346,15 @@ def create_app(
                 mode: settings.refusal_threshold(mode) for mode in ("dense", "hybrid")
             },
             citation_verification=settings.citation_verification,
+            hybrid=HybridInfo(
+                sparse_enabled=settings.sparse_enabled,
+                rerank_enabled=settings.rerank_enabled,
+                reranker_model=settings.reranker_model if settings.rerank_enabled else None,
+                rerank_candidates=settings.rerank_candidates,
+                rrf_k=settings.rrf_k,
+                rrf_dense_weight=settings.rrf_dense_weight,
+                rrf_sparse_weight=settings.rrf_sparse_weight,
+            ),
             index=index,
         )
 

@@ -64,6 +64,18 @@ def test_token_prices_and_thresholds_present() -> None:
     assert 0.0 <= s.confidence_threshold <= 1.0
 
 
+def test_hybrid_stages_and_heading_path_switch_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The published configuration is the default; each switch is read on its own."""
+    defaults = _settings()
+    assert (defaults.sparse_enabled, defaults.rerank_enabled) == (True, True)
+    assert defaults.chunk_heading_path is False
+
+    monkeypatch.setenv("SPARSE_ENABLED", "false")
+    monkeypatch.setenv("CHUNK_HEADING_PATH", "true")
+    s = _settings()
+    assert (s.sparse_enabled, s.rerank_enabled, s.chunk_heading_path) == (False, True, True)
+
+
 def test_each_mode_has_its_own_refusal_threshold(monkeypatch: pytest.MonkeyPatch) -> None:
     """Dense compares a cosine, hybrid a reranker score: one value can't fit both."""
     monkeypatch.setenv("RETRIEVAL_CONFIDENCE_THRESHOLD_DENSE", "0.45")

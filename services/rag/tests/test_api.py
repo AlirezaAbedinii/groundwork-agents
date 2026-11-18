@@ -328,6 +328,34 @@ def test_config_reports_what_runs_and_no_secrets(tmp_path) -> None:
     }
 
 
+def test_config_reports_how_hybrid_retrieves(tmp_path) -> None:
+    default = TestClient(_v1_app(tmp_path)).get("/v1/config").json()
+    assert default["hybrid"] == {
+        "sparse_enabled": True,
+        "rerank_enabled": True,
+        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "rerank_candidates": 20,
+        "rrf_k": 60,
+        "rrf_dense_weight": 0.7,
+        "rrf_sparse_weight": 0.3,
+    }
+
+    settings = Settings(
+        _env_file=None, sparse_enabled=False, rerank_enabled=False, rerank_candidates=50
+    )
+    client = TestClient(
+        create_app(
+            settings,
+            trace_store=TraceStore(tmp_path / "other.sqlite"),
+            store_factory=lambda: FakeStore(),
+        )
+    )
+    hybrid = client.get("/v1/config").json()["hybrid"]
+    assert (hybrid["sparse_enabled"], hybrid["rerank_enabled"]) == (False, False)
+    assert hybrid["reranker_model"] is None  # no model runs, so none is named
+    assert hybrid["rerank_candidates"] == 50
+
+
 def test_config_of_an_unseeded_collection_has_no_index(tmp_path) -> None:
     client = TestClient(_v1_app(tmp_path))  # FakeStore() has no registry row
 
