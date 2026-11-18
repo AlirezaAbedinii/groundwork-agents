@@ -961,6 +961,45 @@ def _false_refusal_section(per_mode: dict) -> list[str]:
     ]
 
 
+def _diff_ci(found: dict) -> str:
+    return f"{found['difference']:+.3f} [{found['low']:+.3f}, {found['high']:+.3f}]"
+
+
+def _paired_section(stats: dict) -> list[str]:
+    a, b = stats["modes"]
+    lines = ["", f"## {b.capitalize()} against {a}, question by question"]
+    if stats["mcnemar"]:
+        rows = [
+            [label, str(t["n"]), str(t["only_a"]), str(t["only_b"]), f"{t['p_value']:.3f}"]
+            for label, t in _strata(stats["mcnemar"]).items()
+        ]
+        lines += [
+            "",
+            "End-to-end correctness, every question (a no_answer question is correct iff "
+            "refused). Exact McNemar test: only the questions one mode gets right and the "
+            "other wrong count; p is two-sided.",
+            "",
+            *_table(["stratum", "questions", f"only {a} correct", f"only {b} correct", "p"], rows),
+        ]
+    if stats["bootstrap"]:
+        names = list(stats["bootstrap"])
+        per = {name: _strata(stats["bootstrap"][name]) for name in names}
+        first = next(iter(per[names[0]].values()))
+        rows = [
+            [label, str(found["n"]), *(_diff_ci(per[name][label]) for name in names)]
+            for label, found in per[names[0]].items()
+        ]
+        lines += [
+            "",
+            f"Retrieval, answerable questions: the mean of {b} − {a} per question, with a 95 % "
+            f"paired bootstrap percentile interval ({first['resamples']:,} resamples, seed "
+            f"{first['seed']}).",
+            "",
+            *_table(["stratum", "questions", *names], rows),
+        ]
+    return lines
+
+
 def stats_markdown(header: dict, stats: dict) -> str:
     lines = [
         "# RAG statistics",
@@ -970,4 +1009,6 @@ def stats_markdown(header: dict, stats: dict) -> str:
     ]
     if stats["false_refusals"]:
         lines += _false_refusal_section(stats["false_refusals"])
+    if stats["mcnemar"] or stats["bootstrap"]:
+        lines += _paired_section(stats)
     return "\n".join(lines) + "\n"

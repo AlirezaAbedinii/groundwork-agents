@@ -872,4 +872,38 @@ def test_the_stats_command_prints_and_writes_nothing(tmp_path, capsys):
     out = capsys.readouterr().out
     assert out.startswith("# RAG statistics\n")
     assert "| all | 2/4 · 0.500 [0.15, 0.85] | 1/4 · 0.250" in out
+    assert "| all | 6 | 0 | 3 | 0.250 |" in out
+    assert "| all | 4 | " in out and "+0.125 [+0.000, +0.375]" in out
     assert sorted(p.name for p in tmp_path.iterdir()) == ["rag-records.jsonl"]
+
+
+def test_stats_compare_the_modes_question_by_question():
+    # Correct, dense: q001 (5), q004 (refused, no_answer); hybrid: q001, q002 (4), q003 and
+    # q004 (refused, no_answer), s001 (5). Only dense: none; only hybrid: q002, q003, s001.
+    # p = 2 · C(3, 0) / 2^3 = 0.25
+    stats = fixture_stats()
+    assert stats["modes"] == ["dense", "hybrid"]
+    assert stats["mcnemar"]["all"] == {"only_a": 0, "only_b": 3, "n": 6, "p_value": 0.25}
+    assert stats["mcnemar"]["by_category"]["no_answer"]["only_b"] == 1  # q003
+    # MRR@10 over the answerable four: dense q001's first relevant hit is at rank 2, so
+    # dense 0.5, 1, 1, 1 and hybrid 1, 1, 1, 1; differences 0.5, 0, 0, 0, mean 0.125.
+    # Resampled means are k/8 for k 0.5s drawn of 4: P(0) = (3/4)^4 = 0.32 >= 0.025;
+    # P(k <= 2) = 0.949 < 0.975 <= P(k <= 3) = 0.996, so the 97.5th percentile is 0.375.
+    mrr = stats["bootstrap"]["MRR@10"]["all"]
+    assert (mrr["difference"], mrr["low"], mrr["high"]) == (0.125, 0.0, 0.375)
+    assert (mrr["n"], mrr["resamples"], mrr["seed"]) == (4, 10_000, 0)
+    # R@10 is 1 for every answerable question in both modes.
+    r10 = stats["bootstrap"]["R@10"]["all"]
+    assert (r10["difference"], r10["low"], r10["high"]) == (0.0, 0.0, 0.0)
+    assert list(stats["bootstrap"]["R@1"]["by_origin"]) == ["synthetic", "targeted"]
+
+
+def test_stats_need_both_modes_for_the_paired_comparison():
+    records = rag_eval.read_jsonl(FIXTURE / "rag-records.jsonl")
+    records = [records[0], *(r for r in records[1:] if r["mode"] == "dense")]
+    for stage in ("retrieval", "answers"):
+        records[0][stage]["modes"] = ["dense"]
+    stats = rag_eval.paired_stats(records)
+    assert stats["mcnemar"] is None and stats["bootstrap"] is None
+    assert list(stats["false_refusals"]) == ["dense"]
+    assert "question by question" not in report.stats_markdown(records[0], stats)

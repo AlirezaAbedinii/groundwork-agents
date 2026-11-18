@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import math
+import random
 from collections.abc import Callable, Mapping, Sequence
 
 from schemas import (
@@ -29,6 +30,8 @@ from schemas import (
     ExpectedCall,
     FaithfulnessVerdict,
     FalseRefusals,
+    McNemar,
+    PairedDifference,
     PlannedSubtask,
     Share,
     SweepPoint,
@@ -272,6 +275,82 @@ def cohens_kappa(a: Sequence[bool], b: Sequence[bool]) -> float | None:
     if p_e == 1:  # exact: only reachable with pa = pb in {0, 1}
         return None
     return (p_o - p_e) / (1 - p_e)
+
+
+# --- paired comparisons -------------------------------------------------------------
+# Two configurations run on the same questions are compared question by question: a hard
+# question lowers both results and drops out of their difference, so a paired test can
+# see a gap that two independent intervals, each as wide as the questions vary, hide.
+
+BOOTSTRAP_RESAMPLES = 10_000
+BOOTSTRAP_SEED = 0
+
+
+def mcnemar_exact(a: Sequence[bool], b: Sequence[bool]) -> McNemar:
+    """The exact McNemar test: do a and b pass at different rates on the same items?
+
+    Items both pass or both fail say nothing about which is better, so only the
+    discordant ones count: ``only_a`` passed in a alone, ``only_b`` in b alone. If the
+    two were equally good, each of the d = only_a + only_b discordant items would go
+    either way with probability 1/2, so the two-sided p-value is twice the smaller
+    binomial tail, p = min(1, 2 · Σ_{i ≤ min(only_a, only_b)} C(d, i) / 2^d), and 1.0
+    when nothing is discordant. Exact, because the chi-square form needs more
+    discordant items than a golden set of this size gives.
+    """
+    if len(a) != len(b) or not a:
+        raise ValueError(f"need two equally long, non-empty results, got {len(a)} and {len(b)}")
+    only_a = sum(bool(x) and not y for x, y in zip(a, b, strict=True))
+    only_b = sum(bool(y) and not x for x, y in zip(a, b, strict=True))
+    d = only_a + only_b
+    tail = sum(math.comb(d, i) for i in range(min(only_a, only_b) + 1))
+    return McNemar(only_a=only_a, only_b=only_b, n=len(a), p_value=min(1.0, 2 * tail / 2**d))
+
+
+def _nearest_rank(ordered: Sequence[float], p: float) -> float:
+    # The smallest value with at least a share p of them at or below it. Rounded before
+    # the ceiling, so that 0.975 · 10,000 picks the 9,750th, not the 9,751st.
+    return ordered[max(1, math.ceil(round(p * len(ordered), 9))) - 1]
+
+
+def paired_bootstrap(
+    a: Sequence[float],
+    b: Sequence[float],
+    *,
+    resamples: int = BOOTSTRAP_RESAMPLES,
+    seed: int = BOOTSTRAP_SEED,
+    confidence: float = 0.95,
+) -> PairedDifference:
+    """The mean of b - a over paired items, with a paired bootstrap percentile interval.
+
+    Each resample draws n items with replacement, each keeping its two scores together,
+    and takes the mean difference. The interval is the nearest-rank (1 - c)/2 and
+    (1 + c)/2 percentiles of the resampled means: at 10,000 resamples and 95 %, the
+    250th and 9,750th smallest. The percentile interval assumes nothing about the
+    differences' distribution, which for R@k and MRR on a few dozen questions is a few
+    spikes, not a bell. The seed is fixed so the interval can be recomputed from the
+    records; it is a constant, not a choice made after seeing results. ``difference``
+    is the observed mean, not the mean of the resamples.
+    """
+    if len(a) != len(b) or not a:
+        raise ValueError(f"need two equally long, non-empty scores, got {len(a)} and {len(b)}")
+    if resamples < 1:
+        raise ValueError(f"resamples must be >= 1, got {resamples}")
+    if not 0 < confidence < 1:
+        raise ValueError(f"confidence must be in (0, 1), got {confidence}")
+    diffs = [y - x for x, y in zip(a, b, strict=True)]
+    if not all(math.isfinite(d) for d in diffs):
+        raise ValueError("scores must be finite numbers")
+    n, rng = len(diffs), random.Random(seed)
+    means = sorted(math.fsum(rng.choices(diffs, k=n)) / n for _ in range(resamples))
+    tail = (1 - confidence) / 2
+    return PairedDifference(
+        difference=math.fsum(diffs) / n,
+        low=_nearest_rank(means, tail),
+        high=_nearest_rank(means, 1 - tail),
+        n=n,
+        resamples=resamples,
+        seed=seed,
+    )
 
 
 # --- answers ------------------------------------------------------------------------

@@ -35,6 +35,7 @@ the two modes, and how many readings of each ambiguous question each mode retrie
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import importlib.util
 import json
@@ -505,16 +506,22 @@ def _mean(values: Sequence[float]) -> float | None:
     return statistics.fmean(values) if values else None
 
 
+# Each retrieval metric of one question's record, as the report names it.
+RETRIEVAL_METRICS: dict[str, Callable[[dict], float]] = {
+    **{
+        f"R@{k}": lambda r, k=k: metrics.recall_at_k(_ranked(r), r["n_items"], k)
+        for k in RECALL_KS
+    },
+    "MRR@10": lambda r: metrics.mrr_at_k(_ranked(r), 10),
+    "nDCG@10": lambda r: metrics.ndcg_at_k(_ranked(r), r["n_items"], 10),
+}
+
+
 def retrieval_scores(records: list[dict]) -> dict:
-    per_metric: dict[str, Callable[[dict], float]] = {
-        **{
-            f"R@{k}": lambda r, k=k: metrics.recall_at_k(_ranked(r), r["n_items"], k)
-            for k in RECALL_KS
-        },
-        "MRR@10": lambda r: metrics.mrr_at_k(_ranked(r), 10),
-        "nDCG@10": lambda r: metrics.ndcg_at_k(_ranked(r), r["n_items"], 10),
+    return {
+        "n": len(records),
+        **{m: _mean([f(r) for r in records]) for m, f in RETRIEVAL_METRICS.items()},
     }
-    return {"n": len(records), **{m: _mean([f(r) for r in records]) for m, f in per_metric.items()}}
 
 
 def snippet_scores(records: list[dict]) -> dict:
@@ -853,13 +860,77 @@ def false_refusal_stats(rows: list[dict], modes: list[str]) -> dict:
     return out
 
 
-def paired_stats(records: list[dict]) -> dict:
-    """Every statistic ``stats`` prints, from the records alone."""
+def _pairs(rows: list[dict], a: str, b: str) -> list[tuple[dict, dict]]:
+    """Each question's rows in modes a and b, for the questions both have, by id."""
+    by_key = {(r["id"], r["mode"]): r for r in rows}
+    ids = {r["id"] for r in rows if r["mode"] == a} & {r["id"] for r in rows if r["mode"] == b}
+    return [(by_key[i, a], by_key[i, b]) for i in sorted(ids)]
+
+
+def mcnemar_stats(rows: list[dict], a: str, b: str) -> dict | None:
+    """Exact McNemar on end-to-end correctness, every question, a against b.
+
+    Correctness as the report scores it (a no_answer question is correct iff refused); a
+    question still lacking a verdict in either mode is left out of the pairs.
+    """
+    pairs = [(x, y) for x, y in _pairs(rows, a, b) if None not in (correct(x), correct(y))]
+    if not pairs:
+        return None
+    return _stratified(
+        [x for x, _ in pairs],
+        lambda p, q: dataclasses.asdict(metrics.mcnemar_exact(p, q)),
+        [correct(x) for x, _ in pairs],
+        [correct(y) for _, y in pairs],
+    )
+
+
+def bootstrap_stats(rows: list[dict], a: str, b: str, *, resamples: int, seed: int) -> dict:
+    """Per retrieval metric, the paired bootstrap of b - a over the answerable questions."""
+    pairs = [(x, y) for x, y in _pairs(rows, a, b) if x["category"] != "no_answer"]
+    if not pairs:
+        return {}
+
+    def boot(p: list[float], q: list[float]) -> dict:
+        found = metrics.paired_bootstrap(p, q, resamples=resamples, seed=seed)
+        return dataclasses.asdict(found)
+
+    return {
+        name: _stratified(
+            [x for x, _ in pairs], boot, [f(x) for x, _ in pairs], [f(y) for _, y in pairs]
+        )
+        for name, f in RETRIEVAL_METRICS.items()
+    }
+
+
+def paired_stats(
+    records: list[dict],
+    *,
+    resamples: int = metrics.BOOTSTRAP_RESAMPLES,
+    seed: int = metrics.BOOTSTRAP_SEED,
+) -> dict:
+    """Every statistic ``stats`` prints, from the records alone.
+
+    The paired comparison is hybrid against dense (differences are hybrid - dense) and
+    is None unless the stage holds both modes.
+    """
     header, rows = records[0], records[1:]
     answers = [r for r in rows if r["record"] == "answer"]
+    retrieval = [r for r in rows if r["record"] == "retrieval"]
+    a, b = MODES
+
+    def both(stage: str) -> bool:
+        return bool(header[stage]) and {a, b} <= set(header[stage]["modes"])
+
     return {
+        "modes": [a, b],
         "false_refusals": (
             false_refusal_stats(answers, header["answers"]["modes"]) if header["answers"] else None
+        ),
+        "mcnemar": mcnemar_stats(answers, a, b) if both("answers") else None,
+        "bootstrap": (
+            bootstrap_stats(retrieval, a, b, resamples=resamples, seed=seed)
+            if both("retrieval")
+            else None
         ),
     }
 
@@ -918,13 +989,18 @@ def main(
         "never calls anything",
     )
     stats.add_argument("--records", type=Path, required=True, help="a rag-records.jsonl")
+    stats.add_argument("--resamples", type=int, default=metrics.BOOTSTRAP_RESAMPLES)
+    stats.add_argument("--seed", type=int, default=metrics.BOOTSTRAP_SEED)
     args = parser.parse_args(argv)
 
     if args.command == "stats":
+        if args.resamples < 1:
+            parser.error("--resamples must be at least 1")
         records = read_jsonl(args.records)
         if not records or records[0].get("record") != "run":
             parser.error(f"{args.records} isn't a records file written by score")
-        print(report.stats_markdown(records[0], paired_stats(records)), end="")
+        found = paired_stats(records, resamples=args.resamples, seed=args.seed)
+        print(report.stats_markdown(records[0], found), end="")
         return 0
 
     if args.command == "collect":

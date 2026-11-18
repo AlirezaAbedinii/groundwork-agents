@@ -273,6 +273,29 @@ class FalseRefusals:
 
 
 @dataclass(frozen=True)
+class McNemar:
+    """An exact McNemar test on n paired pass/fail results: the discordant pairs and
+    the two-sided p-value."""
+
+    only_a: int
+    only_b: int
+    n: int
+    p_value: float
+
+
+@dataclass(frozen=True)
+class PairedDifference:
+    """The mean of b - a over n pairs, with a bootstrap percentile interval."""
+
+    difference: float
+    low: float
+    high: float
+    n: int
+    resamples: int
+    seed: int
+
+
+@dataclass(frozen=True)
 class ToolCallScores:
     must_call_recall: float | None
     precision: float | None
