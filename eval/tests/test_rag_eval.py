@@ -18,6 +18,7 @@ from pathlib import Path
 import httpx
 import pytest
 
+import metrics
 import rag_eval
 import report
 from judge_fake import FakeJudge
@@ -822,3 +823,53 @@ def test_ids_pick_the_questions_for_a_pilot(tmp_path, golden):
     assert len(fake.asks) == 4
     with pytest.raises(SystemExit):
         collect_answers(tmp_path, golden, FakeRag(), "--ids", "q001,q999")
+
+
+# --- stats ------------------------------------------------------------------------------
+# From the committed fixture's records. Answerable: q001, q002 (multi_hop), s001, s002.
+# Dense refuses q002 (model) and s002 (gate); hybrid refuses none of them.
+
+
+def fixture_stats() -> dict:
+    return rag_eval.paired_stats(rag_eval.read_jsonl(FIXTURE / "rag-records.jsonl"))
+
+
+def test_stats_count_refusals_of_answerable_questions():
+    refusals = fixture_stats()["false_refusals"]
+    dense, hybrid = refusals["dense"], refusals["hybrid"]
+    assert {c: dense["all"][c]["k"] for c in ("refused", "gate", "model")} == {
+        "refused": 2,
+        "gate": 1,
+        "model": 1,
+    }
+    assert dense["all"]["refused"]["n"] == 4
+    assert dense["all"]["refused"]["ci"] == pytest.approx(metrics.wilson_interval(2, 4))
+    assert hybrid["all"]["refused"]["k"] == 0
+    # Per stratum: q002 is the only multi_hop row; s002 is the synthetic test row.
+    assert dense["by_category"]["multi_hop"]["model"] == {
+        "k": 1,
+        "n": 1,
+        "rate": 1.0,
+        "ci": pytest.approx(metrics.wilson_interval(1, 1)),
+    }
+    assert dense["by_origin"]["synthetic"]["gate"]["k"] == 1
+    assert dense["by_split"]["test"]["refused"]["k"] == 1  # s002; q002 is dev
+    assert "no_answer" not in dense["by_category"]
+
+
+def test_stats_reject_records_whose_refusal_fields_disagree():
+    records = rag_eval.read_jsonl(FIXTURE / "rag-records.jsonl")
+    answer = next(r for r in records[1:] if r["record"] == "answer" and r["refused_by"])
+    answer["refused_by"] = None
+    with pytest.raises(ValueError, match="disagree"):
+        rag_eval.paired_stats(records)
+
+
+def test_the_stats_command_prints_and_writes_nothing(tmp_path, capsys):
+    records = tmp_path / "rag-records.jsonl"
+    records.write_bytes((FIXTURE / "rag-records.jsonl").read_bytes())
+    assert rag_eval.main(["stats", "--records", str(records)]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("# RAG statistics\n")
+    assert "| all | 2/4 · 0.500 [0.15, 0.85] | 1/4 · 0.250" in out
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["rag-records.jsonl"]

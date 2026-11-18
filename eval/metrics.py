@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import json
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
 from schemas import (
     PRF,
@@ -28,6 +28,7 @@ from schemas import (
     CriterionVerdict,
     ExpectedCall,
     FaithfulnessVerdict,
+    FalseRefusals,
     PlannedSubtask,
     Share,
     SweepPoint,
@@ -186,6 +187,47 @@ def choose_threshold(points: Sequence[SweepPoint]) -> float:
         raise ValueError("the labels have nothing to refuse, so no threshold is better")
     # With something to refuse, 2tp + fp + fn > 0, so every F1 is a number.
     return max(points, key=lambda p: (p.prf.f1, -p.threshold)).threshold
+
+
+# The two refusers of the RAG service, in the order a question meets them.
+REFUSERS = ("gate", "model")
+
+
+def false_refusals(refused_by: Sequence[str | None]) -> FalseRefusals:
+    """Of answerable questions, the share refused, in all and by each refuser.
+
+    One entry per answerable question: None when it was answered, "gate" when the score
+    gate refused it before generation, "model" when the model refused after reading the
+    contexts. Each of these refusals withholds an answer the docs hold. Refusal F1 counts
+    them only on the split it is measured on and adds them to the missed refusals; this
+    counts them alone, on every answerable question. The split by refuser matters because
+    each is tuned on its own: the gate by its threshold, the model by its prompt.
+    """
+    if bad := sorted({str(r) for r in refused_by if r is not None and r not in REFUSERS}):
+        raise ValueError(f"unknown refusers {bad}; expected None or one of {REFUSERS}")
+    n = len(refused_by)
+    return FalseRefusals(
+        refused=Share(k=sum(r is not None for r in refused_by), n=n),
+        gate=Share(k=sum(r == "gate" for r in refused_by), n=n),
+        model=Share(k=sum(r == "model" for r in refused_by), n=n),
+    )
+
+
+def per_stratum[R](strata: Sequence[str], fn: Callable[..., R], *columns: Sequence) -> dict[str, R]:
+    """``fn`` of each stratum's rows, by stratum in sorted order.
+
+    Row i of every column belongs to stratum ``strata[i]``, and ``fn`` gets the columns
+    cut down to one stratum's rows, in their order, as positional arguments: so
+    ``per_stratum(categories, mcnemar_exact, dense, hybrid)`` keeps each question's two
+    results paired. Strata with no rows don't appear.
+    """
+    if any(len(c) != len(strata) for c in columns):
+        raise ValueError(f"columns of {[len(c) for c in columns]} rows for {len(strata)} strata")
+    out: dict[str, R] = {}
+    for stratum in sorted(set(strata)):
+        rows = [i for i, s in enumerate(strata) if s == stratum]
+        out[stratum] = fn(*([c[i] for i in rows] for c in columns))
+    return out
 
 
 # --- uncertainty and agreement ------------------------------------------------------

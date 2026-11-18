@@ -916,3 +916,58 @@ def write_diagnostics(diagnostics: dict, out: Path) -> list[Path]:
         path.write_text(text, encoding="utf-8")
         written.append(path)
     return written
+
+
+# --- RAG statistics (printed by ``rag_eval stats``; not part of rag.md yet) -----------
+
+
+def _strata(stratified: dict) -> dict[str, object]:
+    """A stratified statistic as rows: "all", then "<key> <value>" for each stratum."""
+    rows: dict[str, object] = {"all": stratified["all"]}
+    for key, per in stratified.items():
+        if key.startswith("by_"):
+            rows |= {f"{key[3:]} {value}": stat for value, stat in per.items()}
+    return rows
+
+
+def _share_ci(share: dict) -> str:
+    return f"{share['k']}/{share['n']} · {_ci(share['rate'], share['ci'])}"
+
+
+def _false_refusal_section(per_mode: dict) -> list[str]:
+    modes = list(per_mode)
+    by_mode = {m: _strata(per_mode[m]) for m in modes}
+    rows = [
+        [
+            label,
+            *(
+                _share_ci(by_mode[m][label][cause])
+                for m in modes
+                for cause in ("refused", "gate", "model")
+            ),
+        ]
+        for label in by_mode[modes[0]]
+    ]
+    header = ["stratum", *(f"{m}: {c}" for m in modes for c in ("refused", "by gate", "by model"))]
+    return [
+        "",
+        "## Answerable questions refused",
+        "",
+        "Every split. A refusal of an answerable question withholds an answer the docs hold; "
+        "the gate refuses before generation, the model after reading the contexts. Shares "
+        "with 95 % Wilson intervals.",
+        "",
+        *_table(header, rows),
+    ]
+
+
+def stats_markdown(header: dict, stats: dict) -> str:
+    lines = [
+        "# RAG statistics",
+        "",
+        f"Run `{header['run_id']}`, collected {header['collected']}; computed from its "
+        "records alone.",
+    ]
+    if stats["false_refusals"]:
+        lines += _false_refusal_section(stats["false_refusals"])
+    return "\n".join(lines) + "\n"

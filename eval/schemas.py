@@ -264,6 +264,15 @@ class Share:
 
 
 @dataclass(frozen=True)
+class FalseRefusals:
+    """Of n answerable questions, those refused in all and by each refuser."""
+
+    refused: Share
+    gate: Share
+    model: Share
+
+
+@dataclass(frozen=True)
 class ToolCallScores:
     must_call_recall: float | None
     precision: float | None

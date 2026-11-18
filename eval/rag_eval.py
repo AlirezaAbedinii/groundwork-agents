@@ -6,6 +6,7 @@
     python -m rag_eval score --run-id my-run                    # -> runs/my-run/report/
     python -m rag_eval score --run-id my-run --out reports      # publish
     python -m rag_eval score --records reports/rag-records.jsonl  # re-score in place
+    python -m rag_eval stats --records reports/rag-records.jsonl  # paired statistics
 
 ``collect`` is the only step that talks to the service or a judge. It records
 ``GET /v1/config`` in ``runs/<id>/run.json`` (not committed) and refuses to continue a
@@ -25,6 +26,10 @@ verdict is judged again without being asked again.
 grades, if any) into compact records, computes every number from them with
 ``metrics``, and writes the report. The records file is enough to re-score, so the
 published numbers can be recomputed without the run, the golden set or any key.
+
+``stats`` never calls anything either. It prints, from a records file, the answerable
+questions each mode refused (by the gate and by the model), the paired comparison of
+the two modes, and how many readings of each ambiguous question each mode retrieved.
 """
 
 from __future__ import annotations
@@ -56,6 +61,7 @@ from schemas import (
     CorrectnessVerdict,
     FaithfulnessVerdict,
     GoldenQuestion,
+    Share,
     SweepPoint,
 )
 from textnorm import covered_items
@@ -809,6 +815,55 @@ def score_records(records: list[dict]) -> dict:
     }
 
 
+# --- stats: answerable refusals and the modes compared question by question --------
+# Printed by ``stats`` from a records file; the published report doesn't include them yet.
+
+# Each statistic is given over all the rows it applies to, then within each stratum.
+STRATA = ("category", "split", "origin")
+
+
+def _stratified(rows: list[dict], fn: Callable[..., Any], *columns: list) -> dict:
+    """``fn`` of the columns over all ``rows``, then per stratum (column i is ``rows[i]``)."""
+    return {
+        "all": fn(*columns),
+        **{
+            f"by_{key}": metrics.per_stratum([r[key] for r in rows], fn, *columns) for key in STRATA
+        },
+    }
+
+
+def _share(share: Share) -> dict:
+    ci = metrics.wilson_interval(share.k, share.n)
+    return {"k": share.k, "n": share.n, "rate": share.rate, "ci": ci}
+
+
+def _false_refusals(refused_by: list[str | None]) -> dict:
+    found = metrics.false_refusals(refused_by)
+    return {cause: _share(getattr(found, cause)) for cause in ("refused", *metrics.REFUSERS)}
+
+
+def false_refusal_stats(rows: list[dict], modes: list[str]) -> dict:
+    """Per mode, the answerable questions refused, by the gate and by the model."""
+    out = {}
+    for mode in modes:
+        answerable = [r for r in rows if r["mode"] == mode and r["category"] != "no_answer"]
+        if any(r["refused"] != (r["refused_by"] is not None) for r in answerable):
+            raise ValueError(f"{mode}: a record's refused and refused_by disagree")
+        out[mode] = _stratified(answerable, _false_refusals, [r["refused_by"] for r in answerable])
+    return out
+
+
+def paired_stats(records: list[dict]) -> dict:
+    """Every statistic ``stats`` prints, from the records alone."""
+    header, rows = records[0], records[1:]
+    answers = [r for r in rows if r["record"] == "answer"]
+    return {
+        "false_refusals": (
+            false_refusal_stats(answers, header["answers"]["modes"]) if header["answers"] else None
+        ),
+    }
+
+
 # --- CLI ----------------------------------------------------------------------------
 
 
@@ -857,7 +912,20 @@ def main(
     score.add_argument(
         "--out", type=Path, help="report directory (default: runs/<id>/report, or the records' own)"
     )
+    stats = sub.add_parser(
+        "stats",
+        help="print refusals of answerable questions and the paired mode comparison; "
+        "never calls anything",
+    )
+    stats.add_argument("--records", type=Path, required=True, help="a rag-records.jsonl")
     args = parser.parse_args(argv)
+
+    if args.command == "stats":
+        records = read_jsonl(args.records)
+        if not records or records[0].get("record") != "run":
+            parser.error(f"{args.records} isn't a records file written by score")
+        print(report.stats_markdown(records[0], paired_stats(records)), end="")
+        return 0
 
     if args.command == "collect":
         modes = [m.strip() for m in args.modes.split(",") if m.strip()]
