@@ -550,6 +550,165 @@ def write_rag(records: list[dict], scores: dict, out: Path, *, with_records: boo
     return written
 
 
+# --- retrieval ablation (written by ``rag_eval ablate``) ------------------------------
+
+# The metrics an arm is chosen on, in order; the table gives them per stratum.
+CHOICE_METRICS = ("nDCG@10", "R@5")
+
+
+def _arm_row(arm: dict) -> list[str]:
+    cfg = arm["config"]
+    index = cfg.get("index") or {}
+    chunks = (
+        f"{cfg.get('collection', '?')} ({index.get('chunk_strategy', '?')}, "
+        f"{index.get('chunk_size', '?')}/{index.get('chunk_overlap', '?')})"
+    )
+    if arm["mode"] == "dense":
+        return [arm["name"], arm["change"], "dense", chunks, "–", "–", "–", "–"]
+    h = cfg.get("hybrid")
+    if h is None:  # a service from before /v1/config said how hybrid retrieves
+        return [arm["name"], arm["change"], "hybrid", chunks, "?", "?", "?", "?"]
+    return [
+        arm["name"],
+        arm["change"],
+        "hybrid",
+        chunks,
+        "on" if h["sparse_enabled"] else "off",
+        f"`{h['reranker_model']}`" if h["rerank_enabled"] else "off",
+        str(h["rerank_candidates"]),
+        f"{h['rrf_dense_weight']:g}/{h['rrf_sparse_weight']:g}",
+    ]
+
+
+def _latency_cells(found: dict | None) -> list[str]:
+    if found is None:
+        return ["–", "–"]
+    return [f"{found['p50']:.0f}", f"{found['p95']:.0f}"]
+
+
+def _ablation_split(split: str, per_arm: dict, reference: str) -> list[str]:
+    names = list(per_arm)
+    n = per_arm[reference]["n"] if reference in per_arm else max(a["n"] for a in per_arm.values())
+    rows = [
+        [
+            name,
+            str(a["n"]),
+            *(_f(a[m]) for m in METRICS),
+            *_latency_cells(a["latency_ms"]),
+            *_latency_cells(a["rerank_ms"]),
+        ]
+        for name, a in per_arm.items()
+    ]
+    lines = [
+        "",
+        f"## {split}: {n} answerable questions",
+        "",
+        *_table(
+            ["arm", "n", *METRICS, "search ms p50", "p95", "re-rank ms p50", "p95"], rows
+        ),
+    ]
+    compared = [name for name in names if per_arm[name]["vs_reference"]]
+    if not compared:
+        return lines
+    diffs = {name: per_arm[name]["vs_reference"] for name in compared}
+    rows = [
+        [
+            name,
+            str(diffs[name][METRICS[0]]["all"]["n"]),
+            *(_diff_ci(diffs[name][m]["all"]) for m in METRICS),
+        ]
+        for name in compared
+    ]
+    lines += [
+        "",
+        f"Difference to {reference}, arm − {reference} per question:",
+        "",
+        *_table(["arm", "pairs", *METRICS], rows),
+    ]
+    for metric in CHOICE_METRICS:
+        per = {name: _strata(diffs[name][metric]) for name in compared}
+        labels = list(per[compared[0]])
+        header = [f"{label} ({per[compared[0]][label]['n']})" for label in labels]
+        rows = [
+            [name, *(_diff_ci(per[name][s]) if s in per[name] else "–" for s in labels)]
+            for name in compared
+        ]
+        lines += [
+            "",
+            f"{metric}, arm − {reference}, per stratum (questions in brackets):",
+            "",
+            *_table(["arm", *header], rows),
+        ]
+    return lines
+
+
+def ablation_markdown(header: dict, scores: dict) -> str:
+    reference = scores["reference"]
+    first = next(
+        (
+            found
+            for per_arm in scores["splits"].values()
+            for arm in per_arm.values()
+            if arm["vs_reference"]
+            for found in [arm["vs_reference"][METRICS[0]]["all"]]
+        ),
+        None,
+    )
+    interval = (
+        f" with 95 % paired bootstrap percentile intervals ({first['resamples']:,} resamples, "
+        f"seed {first['seed']})"
+        if first
+        else ""
+    )
+    lines = [
+        "# Retrieval ablation",
+        "",
+        f"Run `{header['run_id']}`. Each arm searched the answerable questions of the golden "
+        f"set ({header['golden']['rows']} rows, sha256 `{header['golden']['sha256'][:12]}`) "
+        f"with `top_k` {header['top_k']}. The metrics are the RAG report's: evidence items "
+        "found in the hits, each counted once at its first rank. Differences are taken per "
+        f"question to {reference}, over the questions both arms searched,{interval}. "
+        "Latency is the service's own timing of the search (query embedding, dense, BM25, "
+        "fusion, re-rank), so it leaves out HTTP and model loading; the re-rank columns are "
+        "that stage alone.",
+        "",
+        "## Arms",
+        "",
+        *_table(
+            ["arm", "change", "mode", "collection (chunking, size/overlap)", "BM25",
+             "re-ranker", "pool", "RRF weights"],
+            [_arm_row(arm) for arm in header["arms"]],
+        ),
+    ]
+    for split, per_arm in scores["splits"].items():
+        lines += _ablation_split(split, per_arm, reference)
+    return "\n".join(lines) + "\n"
+
+
+def write_ablation(
+    records: list[dict], scores: dict, out: Path, *, with_records: bool
+) -> list[Path]:
+    """Write ablation.md, ablation.json and (from a run) ablation-records.jsonl."""
+    out.mkdir(parents=True, exist_ok=True)
+    files = {
+        "ablation.md": ablation_markdown(records[0], scores),
+        "ablation.json": json.dumps(
+            _rounded({"run": records[0], "scores": scores}), indent=2, sort_keys=True
+        )
+        + "\n",
+    }
+    if with_records:
+        files["ablation-records.jsonl"] = "".join(
+            json.dumps(record, sort_keys=True, ensure_ascii=False) + "\n" for record in records
+        )
+    written = []
+    for name, text in files.items():
+        path = out / name
+        path.write_text(text, encoding="utf-8")
+        written.append(path)
+    return written
+
+
 # --- agent evaluation ---------------------------------------------------------------
 
 

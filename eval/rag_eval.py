@@ -7,6 +7,8 @@
     python -m rag_eval score --run-id my-run --out reports      # publish
     python -m rag_eval score --records reports/rag-records.jsonl  # re-score in place
     python -m rag_eval stats --records reports/rag-records.jsonl  # paired statistics
+    python -m rag_eval ablate --arms ablation/arms.json --run-id my-ablation  # dev only
+    python -m rag_eval ablate --records runs/my-ablation/ablation-records.jsonl
 
 ``collect`` is the only step that talks to the service or a judge. It records
 ``GET /v1/config`` in ``runs/<id>/run.json`` (not committed) and refuses to continue a
@@ -26,6 +28,14 @@ verdict is judged again without being asked again.
 grades, if any) into compact records, computes every number from them with
 ``metrics``, and writes the report. The records file is enough to re-score, so the
 published numbers can be recomputed without the run, the golden set or any key.
+
+``ablate`` compares retrieval configurations. Each arm in the arms file is a mode on a
+service started with the arm's settings; its ``/v1/config`` must serve what the arm
+expects, or nothing is searched. It searches the answerable questions of the given
+splits (dev unless told otherwise, so test is searched only when asked) with ``top_k``
+10, skips what an arm already recorded, and writes one table: per split and arm the
+retrieval metrics, the search latency, and the paired bootstrap difference to the
+reference arm, overall and per stratum.
 
 ``stats`` never calls anything either. It prints, from a records file, the answerable
 questions each mode refused (by the gate and by the model), the paired comparison of
@@ -57,6 +67,8 @@ from budget import Budget, BudgetExceeded
 from llm import LLMError, cost_usd, load_env
 from schemas import (
     PRF,
+    AblationArm,
+    AblationPlan,
     ClaimVerdict,
     Context,
     CorrectnessVerdict,
@@ -829,12 +841,14 @@ def score_records(records: list[dict]) -> dict:
 STRATA = ("category", "split", "origin")
 
 
-def _stratified(rows: list[dict], fn: Callable[..., Any], *columns: list) -> dict:
+def _stratified(
+    rows: list[dict], fn: Callable[..., Any], *columns: list, strata: Sequence[str] = STRATA
+) -> dict:
     """``fn`` of the columns over all ``rows``, then per stratum (column i is ``rows[i]``)."""
     return {
         "all": fn(*columns),
         **{
-            f"by_{key}": metrics.per_stratum([r[key] for r in rows], fn, *columns) for key in STRATA
+            f"by_{key}": metrics.per_stratum([r[key] for r in rows], fn, *columns) for key in strata
         },
     }
 
@@ -961,6 +975,214 @@ def paired_stats(
     }
 
 
+# --- ablate: retrieval configurations compared --------------------------------------
+# Each arm is one retrieval configuration (AblationArm): a mode on a service started with
+# the arm's settings. Only the answerable questions are searched, since only they have
+# evidence to find, with the same top_k as the retrieval stage. Raw searches go to
+# runs/<id>/arms/<arm>.jsonl and each arm's /v1/config to runs/<id>/arms.json; the table
+# is computed from compact records, like the report, so it can be recomputed without
+# the services.
+
+# Strata of the ablation table: the question's category, and how it words its fact.
+ABLATION_STRATA = ("category", "phrasing")
+SPLITS = ("dev", "test")
+# Sent once to each arm before its questions and not recorded: the service loads its
+# models and builds its indexes on first use, which would otherwise be timed.
+WARM_UP_QUERY = "How do I configure the cache directory?"
+_MISSING = object()
+
+
+def load_arms(path: Path) -> AblationPlan:
+    return AblationPlan.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _served(config: dict, key: str) -> Any:
+    value: Any = config
+    for part in key.split("."):
+        if not isinstance(value, dict) or part not in value:
+            return _MISSING
+        value = value[part]
+    return value
+
+
+def arm_mismatches(arm: AblationArm, config: dict) -> list[str]:
+    """The values the arm expects that ``config`` (a /v1/config body) doesn't serve."""
+    out = []
+    for key, expected in arm.expect.items():
+        served = _served(config, key)
+        if served is _MISSING:
+            out.append(f"{key}: not served, expected {expected!r}")
+        elif served != expected:
+            out.append(f"{key}: served {served!r}, expected {expected!r}")
+    return out
+
+
+def open_arm(rag: httpx.Client, arm: AblationArm, run_dir: Path) -> dict:
+    """The arm's service config, checked against the arm. The first collect of an arm
+    records it in arms.json; later ones must find the same config and mode."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    path = run_dir / "arms.json"
+    arms = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    config = rag.get("/v1/config").raise_for_status().json()
+    if wrong := arm_mismatches(arm, config):
+        raise SystemExit(f"{arm.name}: {rag.base_url} doesn't serve this arm: " + "; ".join(wrong))
+    if arm.name in arms:
+        held = arms[arm.name]
+        if held["mode"] != arm.mode or held["config"] != config:
+            raise SystemExit(
+                f"{run_dir.name}: arm {arm.name} was recorded with another mode or "
+                "/v1/config; start a new run or rename the arm"
+            )
+        return config
+    now = datetime.now(UTC).isoformat(timespec="seconds")
+    arms[arm.name] = {"mode": arm.mode, "started_at": now, "config": config}
+    path.write_text(json.dumps(arms, indent=2) + "\n", encoding="utf-8")
+    return config
+
+
+def _arm_path(run_dir: Path, arm: AblationArm) -> Path:
+    return run_dir / "arms" / f"{arm.name}.jsonl"
+
+
+def unsearched(
+    arm: AblationArm, questions: Sequence[GoldenQuestion], run_dir: Path
+) -> list[GoldenQuestion]:
+    """The questions the arm hasn't recorded without an error."""
+    done = {qid for (qid, _), r in latest(_arm_path(run_dir, arm)).items() if "error" not in r}
+    return [q for q in questions if q.id not in done]
+
+
+def collect_arm(
+    rag: httpx.Client, arm: AblationArm, todo: Sequence[GoldenQuestion], run_dir: Path
+) -> int:
+    """Search ``todo`` with the arm after checking its service; returns the number of
+    errors."""
+    out = _arm_path(run_dir, arm)
+    open_arm(rag, arm, run_dir)
+    _search(rag, WARM_UP_QUERY, arm.mode)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    errors = 0
+    with out.open("a", encoding="utf-8") as f:
+        for q in todo:
+            try:
+                record = {"id": q.id, "mode": arm.mode, **_search(rag, q.question, arm.mode)}
+            except (httpx.HTTPError, KeyError, ValueError) as exc:
+                record = {"id": q.id, "mode": arm.mode, "error": _error(exc)}
+                errors += 1
+            _append(f, record)
+    print(f"{arm.name}: {len(todo)} searches ({errors} errors) -> {out}")
+    return errors
+
+
+def ablation_records(run_dir: Path, plan: AblationPlan, golden_path: Path) -> list[dict]:
+    """The arms' searches joined with the golden set: a header naming every recorded arm
+    with its config, then one record per arm and question."""
+    questions = {q.id: q for q in load_golden(golden_path)}
+    path = run_dir / "arms.json"
+    held = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    arms = [arm for arm in plan.arms if arm.name in held]
+    if plan.reference not in held:
+        raise SystemExit(f"{run_dir.name}: the reference arm {plan.reference} has no searches")
+    header = {
+        "record": "ablation",
+        "run_id": run_dir.name,
+        "reference": plan.reference,
+        "top_k": TOP_K,
+        "golden": {
+            "rows": len(questions),
+            "sha256": hashlib.sha256(golden_path.read_bytes()).hexdigest(),
+        },
+        "arms": [
+            {"name": a.name, "change": a.change, "mode": a.mode, "config": held[a.name]["config"]}
+            for a in arms
+        ],
+    }
+    records = []
+    for arm in arms:
+        for (qid, _), raw in sorted(latest(_arm_path(run_dir, arm)).items()):
+            if "error" in raw:
+                continue
+            q = questions[qid]
+            records.append(
+                {
+                    "record": "arm",
+                    "arm": arm.name,
+                    "id": q.id,
+                    "split": q.split,
+                    "category": q.category,
+                    "phrasing": q.phrasing or "unlabelled",
+                    "origin": q.origin,
+                    "n_items": len(q.evidence),
+                    "hits": [
+                        {
+                            "covered": sorted(covered_items(h["text"], q.evidence)),
+                            "score": h["score"],
+                        }
+                        for h in raw["hits"]
+                    ],
+                    "timings_ms": raw["timings_ms"],
+                }
+            )
+    return [header, *records]
+
+
+def _latency(rows: list[dict], stage: str) -> dict | None:
+    values = [r["timings_ms"][stage] for r in rows if stage in r["timings_ms"]]
+    if not values:
+        return None
+    return {"p50": percentile(values, 50), "p95": percentile(values, 95), "n": len(values)}
+
+
+def ablation_scores(
+    records: list[dict],
+    *,
+    resamples: int = metrics.BOOTSTRAP_RESAMPLES,
+    seed: int = metrics.BOOTSTRAP_SEED,
+) -> dict:
+    """Per split and arm: the retrieval metrics, the search's latency (the service's own
+    timing, and its rerank stage alone), and the paired bootstrap of arm - reference on
+    every metric, over all the questions both searched and per stratum."""
+    header, rows = records[0], records[1:]
+    reference = header["reference"]
+
+    def boot(p: list[float], q: list[float]) -> dict:
+        found = metrics.paired_bootstrap(p, q, resamples=resamples, seed=seed)
+        return dataclasses.asdict(found)
+
+    out: dict = {"reference": reference, "splits": {}}
+    for split in SPLITS:
+        in_split = [r for r in rows if r["split"] == split]
+        if not in_split:
+            continue
+        ref = {r["id"]: r for r in in_split if r["arm"] == reference}
+        per_arm: dict = {}
+        for arm in header["arms"]:
+            mine = [r for r in in_split if r["arm"] == arm["name"]]
+            if not mine:
+                continue
+            entry = {
+                **retrieval_scores(mine),
+                "latency_ms": _latency(mine, "total_ms"),
+                "rerank_ms": _latency(mine, "rerank"),
+                "vs_reference": None,
+            }
+            pairs = [(ref[r["id"]], r) for r in mine if r["id"] in ref]
+            if arm["name"] != reference and pairs:
+                entry["vs_reference"] = {
+                    name: _stratified(
+                        [x for _, x in pairs],
+                        boot,
+                        [f(x) for x, _ in pairs],
+                        [f(y) for _, y in pairs],
+                        strata=ABLATION_STRATA,
+                    )
+                    for name, f in RETRIEVAL_METRICS.items()
+                }
+            per_arm[arm["name"]] = entry
+        out["splits"][split] = per_arm
+    return out
+
+
 # --- CLI ----------------------------------------------------------------------------
 
 
@@ -974,11 +1196,64 @@ def _make_judge(kind: str, budget: Budget) -> Any:
     return Judge.from_env(budget=budget)
 
 
+def _connect(url: str) -> httpx.Client:
+    return httpx.Client(base_url=url, timeout=120)
+
+
+def ablate(args: argparse.Namespace, parser: argparse.ArgumentParser, connect) -> int:
+    """Collect what the chosen arms haven't searched yet, then write the table."""
+    if args.resamples < 1:
+        parser.error("--resamples must be at least 1")
+    if args.records:
+        records = read_jsonl(args.records)
+        if not records or records[0].get("record") != "ablation":
+            parser.error(f"{args.records} isn't an ablation records file written by ablate")
+        out = args.out or args.records.parent
+    else:
+        if not args.run_id:
+            parser.error("--run-id is required with --arms")
+        plan = load_arms(args.arms)
+        only = [a.strip() for a in (args.only or "").split(",") if a.strip()]
+        if unknown := set(only) - {arm.name for arm in plan.arms}:
+            parser.error(f"not in {args.arms}: {sorted(unknown)}")
+        splits = [s.strip() for s in args.splits.split(",") if s.strip()]
+        if not splits or (unknown := set(splits) - set(SPLITS)):
+            parser.error(f"--splits takes {', '.join(SPLITS)}")
+        load_env(Path(".env"))
+        default_url = args.rag or os.environ.get("RAG_URL")
+        questions = [
+            q
+            for q in load_golden(args.golden)
+            if q.split in splits and q.category != "no_answer"
+        ]
+        run_dir = args.runs / args.run_id
+        errors = 0
+        for arm in plan.arms:
+            if only and arm.name not in only:
+                continue
+            todo = unsearched(arm, questions, run_dir)
+            if not todo:  # an arm with nothing left to search never contacts its service
+                print(f"{arm.name}: all {len(questions)} questions already recorded")
+                continue
+            url = arm.rag or default_url
+            if not url:
+                parser.error(f"{arm.name}: no URL (set the arm's rag, --rag or RAG_URL)")
+            with connect(url) as rag:
+                errors += collect_arm(rag, arm, todo, run_dir)
+        records = ablation_records(run_dir, plan, args.golden)
+        out = args.out or run_dir
+    found = ablation_scores(records, resamples=args.resamples, seed=args.seed)
+    written = report.write_ablation(records, found, out, with_records=not args.records)
+    print("\n".join(f"wrote {path}" for path in written))
+    return 1 if not args.records and errors else 0
+
+
 def main(
     argv: Sequence[str] | None = None,
     *,
     rag_client: httpx.Client | None = None,
     judge: Any = None,
+    connect: Callable[[str], httpx.Client] = _connect,
 ) -> int:
     parser = argparse.ArgumentParser(prog="python -m rag_eval", description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -1017,7 +1292,33 @@ def main(
     stats.add_argument("--records", type=Path, required=True, help="a rag-records.jsonl")
     stats.add_argument("--resamples", type=int, default=metrics.BOOTSTRAP_RESAMPLES)
     stats.add_argument("--seed", type=int, default=metrics.BOOTSTRAP_SEED)
+    ablate_cmd = sub.add_parser(
+        "ablate",
+        help="search the answerable questions with each retrieval configuration (arm) in "
+        "an arms file and compare them in one table",
+    )
+    arms_source = ablate_cmd.add_mutually_exclusive_group(required=True)
+    arms_source.add_argument("--arms", type=Path, help="the arms file (JSON: reference, arms)")
+    arms_source.add_argument(
+        "--records", type=Path, help="an ablation-records.jsonl to re-score; calls nothing"
+    )
+    ablate_cmd.add_argument("--run-id", help="with --arms: runs/<id>/ holds the searches")
+    ablate_cmd.add_argument("--only", help="collect only these arms, comma-separated")
+    ablate_cmd.add_argument(
+        "--splits", default="dev", help="splits to search, comma-separated (default: dev)"
+    )
+    ablate_cmd.add_argument("--rag", metavar="URL", help="for arms naming no URL ($RAG_URL)")
+    ablate_cmd.add_argument("--golden", type=Path, default=Path("golden/golden_set.jsonl"))
+    ablate_cmd.add_argument("--runs", type=Path, default=Path("runs"))
+    ablate_cmd.add_argument(
+        "--out", type=Path, help="table directory (default: runs/<id>, or the records' own)"
+    )
+    ablate_cmd.add_argument("--resamples", type=int, default=metrics.BOOTSTRAP_RESAMPLES)
+    ablate_cmd.add_argument("--seed", type=int, default=metrics.BOOTSTRAP_SEED)
     args = parser.parse_args(argv)
+
+    if args.command == "ablate":
+        return ablate(args, parser, connect)
 
     if args.command == "stats":
         if args.resamples < 1:

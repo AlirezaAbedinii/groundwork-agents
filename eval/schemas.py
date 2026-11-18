@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Literal, Self
+from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -90,6 +90,38 @@ class GoldenQuestion(_Strict):
             raise ValueError(f"a {self.category} question needs at least 2 evidence items")
         if not self.id.startswith(ID_PREFIX[self.origin]):
             raise ValueError(f"{self.origin} ids start with {ID_PREFIX[self.origin]!r}")
+        return self
+
+
+# --- retrieval ablation -------------------------------------------------------------
+
+
+class AblationArm(_Strict):
+    """One retrieval configuration: a mode, searched on a RAG service started with the
+    arm's settings. ``expect`` names the ``GET /v1/config`` values the arm needs, by
+    dotted key ("hybrid.rerank_enabled", "index.chunk_strategy"); a service serving
+    anything else is refused before any question is sent."""
+
+    name: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,31}$")  # also its file name
+    change: str = Field(min_length=1)  # what the arm changes, as the table shows it
+    mode: Literal["dense", "hybrid"]
+    rag: str | None = None  # the service's URL; default --rag or $RAG_URL
+    expect: dict[str, Any] = Field(default_factory=dict)
+
+
+class AblationPlan(_Strict):
+    """The arms to compare, and the one every other arm's difference is taken to."""
+
+    reference: str
+    arms: list[AblationArm] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _names(self) -> Self:
+        names = [arm.name for arm in self.arms]
+        if repeated := sorted({n for n in names if names.count(n) > 1}):
+            raise ValueError(f"arm names repeat: {repeated}")
+        if self.reference not in names:
+            raise ValueError(f"reference {self.reference!r} is not an arm")
         return self
 
 
