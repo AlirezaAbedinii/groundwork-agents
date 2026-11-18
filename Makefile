@@ -4,8 +4,8 @@
 # Each project uses its own virtualenv. The agent Makefile picks up
 # services/agent/.venv by itself; the rag Makefile expects `python` on PATH, so
 # point it at services/rag/.venv when that exists; mcp/ has no Makefile and uses
-# mcp/.venv when present, and eval/ likewise (CI has no .venv and uses the
-# runner's interpreter).
+# mcp/.venv when present, and eval/ likewise. `make sync` builds the agent, MCP
+# and eval virtualenvs from their uv.lock, as CI does.
 RAG_PYTHON := $(if $(wildcard services/rag/.venv/bin/),PYTHON=.venv/bin/python,)
 AGENT_PYTHON := $(if $(wildcard services/agent/.venv/bin/),.venv/bin/python,python)
 MCP_PYTHON := $(if $(wildcard mcp/.venv/bin/),.venv/bin/python,python)
@@ -14,13 +14,20 @@ AGENT_URL ?= http://localhost:8080
 ALERT_EMAIL ?=
 
 .DEFAULT_GOAL := help
-.PHONY: help lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
+.PHONY: help sync lint test lint-rag lint-agent lint-mcp lint-eval test-rag test-agent test-mcp \
 	test-eval e2e-agent eval-score eval-agent-smoke bootstrap tf-init plan up seed-cloud warm urls \
 	ui-cloud down tf-check test-infra guard-check
 
 help: ## Show this help.
 	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
+
+# --locked: the lock's exact versions; fails if a pyproject.toml changed without its lock
+# (refresh it with `uv lock` in that directory). The RAG service keeps its own install.
+sync: ## Build the agent, MCP and eval .venvs from their uv.lock (exact versions; removes strays).
+	cd services/agent && uv sync --locked --extra dev --extra ui --python 3.12
+	cd mcp && uv sync --locked --extra dev --python 3.12
+	cd eval && uv sync --locked --extra dev --python 3.12
 
 lint: lint-rag lint-agent lint-mcp lint-eval ## Lint the services, the MCP server and eval with ruff.
 

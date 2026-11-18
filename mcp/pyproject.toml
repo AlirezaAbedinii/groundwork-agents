@@ -2,8 +2,8 @@
 #
 # A dependencies-only project: nothing here is installed as a package. The server
 # runs as a script (`python server.py`), and tests import it from this directory
-# (pythonpath below). Install with:
-#   uv pip install -r pyproject.toml --extra dev
+# (pythonpath below). Install the locked versions (uv.lock) with:
+#   uv sync --locked --extra dev
 # This directory must never get an __init__.py: it is named `mcp`, like the SDK,
 # and tests/test_models.py checks that `import mcp` still resolves to the SDK.
 

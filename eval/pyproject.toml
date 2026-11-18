@@ -4,8 +4,8 @@
 #
 # A dependencies-only project: nothing here is installed as a package. Commands
 # run as modules from this directory (`python -m dataset.validate ...`), and
-# tests import them through pythonpath below. Install with:
-#   uv pip install -r pyproject.toml --extra dev
+# tests import them through pythonpath below. Install the locked versions (uv.lock) with:
+#   uv sync --locked --extra dev
 
 [project]
 name = "groundwork-eval"

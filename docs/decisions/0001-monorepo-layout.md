@@ -63,3 +63,24 @@ The original repositories stay online as they are; development continues here.
   evaluation and infrastructure. The services stay independent, but the
   platform repository has to pin and check out both to test anything, and the
   split README problem remains.
+
+## Addendum, 2026-11-18: lockfiles for the agent, the MCP server and eval
+
+The agent service, the MCP server and the evaluation suite installed from the
+version ranges in their `pyproject.toml`, in CI and locally, so two installs a week
+apart could test different code, and a published run named no exact dependency set.
+Each now tracks a `uv.lock`, resolved to the versions its environment was tested
+with. The one exception is the agent's `streamlit` (the `ui` extra, which no test
+installs): the installed 1.64.0 requires `websockets<17` beside a tested 17.4, so no
+consistent lock could keep both, and the lock takes 1.67.0, which accepts 17.4.
+
+CI installs each of the three with `uv sync --locked`: the lock's exact versions,
+and a failure if `pyproject.toml` changed without the lock being refreshed (`uv
+lock`). `make sync` builds the same environments locally. uv itself is pinned in CI,
+because the lock format belongs to it. Dependabot's `uv` ecosystem replaces the
+agent's `pip` entry and covers the MCP server and eval, so updates arrive as lock
+changes that CI tests before they land; the cost is larger update PRs.
+
+The RAG service is unchanged: its image pins the reranker stack through
+`docker/constraints.txt`, and its CI job still installs from ranges. The images
+are also unchanged and install from `pyproject.toml`.

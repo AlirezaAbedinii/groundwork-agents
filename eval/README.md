@@ -150,8 +150,7 @@ fixtures for a keyless run of the whole harness.
 ## Reproducing
 
 ```bash
-uv venv .venv -p 3.12
-uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
+uv sync --locked --extra dev --python 3.12      # .venv with uv.lock's exact versions
 .venv/bin/python -m pytest -q          # the live (paid) tests are deselected unless -m live
 make -C .. eval-score                  # re-score every published report: $0, no services
 

@@ -58,8 +58,7 @@ generation key.
 On the host, against a RAG API at `RAG_API_URL` (default `http://localhost:8000`):
 
 ```bash
-uv venv .venv -p 3.12
-uv pip install --python .venv/bin/python -r pyproject.toml --extra dev
+uv sync --locked --extra dev --python 3.12      # .venv with uv.lock's exact versions
 .venv/bin/python server.py                      # Streamable HTTP on 127.0.0.1:8001/mcp
 .venv/bin/python server.py --transport stdio    # for desktop MCP clients
 ```

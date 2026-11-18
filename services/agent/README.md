@@ -317,8 +317,7 @@ reasoning is in [ADR 0009](../../docs/decisions/0009-inline-runs-in-the-cloud.md
 Host-run API in inline mode (no worker needed) for fast iteration:
 
 ```bash
-uv venv --python 3.12 .venv
-uv pip install -e ".[dev,ui]"   # ui: streamlit, for the two UIs
+uv sync --locked --extra dev --extra ui --python 3.12   # uv.lock's versions; ui: streamlit, for the two UIs
 
 make infra                        # postgres and redis only
 make migrate && make seed         # schema + demo data
