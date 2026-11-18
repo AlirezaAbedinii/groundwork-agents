@@ -1000,6 +1000,28 @@ def _paired_section(stats: dict) -> list[str]:
     return lines
 
 
+def _ambiguous_section(questions: list[dict]) -> list[str]:
+    modes = sorted({m for q in questions for m in q["modes"]})
+    rows = []
+    for q in questions:
+        cells = []
+        for m in modes:
+            got = q["modes"].get(m)
+            cells += [f"{got['found']} of {q['readings']}", got["outcome"]] if got else ["n/a"] * 2
+        rows.append([q["id"], *cells])
+    header = ["question", *(f"{m}: {c}" for m in modes for c in ("readings in top 5", "answer"))]
+    return [
+        "",
+        "## Ambiguous questions: readings retrieved",
+        "",
+        "Each evidence item of an ambiguous question is one reading, and the reference answer "
+        "needs all of them. Readings covered by the top 5 hits of the recorded search (`/ask` "
+        "was run with `top_k` 5), and how the answer came out.",
+        "",
+        *_table(header, rows),
+    ]
+
+
 def stats_markdown(header: dict, stats: dict) -> str:
     lines = [
         "# RAG statistics",
@@ -1011,4 +1033,6 @@ def stats_markdown(header: dict, stats: dict) -> str:
         lines += _false_refusal_section(stats["false_refusals"])
     if stats["mcnemar"] or stats["bootstrap"]:
         lines += _paired_section(stats)
+    if stats["ambiguous"]:
+        lines += _ambiguous_section(stats["ambiguous"])
     return "\n".join(lines) + "\n"

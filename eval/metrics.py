@@ -125,6 +125,18 @@ def ndcg_at_k(ranked: Ranked, n_items: int, k: int = 10) -> float:
     return dcg / ideal
 
 
+def items_found_at_k(ranked: Ranked, n_items: int, k: int) -> Share:
+    """How many of the question's evidence items the top k cover, of how many.
+
+    ``recall_at_k`` as a count. For an ambiguous question each item is one reading, so
+    this says how many readings the generator could answer from; a ratio of 0.5 would
+    hide whether that is 1 of 2 or 2 of 4.
+    """
+    _check_items(ranked, n_items)
+    _check_k(k)
+    return Share(k=len(_first_ranks(ranked, k)), n=n_items)
+
+
 # --- refusals -----------------------------------------------------------------------
 # The positive class is "refused": a question should be refused iff it is no_answer.
 

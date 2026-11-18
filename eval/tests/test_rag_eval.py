@@ -907,3 +907,28 @@ def test_stats_need_both_modes_for_the_paired_comparison():
     assert stats["mcnemar"] is None and stats["bootstrap"] is None
     assert list(stats["false_refusals"]) == ["dense"]
     assert "question by question" not in report.stats_markdown(records[0], stats)
+
+
+def test_stats_show_the_readings_of_ambiguous_questions():
+    # The fixture has no ambiguous question; make q002 (two evidence items) one. Dense
+    # covers item 0 at rank 1 and item 1 at rank 3: 2 of 2 in the top 5, refused by the
+    # model. Hybrid covers both at rank 1 and the answer was rated 4.
+    records = rag_eval.read_jsonl(FIXTURE / "rag-records.jsonl")
+    for r in records[1:]:
+        if r["id"] == "q002":
+            r["category"] = "ambiguous"
+    assert fixture_stats()["ambiguous"] == []
+    found = rag_eval.paired_stats(records)["ambiguous"]
+    assert found == [
+        {
+            "id": "q002",
+            "readings": 2,
+            "modes": {
+                "dense": {"found": 2, "outcome": "refused by model"},
+                "hybrid": {"found": 2, "outcome": "rated 4"},
+            },
+        }
+    ]
+    text = report.stats_markdown(records[0], rag_eval.paired_stats(records))
+    assert "| q002 | 2 of 2 | refused by model | 2 of 2 | rated 4 |" in text
+

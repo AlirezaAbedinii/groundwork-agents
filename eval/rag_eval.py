@@ -902,6 +902,31 @@ def bootstrap_stats(rows: list[dict], a: str, b: str, *, resamples: int, seed: i
     }
 
 
+def _outcome(record: dict | None) -> str:
+    if record is None:
+        return "not asked"
+    if record["refused"]:
+        return f"refused by {record['refused_by']}"
+    return "not judged" if record["rating"] is None else f"rated {record['rating']}"
+
+
+def ambiguous_stats(retrieval: list[dict], answers: list[dict]) -> list[dict]:
+    """Per ambiguous question and mode, its readings (evidence items) in the top 5 of the
+    recorded search, as many contexts as ``/ask`` was run with, and the answer's outcome."""
+    answer = {(r["id"], r["mode"]): r for r in answers}
+    out: dict[str, dict] = {}
+    for r in sorted(retrieval, key=lambda r: r["id"]):
+        if r["category"] != "ambiguous":
+            continue
+        found = metrics.items_found_at_k(_ranked(r), r["n_items"], TOP_K_ASK)
+        entry = out.setdefault(r["id"], {"id": r["id"], "readings": r["n_items"], "modes": {}})
+        entry["modes"][r["mode"]] = {
+            "found": found.k,
+            "outcome": _outcome(answer.get((r["id"], r["mode"]))),
+        }
+    return list(out.values())
+
+
 def paired_stats(
     records: list[dict],
     *,
@@ -932,6 +957,7 @@ def paired_stats(
             if both("retrieval")
             else None
         ),
+        "ambiguous": ambiguous_stats(retrieval, answers),
     }
 
 

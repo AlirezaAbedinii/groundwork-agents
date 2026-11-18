@@ -156,3 +156,22 @@ def test_nearest_rank_picks_the_250th_and_9750th_of_10000():
 def test_bootstrap_rejects_bad_input(a, b, kwargs, match):
     with pytest.raises(ValueError, match=match):
         metrics.paired_bootstrap(a, b, **kwargs)
+
+
+# --- items found --------------------------------------------------------------------
+
+
+def test_items_found_counts_distinct_items_in_the_top_k():
+    # Three readings; the top 2 cover item 0 twice and item 2 once: 2 of 3. Item 1 is at
+    # rank 3, outside k = 2, and inside k = 3.
+    ranked = [frozenset({0}), frozenset({0, 2}), frozenset({1})]
+    assert metrics.items_found_at_k(ranked, 3, 2) == Share(2, 3)
+    assert metrics.items_found_at_k(ranked, 3, 3) == Share(3, 3)
+    assert metrics.items_found_at_k([frozenset(), frozenset()], 2, 5) == Share(0, 2)
+
+
+def test_items_found_checks_its_input():
+    with pytest.raises(ValueError, match="k must be"):
+        metrics.items_found_at_k([frozenset({0})], 1, 0)
+    with pytest.raises(ValueError, match="outside range"):
+        metrics.items_found_at_k([frozenset({3})], 2, 5)
