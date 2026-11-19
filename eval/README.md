@@ -194,6 +194,23 @@ runs resume, and a recorded verdict is never paid for twice:
 .venv/bin/python -m agent_eval score --run-id my-run --out reports   # publish
 ```
 
+**Comparing retrieval configurations.** `rag_eval ablate` searches the answerable
+questions once per arm of an arms file ([`ablation/arms.json`](ablation/arms.json)):
+each arm is a mode on a RAG service started with the arm's settings, and names the
+`/v1/config` values it needs, so a service started with other settings is refused
+before any search. It searches dev unless `--splits` names test, skips what an arm
+has recorded (an arm with nothing left never contacts its service), and writes
+`ablation.md`, `ablation.json` and `ablation-records.jsonl` into `runs/<id>/`: per
+split and arm, the retrieval metrics, the service's own search latency and its
+re-rank stage, and the paired bootstrap difference to the reference arm, overall and
+per category and phrasing. `--records` re-scores the records file for $0. Each search
+embeds the query (`text-embedding-3-small`: under $0.0001 per arm and split).
+
+```bash
+.venv/bin/python -m rag_eval ablate --arms ablation/arms.json --run-id my-ablation --only A0,A1
+.venv/bin/python -m rag_eval ablate --records runs/my-ablation/ablation-records.jsonl --out /tmp/t
+```
+
 `agent_eval score --scoring 2` scores a run collected under the first rules by the
 current ones, for $0; give it its own `--out` so the published report stays as it was.
 `rag_eval stats --records reports/rag-records.jsonl` prints the RAG statistics as
@@ -300,7 +317,8 @@ test split.
 | `metrics.py` | Retrieval, refusal, answer, agreement, paired-comparison and agent metrics: pure functions over recorded runs |
 | `judge.py`, `judge_prompts.py` | Correctness, faithfulness and task-rubric verdicts from another provider's model, cached by prompt version |
 | `judge_fake.py` | A scripted judge for tests and keyless runs |
-| `rag_eval.py` | Collects searches and answers from the RAG API into `runs/`, scores them, and prints the paired statistics |
+| `rag_eval.py` | Collects searches and answers from the RAG API into `runs/`, scores them, prints the paired statistics, and compares retrieval configurations (`ablate`) |
+| `ablation/` | The retrieval configurations `rag_eval ablate` compares, with the settings each must be served with |
 | `agent_eval.py` | Runs agent tasks through the agent API into `runs/`, scores them, and diagnoses them |
 | `report.py`, `svg.py` | The markdown and JSON reports, the compact records they're re-scored from, the agent diagnostics, and the refusal curves |
 | `reports/` | The published reports and their records |

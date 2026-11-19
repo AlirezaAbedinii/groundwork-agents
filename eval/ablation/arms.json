@@ -1,0 +1,191 @@
+{
+  "reference": "A0",
+  "arms": [
+    {
+      "name": "A0",
+      "change": "dense, as published",
+      "mode": "dense",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120
+      }
+    },
+    {
+      "name": "A1",
+      "change": "hybrid, as published",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "hybrid.rerank_candidates": 20,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A2",
+      "change": "A1 without the re-ranker (fused order)",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": false,
+        "hybrid.reranker_model": null,
+        "hybrid.rerank_candidates": 20,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A3",
+      "change": "A1 without BM25 (re-ranked dense candidates)",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": false,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "hybrid.rerank_candidates": 20,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A4a",
+      "change": "A1 with gte-reranker-modernbert-base",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+        "hybrid.rerank_candidates": 20,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A4b",
+      "change": "A1 with granite-embedding-reranker-english-r2",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "ibm-granite/granite-embedding-reranker-english-r2",
+        "hybrid.rerank_candidates": 20,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A5a",
+      "change": "A4a with pool 50, RRF 0.5/0.5",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+        "hybrid.rerank_candidates": 50,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.5,
+        "hybrid.rrf_sparse_weight": 0.5
+      }
+    },
+    {
+      "name": "A5b",
+      "change": "A4a with pool 50, RRF 0.7/0.3",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "fixed",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 120,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+        "hybrid.rerank_candidates": 50,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A6",
+      "change": "A5b on heading-path chunks (recursive, 800)",
+      "mode": "hybrid",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs_headings",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "recursive+heading_path",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 0,
+        "hybrid.sparse_enabled": true,
+        "hybrid.rerank_enabled": true,
+        "hybrid.reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+        "hybrid.rerank_candidates": 50,
+        "hybrid.rrf_k": 60,
+        "hybrid.rrf_dense_weight": 0.7,
+        "hybrid.rrf_sparse_weight": 0.3
+      }
+    },
+    {
+      "name": "A6d",
+      "change": "dense on heading-path chunks (dense mode serves the same collection as A6)",
+      "mode": "dense",
+      "rag": "http://localhost:8040",
+      "expect": {
+        "collection": "toolchain_docs_headings",
+        "embedding_model": "text-embedding-3-small",
+        "index.chunk_strategy": "recursive+heading_path",
+        "index.chunk_size": 800,
+        "index.chunk_overlap": 0
+      }
+    }
+  ]
+}

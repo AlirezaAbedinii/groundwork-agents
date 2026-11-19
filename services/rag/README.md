@@ -215,7 +215,10 @@ the rest, so batching the verification is the lever, not retrieval.
   (`ms-marco-MiniLM-L-6-v2`) reranks top-20 → top-5 — precision without extra
   LLM spend. The BM25 tokenizer keeps compound tokens (`FERRY-429`,
   `ferry.worker.concurrency`) whole, which is what makes exact-token retrieval
-  work.
+  work. `SPARSE_ENABLED` and `RERANK_ENABLED` switch the BM25 leg and the
+  re-ranker off independently, so each stage's effect can be measured
+  (`rag_eval ablate` in `eval/`); `CHUNK_HEADING_PATH` starts each chunk with
+  its heading path, in a collection of its own.
 - **"I don't know" policy:** if the top retrieval score falls below the mode's
   threshold, the service returns a structured refusal **before** calling the
   LLM: no fabrication, no wasted generation cost. Dense scores are cosine
