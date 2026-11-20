@@ -9,7 +9,10 @@ turn is answered with exactly one ToolMessage before the model's next turn:
    answered with that answer again, marked as a repeat. It reaches neither the
    gate nor the registry. Answers a human gave are not reused across turns: a
    repeated sensitive call goes back to the reviewer. A call of a tool that
-   ``changes_state`` makes every earlier answer stale once it has run.
+   ``changes_state`` makes every earlier answer stale once it has run. The
+   calls of a turn run at the same time, so a repeat in the turn of such a call
+   is answered from before it, as a read in that turn would be, and the next
+   turn's identical call runs again.
 1. The human-approval gate rules on each sensitive call before any call of the
    turn runs. It can pause the whole run (``interrupt()``), so it is asked one
    call at a time.
@@ -221,11 +224,17 @@ class SpecialistAgent(BaseAgent):
             ]))
 
             # 0. Repeats of an answered call, or of an earlier call of this turn, are answered from it.
+            # An earlier turn's answer is taken now: a call of this turn that changes state clears
+            # the history, and the repeat, like a read in this turn, is answered from before it.
             repeats: dict[str, str] = {}  # call id -> key of the call it repeats
+            before: dict[str, ToolMessage] = {}  # the earlier turns' answers the repeats use
             firsts: set[str] = set()
             for call in response.tool_calls:
                 key = _call_key(call.name, call.arguments)
-                if key in answered or key in firsts:
+                if key in answered:
+                    repeats[call.id] = key
+                    before[key] = answered[key]
+                elif key in firsts:
                     repeats[call.id] = key
                 else:
                     firsts.add(key)
@@ -276,7 +285,7 @@ class SpecialistAgent(BaseAgent):
             for call in response.tool_calls:
                 if call.id in repeats:
                     key = repeats[call.id]
-                    earlier = this_turn[key] if key in this_turn else answered[key]
+                    earlier = before[key] if key in before else this_turn[key]
                     answer = _answer(call, f"{REPEAT_PREFIX} {earlier.content}", error=earlier.status == "error")
                     listed = None  # nothing ran
                 elif call.id in decided:

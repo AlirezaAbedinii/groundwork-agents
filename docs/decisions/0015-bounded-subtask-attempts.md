@@ -95,8 +95,17 @@ when the turns ran out, the retry was told only to try a different approach.
   rate limit) or answered from the history clears nothing; one with invalid arguments
   counts as run, which can only cost a run. The calls of one turn run at the same time,
   so a turn's answers are kept only if none of its calls changed state or the one that
-  did ran alone. The flag defaults to false: a new tool that writes must set it, or a
-  read after its writes would get an answer from before them.
+  did ran alone. For the same reason, a repeat of an earlier turn's call, made in the
+  turn of a call that changes state, is answered from before the change, as a read in
+  that turn would be, and the next turn's identical call runs again. Until 2026-11-20
+  such a repeat raised an error that failed the attempt. A replay of a run that met it
+  would now go on with the attempt where the original retried, yet that takes no rules
+  version (ADR 0018): a version keeps rules that runs were made under, and the error broke
+  the rule that every call gets one answer; no run on a real model was made while the
+  error could happen; and a strict replay that runs out of recorded calls, or leaves one unused,
+  fails with `ReplayDivergenceError`.
+  The flag defaults to false: a new tool that writes must set it, or a read after its
+  writes would get an answer from before them.
 - A call whose result changes with time alone would get its earlier result. The other
   current tools read the task workspace, the demo database, web search and the
   retrieval index, none of which is expected to change within an attempt except

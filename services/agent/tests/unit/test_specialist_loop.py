@@ -639,6 +639,10 @@ def registry_with_writes(store: InMemoryInvocationStore) -> ToolRegistry:
          [False, False, False, True]),
         # a read in the same turn as a write may have seen either state, so it is not kept
         ([[("echo", "a"), ("write", "x")], [("echo", "a")]], 3, [False, False, False]),
+        # a repeat in the same turn as a write is answered from before it, and not kept either
+        ([[("echo", "a")], [("echo", "a"), ("write", "x")], [("echo", "a")]], 3, [False, True, False, False]),
+        # the same with code_exec
+        ([[("echo", "a")], [("echo", "a"), ("run", "x")], [("echo", "a")]], 3, [False, True, False, False]),
     ],
 )
 async def test_a_call_that_changes_state_makes_earlier_answers_stale(store, turns, runs, reused):
