@@ -33,6 +33,7 @@ CONFIG = {
     "run_mode": "inline",
     "max_task_llm_calls": 60,
     "max_task_cost_usd": 0.25,  # the default reserve
+    "result_budget_chars": {"rag_ask": 4000, "rag_search": 4000, "web_search": 2000},
 }
 DOCS = {"tool": ["rag_search", "rag_ask"]}
 TASKS = [
@@ -696,7 +697,7 @@ def test_records_keep_each_calls_subtask_and_result_size_and_the_plan(tmp_path, 
 def test_task_diagnostics(tmp_path, tasks_file):
     run(tmp_path, tasks_file, FakeAgent(scripts()))
     t01, t02, t03 = (
-        agent_eval.task_diagnostics(r)
+        agent_eval.task_diagnostics(r, CONFIG["result_budget_chars"])
         for r in agent_eval.build_records(tmp_path / "runs" / "run1")[1:]
     )
     assert (t01["plan_size"], t01["specialists"], t01["starts_with_research"]) == (
@@ -708,7 +709,7 @@ def test_task_diagnostics(tmp_path, tasks_file):
     assert t01["toolless_completed"] == {"k": 0, "n": 2}
     assert t01["repeats"] == {"k": 0, "n": 4}  # the second write has other content
     assert t01["rate_limited"] == {"k": 0, "n": 4}
-    # results recorded for rag_ask and web_search; only web_search's passes 2,000
+    # results recorded for rag_ask and web_search; only web_search's passes its 2,000
     assert t01["over_budget"] == {"k": 1, "n": 2}
     assert t01["critical"] == {"k": 1, "n": 1}  # c1 passed; c2 isn't critical
     assert t01["files"] == {"notes.md": True}
@@ -716,7 +717,10 @@ def test_task_diagnostics(tmp_path, tasks_file):
         "calls": 1,
         "rate_limited": 0,
         "over_budget": {"k": 1, "n": 1},
+        "budget_chars": 2000,
     }
+    assert t01["by_tool"]["rag_ask"]["budget_chars"] == 4000
+    assert t01["by_tool"]["file_write"]["budget_chars"] == 2000  # not named: the default
     assert (t02["starts_with_research"], t02["critical"]) == (False, {"k": 0, "n": 1})
     assert t02["files"] == {}  # t02 requires no file
     # t03 timed out: no plan, no calls, no subtasks, no verdict
@@ -738,7 +742,14 @@ def test_label_diagnostics_add_up_the_runs():
             "over_budget": {"k": 1, "n": 4},
             "critical": {"k": 1, "n": 2},
             "files": {"a.md": True},
-            "by_tool": {"rag_search": {"calls": 10, "rate_limited": 1, "over_budget": None}},
+            "by_tool": {
+                "rag_search": {
+                    "calls": 10,
+                    "rate_limited": 1,
+                    "over_budget": None,
+                    "budget_chars": 4000,
+                }
+            },
         }
         return base | overrides
 
@@ -755,6 +766,8 @@ def test_label_diagnostics_add_up_the_runs():
         ),
         run_diag(id="t03", plan_size=None, starts_with_research=None, files={"c.md": False}),
     ]
+    # another label's run, from an agent without per-tool budgets
+    per[2]["by_tool"]["rag_search"] = per[2]["by_tool"]["rag_search"] | {"budget_chars": 2000}
     totals = agent_eval.label_diagnostics(per)
     assert totals["runs"] == 3
     assert totals["plan_size"] == {"mean": 5.0, "min": 4, "max": 6}  # t03 has no plan
@@ -764,7 +777,12 @@ def test_label_diagnostics_add_up_the_runs():
     assert totals["critical"] == {"k": 2, "n": 4}  # t02 has no verdict
     assert totals["files"] == {"k": 1, "n": 3}
     assert totals["completed_without_file"] == ["cross t03"]  # t02 didn't complete
-    assert totals["by_tool"]["rag_search"] == {"calls": 30, "rate_limited": 3, "over_budget": None}
+    assert totals["by_tool"]["rag_search"] == {
+        "calls": 30,
+        "rate_limited": 3,
+        "over_budget": None,
+        "budget_chars": [2000, 4000],
+    }
     empty = agent_eval.label_diagnostics([])
     assert (empty["plan_size"]["mean"], empty["repeats"], empty["files"]) == (None, None, None)
 
@@ -801,7 +819,7 @@ def test_records_without_the_new_fields_still_score_and_diagnose(tmp_path, tasks
     assert cross["toolless_completed"] == {"k": 0, "n": 0}
     md = report.diagnostics_markdown(diagnostics)
     assert "| completed subtasks with no tool call | n/a | n/a |" in md
-    assert "| results longer than 2,000 characters | n/a | n/a |" in md
+    assert "| results longer than their tool's budget | n/a | n/a |" in md
 
 
 def test_share_text():
@@ -818,7 +836,7 @@ def test_diagnose_writes_into_the_run_directory(tmp_path, tasks_file, capsys):
     assert agent_eval.main(["diagnose", "--run-id", "run1", "--runs", str(tmp_path / "runs")]) == 0
     assert "diagnostics.md" in capsys.readouterr().out
     saved = json.loads((run_dir / "diagnostics.json").read_text())
-    assert saved["run_id"] == "run1" and saved["result_budget_chars"] == 2000
+    assert saved["run_id"] == "run1" and saved["default_result_budget_chars"] == 2000
     # each label: t01's 4 calls and t02's 2; all labels: twice that
     assert saved["labels"]["cross"]["repeats"] == {"k": 0, "n": 6}
     assert saved["all"]["repeats"] == {"k": 0, "n": 12}
@@ -835,6 +853,26 @@ def test_diagnose_writes_into_the_run_directory(tmp_path, tasks_file, capsys):
         "diagnostics.json",
         "diagnostics.md",
     ]
+
+
+def test_diagnose_measures_each_label_against_its_own_configs_budgets(tmp_path, tasks_file):
+    # t01's web_search result is 2,100 characters: within 4,000 under cross's config; the
+    # same agent before /config reported budgets measures it against 2,000
+    cross = CONFIG | {"result_budget_chars": {"web_search": 4000}}
+    old = {k: v for k, v in CONFIG.items() if k != "result_budget_chars"} | {
+        "reviewer_provider": "same"
+    }
+    run(tmp_path, tasks_file, FakeAgent(scripts(), config=cross))
+    run(tmp_path, tasks_file, FakeAgent(scripts(), config=old), label="same")
+    diagnostics = agent_eval.diagnose_records(agent_eval.build_records(tmp_path / "runs" / "run1"))
+    labels = diagnostics["labels"]
+    tools = {label: labels[label]["by_tool"]["web_search"] for label in ("cross", "same")}
+    assert {label: (t["over_budget"], t["budget_chars"]) for label, t in tools.items()} == {
+        "cross": ({"k": 0, "n": 1}, [4000]),
+        "same": ({"k": 1, "n": 1}, [2000]),
+    }
+    md = report.diagnostics_markdown(diagnostics)
+    assert "| `web_search` | 2 | 0 | 2,000 / 4,000 | 1/2 (50 %) |" in md
 
 
 def test_diagnose_needs_a_run(tmp_path):

@@ -285,12 +285,24 @@ def test_cut_result_share_counts_results_longer_than_the_budget():
         located("db_query", "s1", chars=12),
         located("code_exec", "s1", status="rate_limited"),  # no result: left out
     ]
+    # a run whose config names no budgets: every tool at 2,000
     assert metrics.cut_result_share(calls) == Share(k=1, n=3)
-    assert metrics.cut_result_share(calls, budget=10) == Share(k=3, n=3)
+    assert metrics.cut_result_share(calls, {"rag_search": 10, "db_query": 10}) == Share(k=3, n=3)
     # an older record holds no sizes: nothing to count, so the share is undefined
     assert metrics.cut_result_share([call("rag_search")]).rate is None
     with pytest.raises(ValueError):
-        metrics.cut_result_share(calls, budget=0)
+        metrics.cut_result_share(calls, {"rag_search": 0})
+
+
+def test_each_result_is_measured_against_its_own_tools_budget():
+    budgets = {"rag_search": 4000, "db_query": 2000}  # as the agent's /config reports them
+    search = located("rag_search", "s1", chars=3000)
+    query = located("db_query", "s1", chars=2500)
+    assert metrics.cut_result_share([search], budgets) == Share(k=0, n=1)
+    assert metrics.cut_result_share([query], budgets) == Share(k=1, n=1)
+    # a tool the config doesn't name, and every tool of a run without budgets, has 2,000
+    assert metrics.result_budget("web_search", budgets) == metrics.RESULT_BUDGET_CHARS == 2000
+    assert metrics.cut_result_share([search, query]) == Share(k=2, n=2)
 
 
 def test_critical_pass_share_fails_closed_and_ignores_non_critical_criteria():

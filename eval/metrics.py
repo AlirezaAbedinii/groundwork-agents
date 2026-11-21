@@ -526,7 +526,9 @@ def task_success(verdict: TaskVerdict, task: AgentTask) -> bool:
 # Share, or None when the record predates the field it needs: "not recorded" is never
 # reported as 0.
 
-# What the specialist's tool loop shows the model of one result: json.dumps(output)[:2000].
+# A tool's result budget when the run's agent config names none: what the specialist's tool
+# loop showed of every result (json.dumps(output)[:2000]) before each tool had its own, and
+# the agent's default for a tool that sets none.
 RESULT_BUDGET_CHARS = 2000
 
 
@@ -587,18 +589,29 @@ def rate_limited_share(calls: Sequence[ToolCall]) -> Share:
     return Share(k=sum(c.status == "rate_limited" for c in calls), n=len(calls))
 
 
-def cut_result_share(calls: Sequence[ToolCall], budget: int = RESULT_BUDGET_CHARS) -> Share:
-    """Of the successful calls with a recorded result size, those whose result is longer
-    than ``budget`` characters: the model saw only the first ``budget`` of them.
-
-    The loop cuts the serialized JSON without a marker, so a result over the budget
-    reaches the model as invalid JSON missing its end. Calls without ``result_chars``
-    (failed calls, older records) are left out; with none recorded, n is 0.
-    """
+def result_budget(tool: str, budgets: Mapping[str, int] | None) -> int:
+    """``tool``'s result budget in ``budgets`` (the run's ``result_budget_chars``, by tool
+    name), or ``RESULT_BUDGET_CHARS`` for a tool it doesn't name or a run that has none."""
+    budget = (budgets or {}).get(tool, RESULT_BUDGET_CHARS)
     if budget < 1:
-        raise ValueError(f"budget must be >= 1, got {budget}")
-    sizes = [c.result_chars for c in calls if c.result_chars is not None]
-    return Share(k=sum(size > budget for size in sizes), n=len(sizes))
+        raise ValueError(f"{tool}: budget must be >= 1, got {budget}")
+    return budget
+
+
+def cut_result_share(calls: Sequence[ToolCall], budgets: Mapping[str, int] | None = None) -> Share:
+    """Of the successful calls with a recorded result size, those whose result is longer
+    than its tool's budget (``result_budget``): the model was shown less than all of it.
+
+    The agent shortens such a result to valid JSON within the budget that says what it
+    left out (dropped list items, shortened strings). Before each tool had its own budget,
+    the serialized JSON was cut at 2,000 characters without a marker, which is why a run
+    whose config names no budgets is measured against that. Sizes are ``json.dumps`` of
+    the logged output, as the agent measures them. Calls without ``result_chars`` (failed
+    calls, older records) are left out; with none recorded, n is 0.
+    """
+    sizes = [(c.tool_name, c.result_chars) for c in calls if c.result_chars is not None]
+    over = sum(size > result_budget(tool, budgets) for tool, size in sizes)
+    return Share(k=over, n=len(sizes))
 
 
 def critical_pass_share(verdict: TaskVerdict, task: AgentTask) -> Share:

@@ -41,6 +41,25 @@ _with_rag_tools: weakref.WeakSet[ToolRegistry] = weakref.WeakSet()
 _register_lock = threading.Lock()
 
 
+LOCAL_SPECS = (
+    web_search.SPEC,
+    file_io.READ_SPEC,
+    file_io.WRITE_SPEC,
+    code_exec.SPEC,
+    db_query.SPEC,
+    api_call.SPEC,
+)
+
+
+def result_budgets() -> dict[str, int]:
+    """Each tool's ``result_budget_chars``, by the name the model calls it: the local specs'
+    and the RAG policies' under their prefix. Read from the code, so it builds no registry
+    and calls no MCP server, and it names a tool whether or not this deployment offers it."""
+    budgets = {spec.name: spec.result_budget_chars for spec in LOCAL_SPECS}
+    budgets |= {RAG_TOOL_PREFIX + name: policy.result_budget_chars for name, policy in RAG_MCP_POLICY.items()}
+    return dict(sorted(budgets.items()))
+
+
 def build_default_registry(store: InvocationStore) -> ToolRegistry:
     """The local tools. ``db_query``'s description lists the demo schema's tables, read
     from the database now (the static text if it can't be read). A tool with nothing
@@ -48,14 +67,7 @@ def build_default_registry(store: InvocationStore) -> ToolRegistry:
     Tavily key (MOCK_LLM keeps it, answered with canned results)."""
     settings = get_settings()
     registry = ToolRegistry(store)
-    for spec in (
-        web_search.SPEC,
-        file_io.READ_SPEC,
-        file_io.WRITE_SPEC,
-        code_exec.SPEC,
-        db_query.SPEC,
-        api_call.SPEC,
-    ):
+    for spec in LOCAL_SPECS:
         if spec is code_exec.SPEC and settings.code_exec_backend == "disabled":
             continue  # no sandbox to run model-written code in
         if spec is web_search.SPEC and not (settings.tavily_api_key or settings.mock_llm):

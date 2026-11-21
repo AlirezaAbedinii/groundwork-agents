@@ -95,8 +95,9 @@ counts the demo database doesn't hold; under `cross`, the same failure was rejec
 - **Agent diagnostics**, read from the same records with no model call and kept beside
   the run, not in the report: plan size and specialist order, whether the plan starts
   with research, completed subtasks with no tool call, calls that repeat an earlier
-  call exactly, calls refused by a rate limit, tool results longer than the 2,000
-  characters a specialist is shown, critical criteria passed, and whether each
+  call exactly, calls refused by a rate limit, tool results longer than their tool's
+  budget (the characters a specialist is shown, from the agent's `/config`; 2,000 for a
+  run whose config names none), critical criteria passed, and whether each
   required file was written at its exact path. They locate where a run's work went
   missing; they don't change how a run is scored. Records collected before a field
   existed show `n/a` for what needs it.

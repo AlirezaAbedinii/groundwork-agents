@@ -967,7 +967,7 @@ def _files_text(files: dict[str, bool]) -> str:
 def diagnostics_markdown(diagnostics: dict) -> str:
     labels = list(diagnostics["labels"])
     columns = {**diagnostics["labels"], "all": diagnostics["all"]}
-    budget = diagnostics["result_budget_chars"]
+    default = diagnostics["default_result_budget_chars"]
 
     def row(name: str, value) -> list[str]:
         return [name, *(value(d) for d in columns.values())]
@@ -982,10 +982,7 @@ def diagnostics_markdown(diagnostics: dict) -> str:
         ),
         row("calls that repeat an earlier call exactly", lambda d: _share_text(d["repeats"])),
         row("calls refused by a rate limit", lambda d: _share_text(d["rate_limited"])),
-        row(
-            f"results longer than {budget:,} characters",
-            lambda d: _share_text(d["over_budget"]),
-        ),
+        row("results longer than their tool's budget", lambda d: _share_text(d["over_budget"])),
         row(
             "critical criteria passed (judged runs)",
             lambda d: _share_text(d["critical"]),
@@ -1001,6 +998,7 @@ def diagnostics_markdown(diagnostics: dict) -> str:
             f"`{tool}`",
             str(t["calls"]),
             str(t["rate_limited"]),
+            " / ".join(f"{b:,}" for b in t["budget_chars"]),
             _share_text(t["over_budget"]),
         ]
         for tool, t in diagnostics["all"]["by_tool"].items()
@@ -1034,9 +1032,13 @@ def diagnostics_markdown(diagnostics: dict) -> str:
         "",
         *_table(["", *labels, "all"], totals),
         "",
-        f"## By tool (all labels; a result over budget is longer than {budget:,} characters)",
+        "## By tool (all labels)",
         "",
-        *_table(["tool", "calls", "rate-limited", "results over budget"], tools),
+        "Budget: the characters of a result the agent shows the model, from the label's "
+        f"`/config`, or {default:,} for a run whose config names none. A result over budget "
+        "reached the model shortened.",
+        "",
+        *_table(["tool", "calls", "rate-limited", "budget", "results over budget"], tools),
         "",
         "## Runs",
         "",

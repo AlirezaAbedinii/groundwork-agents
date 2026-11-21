@@ -56,6 +56,20 @@ def test_config_shows_the_task_ceilings(client, monkeypatch):
     assert (body["max_task_llm_calls"], body["max_task_cost_usd"]) == (40, 0.25)
 
 
+def test_config_shows_each_tools_result_budget_from_the_code(client, monkeypatch):
+    from orchestrator.config import get_settings
+    from orchestrator.tools.defaults import LOCAL_SPECS
+
+    settings = get_settings()
+    # read from the specs and the RAG policies: no MCP server, and tools left out still named
+    monkeypatch.setattr(settings, "mcp_rag_url", "")
+    monkeypatch.setattr(settings, "code_exec_backend", "disabled")
+    budgets = client.get("/config").json()["result_budget_chars"]
+    assert set(budgets) == {spec.name for spec in LOCAL_SPECS} | {"rag_search", "rag_ask", "rag_list_sources"}
+    assert (budgets["rag_search"], budgets["rag_ask"], budgets["rag_list_sources"]) == (4000, 4000, 4000)
+    assert (budgets["db_query"], budgets["code_exec"], budgets["file_write"]) == (2000, 2000, 2000)
+
+
 def test_config_says_whether_traces_go_to_azure_without_showing_the_string(client, monkeypatch):
     from orchestrator.config import get_settings
 

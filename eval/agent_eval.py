@@ -728,10 +728,11 @@ def _share(share: Share | None) -> dict | None:
     return None if share is None else {"k": share.k, "n": share.n}
 
 
-def task_diagnostics(record: dict) -> dict:
+def task_diagnostics(record: dict, budgets: dict[str, int] | None = None) -> dict:
     """One task run's diagnostics (``metrics``' agent diagnostics), JSON-ready. Shares are
     ``{"k", "n"}``; None marks what the record doesn't hold. Critical criteria are counted
-    for a run the judge saw, which only a completed run is."""
+    for a run the judge saw, which only a completed run is. ``budgets`` are the tools'
+    result budgets from the label's ``/config`` (None for a run from before it had them)."""
     task = AgentTask.model_validate(record["task"])
     calls = [ToolCall.model_validate(c) for c in record["calls"]]
     plan = None
@@ -744,7 +745,8 @@ def task_diagnostics(record: dict) -> dict:
         by_tool[tool] = {
             "calls": len(mine),
             "rate_limited": metrics.rate_limited_share(mine).k,
-            "over_budget": _share(metrics.cut_result_share(mine)),
+            "over_budget": _share(metrics.cut_result_share(mine, budgets)),
+            "budget_chars": metrics.result_budget(tool, budgets),
         }
     return {
         "id": record["id"],
@@ -756,7 +758,7 @@ def task_diagnostics(record: dict) -> dict:
         "toolless_completed": _share(metrics.toolless_completed(record["subtasks"], calls)),
         "repeats": _share(metrics.repeat_call_share(calls)),
         "rate_limited": _share(metrics.rate_limited_share(calls)),
-        "over_budget": _share(metrics.cut_result_share(calls)),
+        "over_budget": _share(metrics.cut_result_share(calls, budgets)),
         "critical": None if verdict is None else _share(metrics.critical_pass_share(verdict, task)),
         "files": metrics.artifact_at_path(calls, task),
         "by_tool": by_tool,
@@ -785,6 +787,8 @@ def label_diagnostics(per: Sequence[dict]) -> dict:
             "calls": sum(r["calls"] for r in rows),
             "rate_limited": sum(r["rate_limited"] for r in rows),
             "over_budget": _total([r["over_budget"] for r in rows]),
+            # each budget the tool's calls were measured against (labels' configs can differ)
+            "budget_chars": sorted({r["budget_chars"] for r in rows}),
         }
     return {
         "runs": len(per),
@@ -813,13 +817,17 @@ def diagnose_records(records: list[dict]) -> dict:
     """Every run's diagnostics, each label's totals, and the totals over all labels."""
     header, rows = records[0], records[1:]
     per = {
-        label: [task_diagnostics(r) for r in rows if r["label"] == label]
-        for label in header["labels"]
+        label: [
+            task_diagnostics(r, held["config"].get("result_budget_chars"))
+            for r in rows
+            if r["label"] == label
+        ]
+        for label, held in header["labels"].items()
     }
     every = [p for runs in per.values() for p in runs]
     return {
         "run_id": header["run_id"],
-        "result_budget_chars": metrics.RESULT_BUDGET_CHARS,
+        "default_result_budget_chars": metrics.RESULT_BUDGET_CHARS,
         "labels": {label: label_diagnostics(runs) for label, runs in per.items()},
         "all": label_diagnostics(every),
         "tasks": per,

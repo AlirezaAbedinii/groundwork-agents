@@ -13,6 +13,7 @@ from orchestrator.api.routes.traces import router as traces_router
 from orchestrator.config import get_settings
 from orchestrator.llm.router import route
 from orchestrator.observability.tracing import setup_tracing
+from orchestrator.tools.defaults import result_budgets
 
 
 @asynccontextmanager
@@ -46,7 +47,8 @@ def create_app() -> FastAPI:
     @app.get("/config")
     def config() -> dict:
         """The models as routed, the reviewer policy, the run mode, the backends, the plan
-        limits and the per-task ceilings (0 means none). No keys or URLs.
+        limits, the per-task ceilings (0 means none) and each tool's result budget. No keys
+        or URLs.
 
         The reviewer is shown as routed for the specialists' output, which is what
         it reviews.
@@ -74,6 +76,7 @@ def create_app() -> FastAPI:
             "plan_lint": current.plan_lint,
             "max_task_llm_calls": current.max_task_llm_calls,
             "max_task_cost_usd": current.max_task_cost_usd,
+            "result_budget_chars": result_budgets(),
             "telemetry": bool(current.applicationinsights_connection_string),
         }
 
