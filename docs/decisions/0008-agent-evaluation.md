@@ -136,3 +136,36 @@ With the flag, a plain `agent_eval run` covers exactly the 13 tasks of the publi
 run, and the held-out set is 15 tasks: these five and t19 to t28, which keep their own
 ids as the ten written to be held out. Only the flag changed; their requests and
 rubrics are as before.
+
+## Addendum, 2026-11-21: the agent's ceiling fits in the reserve
+
+`--max-cost-usd` is checked against a
+reserve (`--task-reserve-usd`, default $0.25) before each task starts, but nothing held
+the task to the reserve: the agent's own per-task ceiling (`MAX_TASK_COST_USD`, ADR
+0015) defaults to $0.50, so the last task admitted could take spending past the cap by
+the difference. The agent's `/config` now reports `max_task_llm_calls` and
+`max_task_cost_usd`, and on real models `agent_eval run` refuses a label whose
+`max_task_cost_usd` is 0 (no ceiling) or above the reserve, before it records the
+label. A task that times out is charged the larger of its recorded cost and the
+reserve: there is no cancel endpoint, so it may go on spending up to its ceiling after
+the harness moves on. Its record keeps the cost that was measured.
+
+The run's limits, and which of them are hard:
+
+- **The judge: hard.** Each judge call is checked at its worst case, the input estimate
+  plus the whole output allowance, before it is made.
+- **The agent: its per-task ceiling, at most the reserve. Not quite hard.** The agent
+  checks a task's spend before each model call, so a call already in flight when the
+  ceiling is reached can pass it by its own cost, and parallel subtasks can have
+  several in flight. A task that ends is charged what it spent, so an overshoot counts
+  before the next task's reserve is checked. Spending after a timeout is not measured;
+  the reserve stands in for it.
+- **`rag_ask`: not capped.** It spends in the RAG service, which has no per-task limit;
+  the agent allows it 5 calls per task. Each call's `cost_usd` is added from the
+  invocation log when the task ends.
+
+So a run can pass `--max-cost-usd` only by calls in flight when a task reached its
+ceiling and by `rag_ask` calls, those of the last task and of any task that timed out.
+
+Since `/config` gained fields, a label begun before this change cannot be resumed: its
+recorded config no longer matches.

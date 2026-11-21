@@ -194,6 +194,15 @@ runs resume, and a recorded verdict is never paid for twice:
 .venv/bin/python -m agent_eval score --run-id my-run --out reports   # publish
 ```
 
+On real models `agent_eval run` holds `--task-reserve-usd` (default $0.25) against the
+cap before each task, and only the agent's own ceiling stops a task there, so it
+refuses an agent whose `/config` shows `max_task_cost_usd` at 0 or above the reserve:
+start the agent with `MAX_TASK_COST_USD` above 0 and at most the reserve. A task that
+times out runs on inside the agent, so it is charged at least the reserve; its record
+keeps the cost measured. `rag_ask` spends in the RAG service, under neither limit,
+and is counted when the task ends
+([ADR 0008](../docs/decisions/0008-agent-evaluation.md), addendum of 2026-11-21).
+
 **Comparing retrieval configurations.** `rag_eval ablate` searches the answerable
 questions once per arm of an arms file ([`ablation/arms.json`](ablation/arms.json)):
 each arm is a mode on a RAG service started with the arm's settings, and names the

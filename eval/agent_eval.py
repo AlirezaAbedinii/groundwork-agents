@@ -20,7 +20,10 @@ output, the files the run wrote and, only when a criterion needs them, the subta
 outputs. ``--max-cost-usd``
 caps the agent's spend and the judge's together: a task starts only if its reserve
 (``--task-reserve-usd``, 0 on MOCK_LLM) fits, and its real cost, the LLM total plus every
-``rag_ask``'s ``cost_usd``, is recorded when it ends. Runs resume: a recorded task is
+``rag_ask``'s ``cost_usd``, is recorded when it ends. On real models the agent's own
+per-task ceiling (``max_task_cost_usd`` in ``/config``) must be set and at most the
+reserve, and a task that times out is charged at least the reserve, since it runs on
+inside the agent. Runs resume: a recorded task is
 skipped, and a completed task without a verdict is judged again without running again.
 Tasks marked ``held_out`` are left out unless ``--include-held-out`` asks for them, and
 naming one in ``--ids`` without it is an error, so no run made to change the agent sees
@@ -132,12 +135,32 @@ def check_label(label: str, config: dict) -> None:
         )
 
 
-def open_label(agent: httpx.Client, run_dir: Path, label: str, tasks_path: Path) -> dict:
-    """The agent's config for ``label``, checked against the label. The first run of a
-    label records it with the tasks file's hash; resuming the label needs the same config
-    and the same tasks file."""
+def check_ceiling(config: dict, reserve: float) -> None:
+    """On real models the reserve bounds a task's spend only if the agent stops the task
+    there: its own ceiling (``max_task_cost_usd``) must be set and fit in the reserve."""
+    if config["mock_llm"]:
+        return
+    ceiling = config.get("max_task_cost_usd")
+    if ceiling is None:
+        raise SystemExit("the agent's /config reports no max_task_cost_usd")
+    if ceiling == 0 or ceiling > reserve:
+        above = f"(${ceiling:.2f}) is above the ${reserve:.2f} reserve"
+        what = "is 0 (none)" if ceiling == 0 else above
+        raise SystemExit(
+            f"the agent's per-task spend ceiling {what}, so a task could spend past its "
+            "reserve: set MAX_TASK_COST_USD above 0 and at most --task-reserve-usd"
+        )
+
+
+def open_label(
+    agent: httpx.Client, run_dir: Path, label: str, tasks_path: Path, *, reserve: float
+) -> dict:
+    """The agent's config for ``label``, checked against the label and, on real models, the
+    reserve. The first run of a label records it with the tasks file's hash; resuming the
+    label needs the same config and the same tasks file."""
     config = agent.get("/config").raise_for_status().json()
     check_label(label, config)
+    check_ceiling(config, reserve)
     tasks = {
         "file": tasks_path.name,
         "sha256": hashlib.sha256(tasks_path.read_bytes()).hexdigest(),
@@ -265,6 +288,14 @@ def task_cost(raw: dict) -> float:
     return raw["costs"]["total_usd"] + rag_ask_cost(raw["calls"])
 
 
+def charged_cost(raw: dict, reserve: float) -> float:
+    """What a task's run is charged against the cap: its cost, or for a task that timed
+    out at least the reserve, since it keeps running and may spend up to its ceiling. The
+    record keeps the measured cost."""
+    cost = task_cost(raw)
+    return max(cost, reserve) if raw["outcome"] == "timeout" else cost
+
+
 def files_written(calls: Sequence[dict]) -> dict[str, str]:
     """Each file's content as the run last wrote it: a reworked file is written again."""
     files: dict[str, str] = {}
@@ -385,7 +416,7 @@ def run_label(
                         counts["errors"] += 1
                         continue
                     if not notional:
-                        budget.record(task_cost(raw))
+                        budget.record(charged_cost(raw, reserve))
                     record = {"id": task.id, "label": label, "user_id": user}
                     record["scoring"] = SCORING_VERSION
                     record |= {"task": task.model_dump(), **raw, "verdict": None}
@@ -871,7 +902,9 @@ def main(
         run_dir = args.runs / args.run_id
         budget = Budget(args.max_cost_usd)
         with agent_client or httpx.Client(base_url=url, timeout=30) as agent:
-            config = open_label(agent, run_dir, args.label, args.tasks)
+            config = open_label(
+                agent, run_dir, args.label, args.tasks, reserve=args.task_reserve_usd
+            )
             needs_rag = any(
                 tool.startswith("rag_") for t in tasks for e in t.must_call for tool in e.tools
             )

@@ -31,6 +31,8 @@ CONFIG = {
     "mcp_rag": True,
     "mock_llm": False,
     "run_mode": "inline",
+    "max_task_llm_calls": 60,
+    "max_task_cost_usd": 0.25,  # the default reserve
 }
 DOCS = {"tool": ["rag_search", "rag_ask"]}
 TASKS = [
@@ -393,6 +395,62 @@ def test_the_cap_holds_each_task_to_a_reserve(tmp_path, tasks_file, capsys):
     smoke = FakeAgent(scripts(), config=CONFIG | {"mock_llm": True})
     assert run(tmp_path, tasks_file, smoke, label="smoke", cap="0", run_id="run2") == 0
     assert len(smoke.posts) == 3
+
+
+@pytest.mark.parametrize(
+    ("ceiling", "reserve", "message"),
+    [
+        (0.0, "0.25", "is 0 \\(none\\)"),  # no ceiling: a task can spend without limit
+        (0.50, "0.25", "\\(\\$0.50\\) is above the \\$0.25 reserve"),
+        (None, "0.25", "reports no max_task_cost_usd"),  # an agent from before the field
+        (0.25, "0.25", None),  # at the reserve
+        (0.10, "0.25", None),
+        (0.50, "0.50", None),
+    ],
+)
+def test_a_real_model_label_needs_a_task_ceiling_within_the_reserve(
+    tmp_path, tasks_file, ceiling, reserve, message
+):
+    config = CONFIG | {"max_task_cost_usd": ceiling}
+    if ceiling is None:
+        del config["max_task_cost_usd"]
+    fake = FakeAgent(scripts(), config=config)
+    if message is None:
+        assert run(tmp_path, tasks_file, fake, "--task-reserve-usd", reserve) == 0
+        assert len(fake.posts) == 3
+        return
+    with pytest.raises(SystemExit, match=message):
+        run(tmp_path, tasks_file, fake, "--task-reserve-usd", reserve)
+    assert fake.posts == []
+    assert not (tmp_path / "runs" / "run1" / "agent-run.json").exists()  # the label isn't begun
+
+
+def test_on_mock_llm_the_ceiling_is_not_checked(tmp_path, tasks_file):
+    smoke = FakeAgent(scripts(), config=CONFIG | {"mock_llm": True, "max_task_cost_usd": 0.0})
+    assert run(tmp_path, tasks_file, smoke, label="smoke", cap="0") == 0
+
+
+def test_a_timed_out_task_is_charged_at_least_the_reserve(tmp_path, tasks_file, capsys):
+    stuck = scripts()
+    stuck[TASKS[0]["request"]] = Script(["executing"], final_output=None, llm_usd=0.005)
+    fake = FakeAgent(stuck)
+    # t01 starts (0.25 <= 0.49) and times out having spent 0.005, but it runs on inside the
+    # agent and may reach its ceiling: charged 0.25, t02 would need 0.25 + 0.25 > 0.49
+    assert run(tmp_path, tasks_file, fake, cap="0.49") == 1
+    assert len(fake.posts) == 1
+    assert "$0.250000 of a $0.49 cap" in capsys.readouterr().out
+    t01 = raw(tmp_path)["t01"]
+    assert (t01["outcome"], t01["costs"]["total_usd"]) == ("timeout", 0.005)  # as measured
+
+
+def test_the_charge_is_the_cost_unless_a_timed_out_task_spent_less_than_the_reserve():
+    def ran(outcome, usd):
+        return {"outcome": outcome, "costs": {"total_usd": usd}, "calls": []}
+
+    assert agent_eval.charged_cost(ran("completed", 0.01), 0.25) == 0.01
+    assert agent_eval.charged_cost(ran("failed", 0.01), 0.25) == 0.01
+    assert agent_eval.charged_cost(ran("timeout", 0.01), 0.25) == 0.25
+    assert agent_eval.charged_cost(ran("timeout", 0.30), 0.25) == 0.30
 
 
 def test_resume_skips_recorded_tasks_and_judges_without_running_again(tmp_path, tasks_file):

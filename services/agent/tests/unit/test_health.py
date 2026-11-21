@@ -46,6 +46,16 @@ def test_config_shows_the_backends(client, monkeypatch):
     assert (body["working_memory"], body["code_exec"]) == ("postgres", "disabled")
 
 
+def test_config_shows_the_task_ceilings(client, monkeypatch):
+    from orchestrator.config import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "max_task_llm_calls", 40)
+    monkeypatch.setattr(settings, "max_task_cost_usd", 0.25)
+    body = client.get("/config").json()
+    assert (body["max_task_llm_calls"], body["max_task_cost_usd"]) == (40, 0.25)
+
+
 def test_config_says_whether_traces_go_to_azure_without_showing_the_string(client, monkeypatch):
     from orchestrator.config import get_settings
 

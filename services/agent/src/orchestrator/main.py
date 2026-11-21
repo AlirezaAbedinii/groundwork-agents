@@ -45,8 +45,8 @@ def create_app() -> FastAPI:
 
     @app.get("/config")
     def config() -> dict:
-        """The models as routed, the reviewer policy, the run mode, the backends and the plan
-        limits. No keys or URLs.
+        """The models as routed, the reviewer policy, the run mode, the backends, the plan
+        limits and the per-task ceilings (0 means none). No keys or URLs.
 
         The reviewer is shown as routed for the specialists' output, which is what
         it reviews.
@@ -72,6 +72,8 @@ def create_app() -> FastAPI:
             "code_exec": current.code_exec_backend,
             "max_plan_subtasks": current.max_plan_subtasks,
             "plan_lint": current.plan_lint,
+            "max_task_llm_calls": current.max_task_llm_calls,
+            "max_task_cost_usd": current.max_task_cost_usd,
             "telemetry": bool(current.applicationinsights_connection_string),
         }
 
