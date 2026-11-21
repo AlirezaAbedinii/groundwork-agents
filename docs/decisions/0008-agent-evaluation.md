@@ -169,3 +169,16 @@ ceiling and by `rag_ask` calls, those of the last task and of any task that time
 
 Since `/config` gained fields, a label begun before this change cannot be resumed: its
 recorded config no longer matches.
+
+## Addendum, 2026-11-21: a completed task's cost is read after its memory step
+
+This replaces the rule of version 2's addendum that a task's cost is recorded once its
+LLM-call count holds still, for completed tasks. That rule was a heuristic: the poll
+could stop while the memory step's call was still running, and that call's cost was
+then left out. The agent stores each span in Postgres when the span ends, and the
+`deliver` span ends after the memory step. So for a task that completed, the harness
+polls `GET /traces/{id}` until it holds the `deliver` span and then reads the costs
+once. A failed span export is only logged, so the span may never appear: after 60 s
+the count rule decides, as it does for every other outcome. Only a completed task has
+run the memory step, so for the others the count rule has no late call to wait for; a
+task that timed out is still running, and the reserve stands in for what it spends next.

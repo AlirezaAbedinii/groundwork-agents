@@ -112,6 +112,8 @@ class Script:
     # (LLM calls, LLM spend) on each costs poll in turn, the last repeating: a late call
     # is the memory step. Empty: 3 calls and llm_usd on every poll.
     cost_polls: list[tuple[int, float]] = field(default_factory=list)
+    # the trace poll (from 1) that first holds the deliver span; None: it never appears
+    deliver_at: int | None = 1
 
 
 def planned(sid, specialist, depends_on=(), description=None) -> dict:
@@ -190,6 +192,8 @@ class FakeAgent:
         self.posts: list[dict] = []
         self.resolved: list[str] = []
         self.cost_polls: dict[str, int] = {}
+        self.trace_polls: dict[str, int] = {}
+        self.requests: list[str] = []  # "GET /path", in order
 
     def status(self, tid: str) -> str:
         state = self.tasks[tid]
@@ -198,6 +202,7 @@ class FakeAgent:
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
         path, method = request.url.path, request.method
+        self.requests.append(f"{method} {path}")
         if path == "/config":
             return httpx.Response(200, json=self.config)
         if method == "POST" and path == "/tasks":
@@ -223,6 +228,13 @@ class FakeAgent:
         parts = path.strip("/").split("/")
         if parts[0] == "tasks":
             return httpx.Response(200, json=self.poll(parts[1]))
+        if len(parts) == 2:  # GET /traces/{id}: the spans stored so far
+            tid = parts[1]
+            polled = self.trace_polls[tid] = self.trace_polls.get(tid, 0) + 1
+            at = self.tasks[tid]["script"].deliver_at
+            names = ["plan", "execute"] + (["deliver"] if at is not None and polled >= at else [])
+            spans = [{"name": name, "kind": "node"} for name in names]
+            return httpx.Response(200, json={"task_id": tid, "spans": spans})
         tid, what = parts[1], parts[2]
         script = self.tasks[tid]["script"]
         if what == "costs":
@@ -833,20 +845,46 @@ def test_diagnose_needs_a_run(tmp_path):
 # --- scoring rules ------------------------------------------------------------------
 
 
-def test_costs_are_recorded_once_the_llm_call_count_holds_still(tmp_path, tasks_file):
+def test_a_completed_tasks_costs_are_read_once_its_trace_holds_the_deliver_span(
+    tmp_path, tasks_file
+):
     late = scripts()
+    # the memory step's call is made, then the deliver span ends: the third trace poll has it
+    late[TASKS[0]["request"]].deliver_at = 3
+    late[TASKS[0]["request"]].cost_polls = [(4, 0.021)]
+    fake = FakeAgent(late)
+    run(tmp_path, tasks_file, fake)
+    assert (fake.trace_polls["task-1"], fake.cost_polls["task-1"]) == (3, 1)
+    last_trace = max(i for i, r in enumerate(fake.requests) if r == "GET /traces/task-1")
+    assert fake.requests.index("GET /traces/task-1/costs") > last_trace
+    t01 = raw(tmp_path)["t01"]
+    assert (t01["costs"]["llm"]["total_calls"], t01["costs"]["total_usd"]) == (4, 0.021)
+    # t02's span is there at the first look; t03 timed out, so the count rule decides
+    assert (fake.trace_polls["task-2"], fake.cost_polls["task-2"]) == (1, 1)
+    assert ("task-3" in fake.trace_polls, fake.cost_polls["task-3"]) == (False, 2)
+
+
+def test_without_the_deliver_span_costs_are_recorded_once_the_llm_call_count_holds_still(
+    tmp_path, tasks_file
+):
+    late = scripts()
+    # the span's export failed, so the trace never holds it; the count rule decides:
     # the memory step's call lands after the first poll; two polls agree on 4 calls
+    late[TASKS[0]["request"]].deliver_at = None
     late[TASKS[0]["request"]].cost_polls = [(3, 0.02), (4, 0.021), (4, 0.021)]
     fake = FakeAgent(late)
     run(tmp_path, tasks_file, fake)
     t01 = raw(tmp_path)["t01"]
     assert (t01["costs"]["llm"]["total_calls"], t01["costs"]["total_usd"]) == (4, 0.021)
+    # trace polls at 0, 2, ..., 60 s, then the count rule's three
+    assert fake.trace_polls["task-1"] == agent_eval.DELIVER_WAIT_S / agent_eval.POLL_S + 1 == 31
     assert fake.cost_polls["task-1"] == 3
-    assert fake.cost_polls["task-2"] == 2  # settled at once: two equal polls
+    assert fake.cost_polls["task-3"] == 2  # the timeout settled at once: two equal polls
 
 
 def test_costs_are_recorded_after_ten_seconds_if_the_count_never_settles(tmp_path, tasks_file):
     busy = scripts()
+    busy[TASKS[0]["request"]].deliver_at = None
     busy[TASKS[0]["request"]].cost_polls = [(n, n / 100) for n in range(3, 12)]
     fake = FakeAgent(busy)
     run(tmp_path, tasks_file, fake)

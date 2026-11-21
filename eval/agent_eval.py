@@ -13,8 +13,10 @@ per label in ``runs/<id>/agent-run.json`` and refuses a label the agent doesn't 
 MOCK_LLM. Tasks run one at a time, each under its own user id, so no task's memories
 reach another's plan: ``POST /tasks``, then ``GET /tasks/{id}`` every 2 s, approving each
 pending approval (counted, at most 5 per task) until the task completes, fails or runs
-out of time (600 s). Then the task's costs are polled until its LLM-call count holds
-still (the agent extracts memories after a task completes), its invocation log and
+out of time (600 s). Then the task's costs are read: for a completed task once its trace
+holds the ``deliver`` span, which ends after the memory step (the agent extracts
+memories after a task completes); otherwise, or if that span hasn't appeared within
+60 s, once its LLM-call count holds still. Its invocation log and
 bundle are fetched, and a completed task goes to the rubric judge, which sees the final
 output, the files the run wrote and, only when a criterion needs them, the subtasks'
 outputs. ``--max-cost-usd``
@@ -86,8 +88,13 @@ PLAN_DESCRIPTION_CHARS = 200  # each planned subtask's description, in the recor
 MAX_USER_ID = 64  # the agent's user_id columns
 # The scoring rules new records are collected under; a record without "scoring" is 1.
 SCORING_VERSION = 2
-# After a task ends, its costs are polled until the LLM-call count is the same on two
-# polls in a row, for at most this long: the memory step runs after the task completes.
+# The memory step runs after a task is marked completed, inside the deliver span. A
+# completed task's costs are read once its trace holds that span, waited for at most
+# DELIVER_WAIT_S (a failed span export is only logged). Otherwise, and for every other
+# outcome, they are polled until the LLM-call count is the same on two polls in a row,
+# for at most COST_SETTLE_S.
+DELIVER_SPAN = "deliver"
+DELIVER_WAIT_S = 60.0
 COST_SETTLE_S = 10.0
 
 
@@ -238,7 +245,7 @@ def run_task(
             outcome = "timeout"
         if outcome is None:
             sleep(poll_s)
-    costs = settled_costs(agent, tid, poll_s=poll_s, sleep=sleep, clock=clock)
+    costs = final_costs(agent, tid, outcome, poll_s=poll_s, sleep=sleep, clock=clock)
     return {
         "agent_task_id": tid,
         "outcome": outcome,
@@ -247,6 +254,32 @@ def run_task(
         "costs": costs,
         "calls": agent.get(f"/traces/{tid}/tools").raise_for_status().json()["calls"],
     }
+
+
+def final_costs(
+    agent: httpx.Client,
+    tid: str,
+    outcome: str,
+    *,
+    poll_s: float,
+    sleep: Callable[[float], None],
+    clock: Callable[[], float],
+) -> dict:
+    """The task's costs once nothing more will be added. A completed task's last call is
+    the memory step's, inside the deliver span, and the agent stores a span when it ends:
+    its costs are read once ``GET /traces/{id}`` holds that span, polled ``poll_s`` apart
+    for up to ``DELIVER_WAIT_S``. Past that, and for every other outcome, the count rule
+    (``settled_costs``) decides."""
+    if outcome == "completed":
+        start = clock()
+        while True:
+            spans = agent.get(f"/traces/{tid}").raise_for_status().json()["spans"]
+            if any(span["name"] == DELIVER_SPAN for span in spans):
+                return agent.get(f"/traces/{tid}/costs").raise_for_status().json()
+            if clock() - start >= DELIVER_WAIT_S:
+                break
+            sleep(poll_s)
+    return settled_costs(agent, tid, poll_s=poll_s, sleep=sleep, clock=clock)
 
 
 def settled_costs(
@@ -258,7 +291,8 @@ def settled_costs(
     clock: Callable[[], float],
 ) -> dict:
     """The task's costs once its LLM-call count stops changing: the same on two polls in
-    a row, ``poll_s`` apart, or whatever the last poll says after ``COST_SETTLE_S``."""
+    a row, ``poll_s`` apart, or whatever the last poll says after ``COST_SETTLE_S``. A
+    memory call slower than ``poll_s`` can still be missed."""
     start = clock()
     costs = agent.get(f"/traces/{tid}/costs").raise_for_status().json()
     while clock() - start < COST_SETTLE_S:
