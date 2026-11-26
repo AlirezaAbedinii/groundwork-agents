@@ -199,7 +199,9 @@ approval row → `interrupt()`.
    tool exists and belongs to its subtask's specialist, that research, analysis
    and code subtasks name their tools, the size (`MAX_PLAN_SUBTASKS`, 4), and
    the plan's `deliverables`: every back-quoted file name the request asks to
-   save is listed, each with a producing subtask that owns and lists `file_write`.
+   save is listed, each with a producing subtask that owns and lists `file_write`;
+   every deliverable's path is named in the request, and a plan without one lists
+   `file_write` nowhere.
    One retry with the errors in-prompt, then the task fails rather than
    executing a broken plan; `PLAN_LINT=off` records the lint's findings on the
    plan span without rejecting.

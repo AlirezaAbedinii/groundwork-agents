@@ -150,8 +150,9 @@ async def test_the_graphs_synthesis_sees_the_tasks_invocations(tmp_path, monkeyp
     repo, llm = InMemoryTaskRepo(), Recording(MockLLMClient(fixtures))
     graph = build_graph(llm=llm, registry=build_default_registry(InMemoryInvocationStore()), repo=repo,
                         checkpointer=None, approvals=InMemoryApprovalQueue())
-    task_id = repo.create_task("write a memo")
-    await graph.ainvoke({"task_id": task_id, "request": "write a memo", "subtask_results": {}, "dispatch_log": [],
+    task_id = repo.create_task("Write a memo to `memo.md`.")
+    await graph.ainvoke({"task_id": task_id, "request": "Write a memo to `memo.md`.", "subtask_results": {},
+                         "dispatch_log": [],
                          "rules_version": CURRENT_RULES_VERSION})
 
     (prompt,) = [text for agent, text in llm.prompts if agent == "supervisor" and SYNTH_MARKER in text]

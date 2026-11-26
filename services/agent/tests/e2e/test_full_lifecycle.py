@@ -18,7 +18,7 @@ WARMUP_REQUEST = (
 DEMO_REQUEST = (
     "Research the top 3 open-source vector databases (Chroma, Qdrant, Weaviate), "
     "extract and compare their GitHub statistics, analyze the trade-offs, and "
-    "produce a one-page recommendation memo with cited sources."
+    "produce a one-page recommendation memo with cited sources, saved as `recommendation.md`."
 )
 
 REQUIRED_SPAN_KINDS = {

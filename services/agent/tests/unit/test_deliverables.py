@@ -103,7 +103,8 @@ def fixtures(tmp_path):
     return directory
 
 
-async def run(fixtures, request: str = "write notes", rules_version: int = CURRENT_RULES_VERSION):
+async def run(fixtures, request: str = "Look the topic up and keep notes in notes.md.",
+              rules_version: int = CURRENT_RULES_VERSION):
     repo, store, llm = InMemoryTaskRepo(), InMemoryInvocationStore(), Recording(MockLLMClient(fixtures))
     graph = build_graph(llm=llm, registry=build_default_registry(store), repo=repo, checkpointer=None,
                         approvals=InMemoryApprovalQueue())
@@ -247,11 +248,32 @@ async def test_a_task_under_rules_without_deliverables_is_not_checked(fixtures):
     assert state["dispatch_log"] == [["s1"], ["s2"]]
 
 
+@pytest.mark.parametrize(("rules_version", "status"), [
+    pytest.param(CURRENT_RULES_VERSION, "failed", id="current rules: planning refuses the file"),
+    pytest.param(4, "completed", id="version 4: the file is planned, written and checked"),
+])
+async def test_a_deliverable_the_request_does_not_name(fixtures, rules_version, status):
+    two_step_plan(fixtures)
+    fx(fixtures, "w_write", "writing", match=["write the notes"], writes=["notes.md"])
+    fx(fixtures, "w_done", "writing", "NOTES SAVED", match=["write the notes", "-> file_write returned"])
+
+    task, state, llm, _ = await run(fixtures, request="Look the topic up and write some notes.",
+                                    rules_version=rules_version)
+
+    assert task["status"] == status
+    if status == "failed":
+        assert task["error"].startswith("Plan invalid after retry: The task does not name `notes.md`")
+        assert llm.prompts("writing") == []
+    else:
+        assert state["deliverables_outcome"] == "ok"
+
+
 async def test_a_plan_without_deliverables_is_not_checked(fixtures):
     two_step_plan(fixtures)
     plan = json.loads(json.loads((fixtures / "plan.json").read_text())["response"]["text"])
+    plan["subtasks"][1]["tools"] = []  # a plan without deliverables lists file_write nowhere
     fx(fixtures, "plan", "supervisor", json.dumps({**plan, "deliverables": []}), match=["Create an execution plan"])
-    writes_elsewhere(fixtures)
+    writes_elsewhere(fixtures)  # the writer may still save a file of its own
 
     task, state, _, _ = await run(fixtures)
 

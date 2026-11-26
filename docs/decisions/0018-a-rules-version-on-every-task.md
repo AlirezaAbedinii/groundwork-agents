@@ -106,3 +106,13 @@ rework before any review (ADR 0020). A new task gets version 4; a task from vers
 replays and resumes without the check. The dispatch payload now carries the task's rules
 version, so the execute node can read the switch; a payload from before that reads as
 version 1, which has the switch off, as every version before 4 does.
+
+## Addendum (2026-11-26): version 5
+
+Version 5 adds one switch, `only_requested_files`, and keeps version 4's on. With it,
+the plan lint refuses a deliverable whose path the request does not name. It also
+refuses `file_write` in a plan that has no deliverable the request names (ADR 0019,
+addendum of 2026-11-26). Both checks apply to the planner's plan, to a plan modified at
+the plan gate, and in the approvals API. A new task gets version 5. A task from version
+4 replays and resumes without the checks. The planner's rule on deliverables and the
+synthesis rule for a plan without files are prompt text, so they need no version.

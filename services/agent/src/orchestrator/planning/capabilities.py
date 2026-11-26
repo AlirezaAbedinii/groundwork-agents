@@ -10,6 +10,9 @@ answered from the model's memory. The lint catches that before anything runs.
 A plan also lists the files the task must deliver. The lint cannot know every file a
 request asks for, so it cross-checks the plan against a conservative scan of the
 request (``requested_files``): a back-quoted file name that the request asks to save.
+The other way round it can be exact: a deliverable must be named in the request, and a
+plan that delivers no file must not write one, so the results stay in the subtasks'
+reports, where synthesis can state them.
 """
 
 from __future__ import annotations
@@ -60,6 +63,13 @@ def requested_files(request: str) -> list[str]:
     return list(dict.fromkeys(match["path"] for match in _REQUESTED_FILE.finditer(request)))
 
 
+def named_in(request: str, path: str) -> bool:
+    """Whether ``path`` occurs in ``request`` literally, as a whole name: not inside a longer
+    one (``notes.md`` is not named by ``old_notes.md``, ``docs/notes.md`` or ``notes.md.bak``).
+    Any phrasing counts, quoted or not, so it accepts names that ``requested_files`` misses."""
+    return re.search(rf"(?<![\w./-]){re.escape(path)}(?![\w/-]|\.\w)", request) is not None
+
+
 def summary(description: str) -> str:
     """The first sentence of a tool description, without its full stop."""
     first = " ".join(description.split()).split(". ", 1)[0]
@@ -97,7 +107,13 @@ def render_manifest(capabilities: list[Capability]) -> str:
 
 
 def lint(
-    plan: ExecutionPlan, registry: ToolRegistry, max_subtasks: int, request: str = "", *, deliverables: bool = True
+    plan: ExecutionPlan,
+    registry: ToolRegistry,
+    max_subtasks: int,
+    request: str = "",
+    *,
+    deliverables: bool = True,
+    only_requested: bool = True,
 ) -> list[str]:
     """What is wrong with ``plan`` for this registry and ``request``, one message per problem;
     empty if nothing.
@@ -105,7 +121,9 @@ def lint(
     Pure: it reads the plan and the registry and changes neither. Each message says
     what to change, because the messages go back to the planner on its retry. Without
     ``deliverables`` (the rules of a task from before deliverables were checked) the
-    plan's deliverables are not linted.
+    plan's deliverables are not linted; without ``only_requested`` (before deliverables
+    had to be named in the request) a deliverable the request does not name, and
+    file_write in a plan without one, are allowed.
     """
     available = _available(registry)
     errors: list[str] = []
@@ -134,20 +152,32 @@ def lint(
                     "give this subtask to a specialist that owns all of its tools."
                 )
     if deliverables:
-        errors.extend(_lint_deliverables(plan, registry, request))
+        errors.extend(_lint_deliverables(plan, registry, request, only_requested))
     return errors
 
 
-def _lint_deliverables(plan: ExecutionPlan, registry: ToolRegistry, request: str) -> list[str]:
-    """Each deliverable's producer owns and lists file_write; every file the request asks to save is listed."""
+def _lint_deliverables(plan: ExecutionPlan, registry: ToolRegistry, request: str, only_requested: bool) -> list[str]:
+    """Each deliverable's producer owns and lists file_write; every file the request asks to save is listed.
+
+    With ``only_requested``, a deliverable the request does not name is an error (and its
+    producer is not checked, since the file is to go), and so is file_write in any
+    subtask of a plan that keeps no deliverable. That last check stands aside when the
+    request asks to save a file: the plan is then told to list it, which needs file_write.
+    """
     errors: list[str] = []
     writers = sorted(
         specialist for specialist in SPECIALISTS
         if any(spec.name == FILE_WRITE for spec in registry.tools_for(specialist))
     )
+    named = [d for d in plan.deliverables if not only_requested or named_in(request, d.path)]
     for deliverable in plan.deliverables:
         producer = plan.subtask(deliverable.producer)
-        if producer.specialist not in writers:
+        if deliverable not in named:
+            errors.append(
+                f"The task does not name `{deliverable.path}`; remove it from deliverables. List only files "
+                "the task names, with each path exactly as the task gives it."
+            )
+        elif producer.specialist not in writers:
             errors.append(
                 f"{producer.id}: it is to write `{deliverable.path}`, but {producer.specialist} cannot call "
                 f"{FILE_WRITE} (owned here by: {', '.join(writers) or 'nobody'}); give the file to a subtask "
@@ -156,19 +186,34 @@ def _lint_deliverables(plan: ExecutionPlan, registry: ToolRegistry, request: str
         elif FILE_WRITE not in producer.tools:
             errors.append(f"{producer.id}: it is to write `{deliverable.path}`; list {FILE_WRITE} in its tools.")
     listed = {deliverable.path for deliverable in plan.deliverables}
-    for path in requested_files(request):
+    asked = requested_files(request)
+    for path in asked:
         if path not in listed:
             errors.append(
                 f"The task asks to save `{path}`; list it in deliverables with exactly that path and the id "
                 f"of the subtask that writes it with {FILE_WRITE}."
             )
+    if only_requested and not named and not asked:
+        errors.extend(
+            f"{subtask.id}: the plan delivers no file the task names, so no subtask writes one; remove "
+            f"{FILE_WRITE} from its tools and have it report its results instead."
+            for subtask in plan.subtasks
+            if FILE_WRITE in subtask.tools
+        )
     return errors
 
 
 def check(
-    plan: ExecutionPlan, registry: ToolRegistry, request: str = "", *, deliverables: bool = True
+    plan: ExecutionPlan,
+    registry: ToolRegistry,
+    request: str = "",
+    *,
+    deliverables: bool = True,
+    only_requested: bool = True,
 ) -> tuple[list[str], bool]:
     """The lint's findings under ``MAX_PLAN_SUBTASKS``, and whether ``PLAN_LINT`` makes them reject the plan."""
     settings = get_settings()
-    errors = lint(plan, registry, settings.max_plan_subtasks, request, deliverables=deliverables)
+    errors = lint(
+        plan, registry, settings.max_plan_subtasks, request, deliverables=deliverables, only_requested=only_requested
+    )
     return errors, bool(errors) and settings.plan_lint == "enforce"

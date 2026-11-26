@@ -246,6 +246,21 @@ async def test_a_modified_plan_that_fails_the_lint_ends_the_run(tmp_path, repo):
     assert len(repo.plans[task_id]) == 1  # the modified plan was never saved
 
 
+async def test_a_modified_plan_with_a_file_the_request_does_not_name_ends_the_run(tmp_path, repo):
+    fx(tmp_path, "plan", "supervisor", plan_text([subtask("s1", "research", "vague thing")], 0.3),
+       match=["Create an execution plan"])
+    queue = InMemoryApprovalQueue()
+    task_id, _, graph, config = await run_until_pause(tmp_path, repo, "explain the setting", queue)
+    modified = json.loads(plan_text([{**subtask("s1", "research", "explain it"), "tools": ["web_search", "file_write"]}],
+                                    0.9))
+    modified["deliverables"] = [{"path": "notes.md", "producer": "s1"}]
+
+    await decide(graph, config, queue, "modify", {"plan": modified})
+
+    assert repo.tasks[task_id]["status"] == "failed"
+    assert repo.tasks[task_id]["error"].startswith("Modified plan fails the plan lint: The task does not name `notes.md`")
+
+
 def test_each_payload_of_a_wave_carries_the_request():
     from orchestrator.graph.edges import compute_wave
 

@@ -6,7 +6,8 @@ it needs, tool-less research and analysis steps, code written in one subtask and
 run in another, and four to eight subtasks that open with research. Each must
 fail. A plan with one subtask, or one subtask per owner of the tools it needs,
 must pass. Files the request asks to save must be the plan's deliverables, each
-written by a subtask that owns and lists file_write.
+written by a subtask that owns and lists file_write; a deliverable must be named in the
+request, and a plan without one writes no file.
 """
 
 import json
@@ -18,7 +19,7 @@ import pytest
 from orchestrator.config import get_settings
 from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import MockLLMClient
-from orchestrator.planning.capabilities import lint, manifest, render_manifest, requested_files, summary
+from orchestrator.planning.capabilities import lint, manifest, named_in, render_manifest, requested_files, summary
 from orchestrator.planning.decomposer import PLAN_MARKER, PlanValidationError, decompose
 from orchestrator.planning.schemas import ExecutionPlan
 from orchestrator.tools import api_call, code_exec, db_query, file_io, web_search
@@ -166,18 +167,20 @@ def test_every_problem_is_reported_once():
 # --- the lint: minimal plans pass -----------------------------------------------
 
 
-@pytest.mark.parametrize("shape", [
-    pytest.param(plan(step("s1", "analysis", ["db_query", "code_exec", "file_write"], "Rank and save as top.md")),
-                 id="one analysis subtask"),
-    pytest.param(plan(step("s1", "research", ["rag_search", "file_write"], "Summarise the docs into notes.md")),
-                 id="docs to a file in one research subtask"),
-    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "research", ["web_search", "file_write"])),
-                 id="one subtask per owner"),
+@pytest.mark.parametrize(("shape", "request_text"), [
+    pytest.param(plan(step("s1", "analysis", ["db_query", "code_exec", "file_write"], "Rank and save as top.md"),
+                      deliverables={"top.md": "s1"}),
+                 "Rank the rows and save the ranking as `top.md`.", id="one analysis subtask"),
+    pytest.param(plan(step("s1", "research", ["rag_search", "file_write"], "Summarise the docs into notes.md"),
+                      deliverables={"notes.md": "s1"}),
+                 "Summarise the docs into notes.md.", id="docs to a file in one research subtask"),
+    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "research", ["web_search"])),
+                 "", id="one subtask per owner"),
     pytest.param(plan(step("s1", "code", ["code_exec"]), step("s2", "writing", [], depends_on=["s1"])),
-                 id="writing from its inputs"),
+                 "", id="writing from its inputs"),
 ])
-def test_a_minimal_plan_passes(shape):
-    assert lint(shape, registry(), 4) == []
+def test_a_minimal_plan_passes(shape, request_text):
+    assert lint(shape, registry(), 4, request_text) == []
 
 
 def test_the_lint_changes_neither_the_plan_nor_the_registry():
@@ -324,22 +327,96 @@ def test_a_file_the_request_asks_to_save_must_be_a_deliverable():
     assert lint(listed, registry(), 4, request) == []
 
 
-def test_a_deliverable_the_request_does_not_name_is_allowed():
+@pytest.mark.parametrize("request_text", [
+    "Write a comparison memo saved as memo.md.",  # not back-quoted
+    "Put the comparison in `memo.md`.",  # no "save"
+    "Write `memo.md`: two paragraphs on each option.",
+])
+def test_a_deliverable_the_request_names_is_allowed_where_the_scan_finds_nothing(request_text):
     shape = plan(step("s1", "writing", ["file_write"]), deliverables={"memo.md": "s1"})
 
-    assert lint(shape, registry(), 4, "Write a comparison memo saved as memo.md.") == []
+    assert requested_files(request_text) == []
+    assert lint(shape, registry(), 4, request_text) == []
+
+
+UNNAMED = (
+    "The task does not name `{}`; remove it from deliverables. List only files the task names, with "
+    "each path exactly as the task gives it."
+)
+NO_FILE = (
+    "{}: the plan delivers no file the task names, so no subtask writes one; remove file_write from its "
+    "tools and have it report its results instead."
+)
+
+
+def test_a_deliverable_the_request_does_not_name_is_refused_and_so_is_its_file_write():
+    request = "Count the rows per region and list the three largest."
+    shape = plan(step("s1", "analysis", ["db_query", "file_write"]), deliverables={"counts.txt": "s1"})
+
+    # both at once, so a single retry can drop the file and the tool together
+    assert lint(shape, registry(), 4, request) == [UNNAMED.format("counts.txt"), NO_FILE.format("s1")]
+
+
+def test_only_the_unnamed_deliverable_is_refused_beside_a_named_one():
+    request = "Put the summary in `summary.md`."
+    shape = plan(step("s1", "research", ["rag_search", "file_write"]), step("s2", "analysis", ["db_query", "file_write"]),
+                 deliverables={"summary.md": "s1", "extra.csv": "s2"})
+
+    assert lint(shape, registry(), 4, request) == [UNNAMED.format("extra.csv")]
+
+
+def test_file_write_in_a_plan_without_deliverables_is_refused():
+    shape = plan(step("s1", "research", ["rag_search", "file_write"]), step("s2", "code", ["code_exec", "file_write"]),
+                 step("s3", "analysis", ["db_query"]))
+
+    assert lint(shape, registry(), 4, "Explain the option and give a worked example.") == [
+        NO_FILE.format("s1"), NO_FILE.format("s2"),
+    ]
+
+
+@pytest.mark.parametrize(("request_text", "path"), [
+    ("Save it as `notes.md`.", "notes.md"),
+    ("Put it in notes.md.", "notes.md"),
+    ("notes.md: one step per line", "notes.md"),
+    ('Write the steps (to "notes.md").', "notes.md"),
+    ("Save the steps as `docs/notes.md`.", "docs/notes.md"),
+])
+def test_a_whole_name_in_the_request_names_the_file(request_text, path):
+    assert named_in(request_text, path)
+
+
+@pytest.mark.parametrize("request_text", [
+    "Update `old_notes.md` with the new steps.",
+    "Save the steps as `docs/notes.md`.",
+    "Keep a copy in notes.md.bak.",
+    "Write to `notes.mdx`.",
+    "Write the notes in Markdown.",
+    "Save them as `Notes.md`.",  # the path is matched exactly, case included
+])
+def test_a_name_inside_a_longer_one_or_in_another_form_does_not_name_the_file(request_text):
+    assert not named_in(request_text, "notes.md")
+
+
+def test_without_the_switch_unnamed_deliverables_and_file_write_are_allowed():
+    unnamed = plan(step("s1", "analysis", ["db_query", "file_write"]), deliverables={"counts.txt": "s1"})
+    bare = plan(step("s1", "analysis", ["db_query", "file_write"]))
+
+    for shape in (unnamed, bare):
+        assert lint(shape, registry(), 4, "List the three largest regions.", only_requested=False) == []
 
 
 def test_a_deliverables_producer_must_list_file_write():
     shape = plan(step("s1", "research", ["rag_search"]), deliverables={"notes.md": "s1"})
 
-    assert lint(shape, registry(), 4) == ["s1: it is to write `notes.md`; list file_write in its tools."]
+    assert lint(shape, registry(), 4, "Put the notes in `notes.md`.") == [
+        "s1: it is to write `notes.md`; list file_write in its tools."
+    ]
 
 
 def test_a_deliverables_producer_must_own_file_write():
     shape = plan(step("s1", "research", ["rag_search"]), deliverables={"notes.md": "s1"})
 
-    (error,) = lint(shape, registry(without=("file_write",)), 4)
+    (error,) = lint(shape, registry(without=("file_write",)), 4, "Put the notes in `notes.md`.")
     assert error == (
         "s1: it is to write `notes.md`, but research cannot call file_write (owned here by: nobody); "
         "give the file to a subtask whose specialist owns it."
@@ -364,8 +441,34 @@ async def test_the_planner_is_asked_for_deliverables_and_retried_without_them(tm
 
     assert planned.plan == listed
     first, retry = llm.prompts
-    assert "In deliverables, list every file the task asks to be saved or written" in first
+    assert "In deliverables, list each file the task names and asks to be saved or written,\n   and no other" in first
     assert "The task asks to save `ranking.md`" in retry
+
+
+@pytest.mark.anyio
+async def test_a_plan_with_a_file_the_request_does_not_name_is_retried_without_it(tmp_path):
+    request = "Count the rows per region and list the three largest."
+    extra = plan(step("s1", "analysis", ["db_query", "file_write"], "Count and save"), deliverables={"counts.txt": "s1"})
+    clean = plan(step("s1", "analysis", ["db_query"], "Count and report the three largest"))
+    llm = fixtures(tmp_path, extra, clean)
+
+    planned = await decompose(llm, request, registry())
+
+    assert planned.plan == clean
+    first, retry = llm.prompts
+    assert "leave deliverables empty and list file_write in no subtask's tools" in first
+    assert f"Validation error:\n{UNNAMED.format('counts.txt')}\n{NO_FILE.format('s1')}" in retry
+
+
+@pytest.mark.anyio
+async def test_a_plan_under_rules_before_named_files_keeps_its_unnamed_file(tmp_path):
+    extra = plan(step("s1", "analysis", ["db_query", "file_write"]), deliverables={"counts.txt": "s1"})
+    llm = fixtures(tmp_path, extra, extra)
+
+    planned = await decompose(llm, "List the three largest regions.", registry(), only_requested_files=False)
+
+    assert planned.plan == extra and planned.lint_errors == []
+    assert len(llm.prompts) == 1
 
 
 @pytest.mark.anyio

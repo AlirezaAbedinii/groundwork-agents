@@ -15,7 +15,7 @@ from orchestrator.agents.specialists.base import FEEDBACK_MARKER
 DEMO_REQUEST = (
     "Research the top 3 open-source vector databases (Chroma, Qdrant, Weaviate), "
     "extract and compare their GitHub statistics, analyze the trade-offs, and "
-    "produce a one-page recommendation memo with cited sources."
+    "produce a one-page recommendation memo with cited sources, saved as `recommendation.md`."
 )
 
 
@@ -42,7 +42,7 @@ def test_reviewer_rejects_citation_free_draft_then_rework_passes(client, showcas
     w1_review_prompts = [
         call["prompt"]
         for call in trace["llm_calls"]
-        if call["agent"] == "reviewer" and "recommendation memo with cited sources, saved as" in call["prompt"]
+        if call["agent"] == "reviewer" and "Write a one-page recommendation memo" in call["prompt"]
     ]
     assert len(w1_review_prompts) == 2
     for prompt in w1_review_prompts:

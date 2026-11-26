@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-CURRENT_RULES_VERSION = 4
+CURRENT_RULES_VERSION = 5
 
 
 class UnknownRulesVersion(ValueError):
@@ -36,17 +36,27 @@ class Rules:
     # A subtask that lists tools, none of which returned a result in an attempt, is sent
     # back for rework with no reviewer call (REVIEW_EVIDENCE can switch the check off).
     require_tool_results: bool
+    # The lint refuses a deliverable whose path the request does not name, and file_write
+    # in a plan that delivers no file the request names.
+    only_requested_files: bool
 
 
 _SWITCHES = {
     # before ADR 0017
-    1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False, require_tool_results=False),
+    1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False, require_tool_results=False,
+             only_requested_files=False),
     # ADR 0017
-    2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False, require_tool_results=False),
+    2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False, require_tool_results=False,
+             only_requested_files=False),
     # ADR 0019
-    3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=False),
+    3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=False,
+             only_requested_files=False),
     # ADR 0020
-    4: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True),
+    4: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True,
+             only_requested_files=False),
+    # ADR 0019, addendum of 2026-11-26
+    5: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True,
+             only_requested_files=True),
 }
 
 

@@ -204,6 +204,7 @@ def build_graph(
                 planned = await supervisor.plan(
                     state["request"], registry, memories=memories_block,
                     lint_plans=lint_plans, check_deliverables=rules.check_deliverables,
+                    only_requested_files=rules.only_requested_files,
                 )
             except PlanValidationError as error:
                 if lint_plans:
@@ -279,7 +280,8 @@ def build_graph(
                 # the approvals API refuses such a plan and keeps the approval pending;
                 # one that reaches the graph another way ends the run here
                 errors, rejected = check(
-                    new_plan, registry, state["request"], deliverables=rules.check_deliverables
+                    new_plan, registry, state["request"], deliverables=rules.check_deliverables,
+                    only_requested=rules.only_requested_files,
                 )
                 set_attr(espan, "lint_errors", errors)
                 if rejected:
