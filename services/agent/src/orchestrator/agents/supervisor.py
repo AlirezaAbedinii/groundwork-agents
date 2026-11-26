@@ -3,7 +3,9 @@
 Synthesis is shown a manifest of the run: each subtask, the outcome of each tool call
 it made (from the task's invocation log), what it reported, and the files the plan must
 deliver with whether each was written. It is told to use only those reports, so the
-final answer adds nothing a subtask did not find.
+final answer adds nothing a subtask did not find. When the plan lists no file, the
+answer is the whole delivery, so it is told to state the requested results itself
+rather than point to a file a subtask may have written.
 """
 
 from __future__ import annotations
@@ -42,12 +44,18 @@ Write the final answer for the user from the reports above, under these rules:
 2. Where a subtask reports that the documentation does not cover something, or that it
    is not documented, say "{not_covered}" for that point and give no answer to it
    from anywhere else.
-3. Name each file listed above by its exact path, and say a file was written only if it
-   is marked written.
+{file_rule}
 4. If the reports leave part of the task undone, say which part.
 
 Respond with the final answer only.
 """
+
+# Rule 3 of SYNTH_PROMPT: with files to deliver, and without any.
+FILES_RULE = """3. Name each file listed above by its exact path, and say a file was written only if it
+   is marked written."""
+NO_FILE_RULE = """3. No file is listed above, so the answer itself must give what the task asks for:
+   state each result it asks for (values, lists, code) in full, as the reports give it,
+   and never refer the user to a file instead. Rules 1 and 2 still apply."""
 
 _OUTCOMES = {"success": "succeeded", "failure": "failed", "rejected": "refused", "rate_limited": "refused (limit)"}
 
@@ -115,6 +123,7 @@ class Supervisor(BaseAgent):
         """The final answer from the subtasks' reports and the task's invocation log."""
         subtasks, deliverables = synthesis_manifest(plan, results, invocations)
         prompt = SYNTH_PROMPT.format(
-            marker=SYNTH_MARKER, request=request, subtasks=subtasks, deliverables=deliverables, not_covered=NOT_COVERED
+            marker=SYNTH_MARKER, request=request, subtasks=subtasks, deliverables=deliverables, not_covered=NOT_COVERED,
+            file_rule=FILES_RULE if plan.deliverables else NO_FILE_RULE,
         )
         return (await self.chat([HumanMessage(content=prompt)])).text

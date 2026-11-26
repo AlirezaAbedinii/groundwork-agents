@@ -96,3 +96,69 @@ that answered it anyway, with a value or a command no tool had returned.
   which the verify step would then require.
 - **A model check of the final answer against the reports.** It costs a call per task
   and is not deterministic; it is left out of this change.
+
+## Addendum (2026-11-26): only the files the request names, and an answer that states the results
+
+### Context
+
+The lint required every file the scan found, but refused no other. A planner could add
+a file the request never asked for, such as a text file holding a result. Synthesis rule
+3 then named that file, and the answer pointed the user to it instead of stating the
+result. The verify step treated the extra file as required, so a producer that saved
+it under another name was sent back to write a file nobody had asked for.
+
+### Decision
+
+- **A deliverable must be named in the request.** Its path must occur in the request
+  literally, as a whole name: not inside a longer one (`notes.md` is not named by
+  `old_notes.md`, `docs/notes.md` or `notes.md.bak`), and with the same case. Any
+  phrasing counts, quoted or not. The check is not equality with the scan, which finds
+  only back-quoted names after "save" and so misses requests such as "Put it in
+  `notes.md`". The scan's rule stands: every file it finds must be listed.
+- **A plan without such a deliverable writes no file.** No subtask lists `file_write`.
+  This check stands aside when the scan finds a file the request asks to save, because
+  the plan is then told to list that file, which needs `file_write`. A plan whose only
+  deliverable is unnamed gets both findings at once, so its one retry can drop the file
+  and the tool together.
+- **The planner is told the same.** Rule 7 lists each file the task names and asks to be
+  saved or written, and no other. If the task names none, the plan has no deliverables
+  and no `file_write`: each subtask reports its results, and the final answer states
+  them.
+- **With no file, the answer delivers the results.** When the plan lists no
+  deliverable, synthesis rule 3 tells it to state each result the task asks for
+  (values, lists, code) in full, as the reports give it, and never to refer the user to
+  a file instead. Rules 1 and 2 come first and still apply, so an answer adds nothing a
+  report did not give, and says "the documentation does not cover this" where a report
+  found the documentation silent. A plan with deliverables gets the prompt it had
+  before.
+- **Switch.** The two lint checks are rules version 5 (`only_requested_files`, ADR
+  0018). The planner's rule and the synthesis rule are prompt text, which ADR 0018 does
+  not version.
+
+### Consequences
+
+- A request that names a file in another form than its path, such as "a Markdown file
+  called notes", gets no file: a plan that lists one is refused, and the answer holds
+  the content. Accepting other forms would be a separate decision.
+- A request that names an input file lets the plan list it as a deliverable. The name
+  alone does not tell an input from an output. The verify step would then require a
+  write at that path.
+- Specialists keep the tools they own. A specialist with `file_write` can still save a
+  file the plan does not list. Nothing checks that file, and synthesis is told not to
+  point to it.
+- A one-subtask plan still skips synthesis. Its reviewed output is the answer, so the
+  synthesis rule does not apply to it.
+- Grounding is still by instruction. Nothing checks that the answer contains the
+  results.
+
+### Alternatives
+
+- **Equality with the scan.** This would refuse legitimate files that the scan misses.
+- **A plain substring match.** This would accept `notes.md` for a request that names
+  `docs/notes.md`. The verify step would then require a path the request does not
+  give.
+- **Take `file_write` from the specialists when no file is asked for.** This would
+  change what each specialist owns, which the registry sets per deployment, not per
+  task. The lint has the same effect at plan time.
+- **The synthesis rule alone.** The extra file would still be planned, written and
+  verified, at the cost of a write and sometimes a corrective round.

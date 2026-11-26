@@ -221,8 +221,9 @@ approval row → `interrupt()`.
    log, what it reported, and the deliverables with whether each was written. It
    is told to use only those reports, to add no facts, to say "the documentation
    does not cover this" where a subtask found it silent, and to name each
-   deliverable by its path (a one-subtask plan's reviewed output is the final
-   output, with no synthesis call). `verify` then checks that each planned deliverable
+   deliverable by its path. With no deliverable, it is told to state the results
+   the request asks for in the answer itself and point to no file (a one-subtask
+   plan's reviewed output is the final output, with no synthesis call). `verify` then checks that each planned deliverable
    has a successful `file_write` at exactly its path; a missing one sends its
    producer back once with feedback naming the path, and the outputs are
    synthesized again; if it is still missing, the task fails naming the file

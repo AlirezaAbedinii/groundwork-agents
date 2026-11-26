@@ -3,14 +3,22 @@
 Synthesis sees each subtask's tool-call outcomes (from the invocation log), what it
 reported, and the deliverables with whether each was written; it is told to add no
 facts, to repeat that the documentation does not cover something when a subtask said
-so, and to name each deliverable by its path.
+so, and to name each deliverable by its path. With no deliverable, it is told instead to
+state the requested results in the answer and point to no file.
 """
 
 import json
 
 import pytest
 
-from orchestrator.agents.supervisor import NOT_COVERED, SYNTH_MARKER, Supervisor, synthesis_manifest
+from orchestrator.agents.supervisor import (
+    FILES_RULE,
+    NO_FILE_RULE,
+    NOT_COVERED,
+    SYNTH_MARKER,
+    Supervisor,
+    synthesis_manifest,
+)
 from orchestrator.config import get_settings
 from orchestrator.db.repo import InMemoryTaskRepo
 from orchestrator.graph.builder import build_graph
@@ -115,6 +123,61 @@ async def test_the_prompt_carries_the_manifest_and_the_grounding_rules():
     assert "Use only what the subtasks reported. Add no fact, number, command, setting, example" in prompt
     assert f'say "{NOT_COVERED}" for that point' in prompt
     assert "Name each file listed above by its exact path" in prompt
+
+
+# The prompt as it was before plans without files got a rule of their own.
+WITH_FILES = """{marker} for the task below from what its subtasks reported.
+
+Task: {request}
+
+What each subtask did and reported:
+
+{subtasks}
+
+Files the task must deliver:
+{deliverables}
+
+Write the final answer for the user from the reports above, under these rules:
+1. Use only what the subtasks reported. Add no fact, number, command, setting, example
+   or recommendation of your own, even one you believe is correct.
+2. Where a subtask reports that the documentation does not cover something, or that it
+   is not documented, say "{not_covered}" for that point and give no answer to it
+   from anywhere else.
+3. Name each file listed above by its exact path, and say a file was written only if it
+   is marked written.
+4. If the reports leave part of the task undone, say which part.
+
+Respond with the final answer only.
+"""
+
+
+async def test_a_plan_with_files_gets_the_prompt_it_had_before():
+    llm = Capture()
+
+    await Supervisor(llm).synthesize("Write a memo on the timeout.", PLAN, RESULTS, INVOCATIONS)
+
+    subtasks, deliverables = synthesis_manifest(PLAN, RESULTS, INVOCATIONS)
+    assert llm.prompts == ["[user] " + WITH_FILES.format(
+        marker=SYNTH_MARKER, request="Write a memo on the timeout.", subtasks=subtasks, deliverables=deliverables,
+        not_covered=NOT_COVERED,
+    )]
+
+
+async def test_a_plan_without_files_is_told_to_state_the_results_in_the_answer():
+    plan = ExecutionPlan.model_validate({"subtasks": [step("s1", "analysis", "compute the totals")], "confidence": 0.9})
+    results = {"s1": {"status": "completed", "output": "Totals: 3, 5 and 8."}}
+    llm = Capture()
+
+    await Supervisor(llm).synthesize("Compute the totals per group.", plan, results, [])
+
+    (prompt,) = llm.prompts
+    assert "Files the task must deliver:\n(none)\n" in prompt
+    assert FILES_RULE not in prompt and NO_FILE_RULE in prompt
+    # the grounding rules come first and still bind it
+    order = [prompt.index(text) for text in ("\n1. Use only", "\n2. Where a subtask", NO_FILE_RULE, "\n4. If the")]
+    assert order == sorted(order)
+    assert "never refer the user to a file instead. Rules 1 and 2 still apply." in NO_FILE_RULE
+    assert "(values, lists, code) in full, as the reports give it" in NO_FILE_RULE
 
 
 async def test_the_graphs_synthesis_sees_the_tasks_invocations(tmp_path, monkeypatch):
