@@ -101,26 +101,80 @@ def file_subjects(task: AgentTask) -> dict[str, str]:
     return {cid: s for cid, s in subjects.items() if s is not None and s != "answer"}
 
 
-def render_task_outputs(
-    task: AgentTask, files: Mapping[str, str], subtasks: Sequence[SubtaskOutput]
-) -> str:
-    """Everything the task judge sees besides the final output: each file the run wrote,
-    labelled with its path, then what each subtask reported, but only if a criterion
-    needs it.
+def _file_block(path: str, content: str) -> str:
+    return f'<file path="{path}">\n{content}\n</file>'
 
-    A criterion about a deliverable is judged on that deliverable alone, and a judge that
-    can read a subtask report stating what the deliverable left out credits the
-    deliverable anyway. So the reports are shown only when some criterion names neither a
-    file nor the answer.
+
+def render_task_outputs(
+    subject: str | None,
+    final_output: str,
+    files: Mapping[str, str],
+    subtasks: Sequence[SubtaskOutput],
+) -> str:
+    """What the task judge is shown, besides the request, for criteria about ``subject``.
+
+    "answer": the final output alone. A path: that file alone, labelled with its path.
+    None, the work as a whole: the final output, each file the run wrote, then what each
+    subtask reported.
+
+    A judge credits what it can see, whatever its prompt says: one that can read a
+    subtask report stating what a deliverable left out credits the deliverable, and one
+    that can read a file passes a criterion about the answer on the file's content. So a
+    call is shown only the output its criteria are about. A criterion about a file the
+    run never wrote has nothing to be shown; the scoring rules fail it without a call
+    (``metrics.unwritten_file_criteria``), and asking to render it is an error.
     """
-    blocks = [f'<file path="{path}">\n{content}\n</file>' for path, content in files.items()]
-    if any(criterion_subject(c, task) is None for c in task.rubric):
-        blocks += [
-            f'<subtask id="{s.subtask}" specialist="{s.specialist}">\n'
-            f"Task: {s.task}\nOutput:\n{s.output}\n</subtask>"
-            for s in subtasks
-        ]
-    return "\n\n".join(blocks) or "(none)"
+    final = f"<final_output>\n{final_output}\n</final_output>"
+    if subject == "answer":
+        return final
+    if subject is not None:
+        if subject not in files:
+            raise ValueError(f"the run never wrote {subject}: decide its criteria without a call")
+        return _file_block(subject, files[subject])
+    reports = [
+        f'<subtask id="{s.subtask}" specialist="{s.specialist}">\n'
+        f"Task: {s.task}\nOutput:\n{s.output}\n</subtask>"
+        for s in subtasks
+    ]
+    return "\n\n".join([final, *(_file_block(p, c) for p, c in files.items()), *reports])
+
+
+class TaskView(NamedTuple):
+    """One task-judge call: the criteria it decides and the outputs it is shown."""
+
+    criteria: list[RubricCriterion]
+    outputs: str
+
+
+def task_views(
+    task: AgentTask,
+    criteria: Sequence[RubricCriterion],
+    final_output: str,
+    files: Mapping[str, str],
+    subtasks: Sequence[SubtaskOutput],
+    *,
+    isolate: bool = True,
+) -> list[TaskView]:
+    """The judge calls that decide ``criteria``: one per subject (``criterion_subject``),
+    in the order the criteria first name each, and each shown only that subject.
+
+    ``isolate=False`` is what scoring versions 1 and 2 did: one call for every criterion,
+    shown the final output, every file and, when a criterion of the task names neither a
+    file nor the answer, what each subtask reported.
+    """
+    if not criteria:
+        return []
+    if not isolate:
+        if all(criterion_subject(c, task) is not None for c in task.rubric):
+            subtasks = []
+        return [TaskView(list(criteria), render_task_outputs(None, final_output, files, subtasks))]
+    groups: dict[str | None, list[RubricCriterion]] = {}
+    for c in criteria:
+        groups.setdefault(criterion_subject(c, task), []).append(c)
+    return [
+        TaskView(group, render_task_outputs(subject, final_output, files, subtasks))
+        for subject, group in groups.items()
+    ]
 
 
 def cache_key(provider: str, model: str, prompt_version: str, system: str, user: str) -> str:
@@ -194,20 +248,16 @@ class Judge:
         )
 
     def task(
-        self,
-        request: str,
-        final_output: str,
-        subtask_outputs: str,
-        criteria: Sequence[RubricCriterion],
+        self, request: str, outputs: str, criteria: Sequence[RubricCriterion]
     ) -> TaskVerdict:
+        """One call's verdict on ``criteria``, shown ``outputs`` (a ``TaskView``'s)."""
         if not criteria:
             raise ValueError("a task verdict needs at least one rubric criterion")
         return self._verdict(
             "TASK",
             TaskVerdict,
             request=request,
-            final_output=final_output,
-            subtask_outputs=subtask_outputs,
+            outputs=outputs,
             criteria=render_criteria(criteria),
         )
 

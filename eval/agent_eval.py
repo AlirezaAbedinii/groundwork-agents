@@ -17,9 +17,10 @@ out of time (600 s). Then the task's costs are read: for a completed task once i
 holds the ``deliver`` span, which ends after the memory step (the agent extracts
 memories after a task completes); otherwise, or if that span hasn't appeared within
 60 s, once its LLM-call count holds still. Its invocation log and
-bundle are fetched, and a completed task goes to the rubric judge, which sees the final
-output, the files the run wrote and, only when a criterion needs them, the subtasks'
-outputs. ``--max-cost-usd``
+bundle are fetched, and a completed task goes to the rubric judge, one call per subject
+its criteria name: the final output for criteria about the answer, the file for criteria
+about a file, and the final output, every file and the subtasks' outputs for criteria
+about the work as a whole. ``--max-cost-usd``
 caps the agent's spend and the judge's together: a task starts only if its reserve
 (``--task-reserve-usd``, 0 on MOCK_LLM) fits, and its real cost, the LLM total plus every
 ``rag_ask``'s ``cost_usd``, is recorded when it ends. On real models the agent's own
@@ -35,7 +36,9 @@ Scoring rules are versioned (``metrics``): ``run`` stamps each record with
 ``SCORING_VERSION``, and a record without the stamp is scored by version 1, the rules
 the first published run used. Under version 2 a criterion about a file the run never
 wrote fails without being sent to the judge, and a ``code_exec`` run that exits
-non-zero is a tool error.
+non-zero is a tool error. Version 3 adds the judge's isolation above (versions 1 and 2
+showed one call everything); it happens when the run is judged, so ``score --scoring 3``
+refuses records collected under 1 or 2.
 
 ``score`` never calls anything. It turns the run into compact records (each holding the
 task it ran, so the records file alone is enough to re-score), computes every number
@@ -68,7 +71,7 @@ import httpx
 import metrics
 import report
 from budget import Budget, BudgetExceeded
-from judge import SubtaskOutput, file_subjects, render_task_outputs
+from judge import SubtaskOutput, file_subjects, task_views
 from llm import LLMError, load_env
 from schemas import AgentTask, CriterionVerdict, PlannedSubtask, Share, TaskVerdict, ToolCall
 
@@ -87,7 +90,10 @@ ARG_CHARS = 200
 PLAN_DESCRIPTION_CHARS = 200  # each planned subtask's description, in the records
 MAX_USER_ID = 64  # the agent's user_id columns
 # The scoring rules new records are collected under; a record without "scoring" is 1.
-SCORING_VERSION = 2
+SCORING_VERSION = 3
+# From this version on, the rules decide what the judge is shown, which is fixed when a
+# run is judged: a record collected under an earlier version can't be scored under them.
+ISOLATED_JUDGE = 3
 # The memory step runs after a task is marked completed, inside the deliver span. A
 # completed task's costs are read once its trace holds that span, waited for at most
 # DELIVER_WAIT_S (a failed span export is only logged). Otherwise, and for every other
@@ -368,7 +374,15 @@ def decided_criteria(task: AgentTask, record: dict) -> list[CriterionVerdict]:
 def _judge(judge: Any, task: AgentTask, record: dict) -> tuple[dict, BudgetExceeded | None]:
     """The rubric verdict of a completed task; a budget stop leaves it for a resume. The
     judge sees only the criteria the scoring rules leave open, and isn't called when
-    they decide every one."""
+    they decide every one.
+
+    Under version 3 each subject the open criteria name gets its own call, shown only
+    that subject (``judge.task_views``), and each call decides only the criteria it was
+    asked about. A record collected under an earlier version is judged in one call, as
+    that version did. Every call is checked against the budget before it is sent; a
+    stop between calls leaves the record unjudged, and the calls already made are cached,
+    so a resume repeats none of them.
+    """
     record = dict(record)
     if not needs_verdict(record):
         return record, None
@@ -376,19 +390,24 @@ def _judge(judge: Any, task: AgentTask, record: dict) -> tuple[dict, BudgetExcee
     open_ = [c for c in task.rubric if c.id not in {d.id for d in decided}]
     before = judge.budget.spent_usd
     judged: list[CriterionVerdict] = []
-    if open_:
-        shown = render_task_outputs(
-            task, files_written(record["calls"]), subtask_outputs(record["bundle"])
-        )
+    views = task_views(
+        task,
+        open_,
+        record["bundle"]["final_output"] or "",
+        files_written(record["calls"]),
+        subtask_outputs(record["bundle"]),
+        isolate=scoring_version(record) >= ISOLATED_JUDGE,
+    )
+    for view in views:
         try:
-            judged = judge.task(
-                task.request, record["bundle"]["final_output"] or "", shown, open_
-            ).criteria
+            verdict = judge.task(task.request, view.outputs, view.criteria)
         except BudgetExceeded as exc:
             return record, exc
         except LLMError as exc:
             record["judge_error"] = _error(exc)
             return record, None
+        asked = {c.id for c in view.criteria}
+        judged += [c for c in verdict.criteria if c.id in asked]
     record.pop("judge_error", None)
     record["verdict"] = {
         "criteria": [c.model_dump() for c in [*judged, *decided]],
@@ -978,6 +997,14 @@ def main(
         records = build_records(args.runs / args.run_id)
         out = args.out or args.runs / args.run_id / "report"
     if args.scoring:
+        older = sorted({v for r in records[1:] if (v := scoring_version(r)) < ISOLATED_JUDGE})
+        if args.scoring >= ISOLATED_JUDGE and older:
+            parser.error(
+                f"--scoring {args.scoring} can't score records collected under version "
+                f"{', '.join(map(str, older))}: from version {ISOLATED_JUDGE} on, what the "
+                "judge is shown is decided when the run is judged, so run and judge the "
+                "tasks again"
+            )
         records = [records[0], *({**r, "scoring": args.scoring} for r in records[1:])]
     written = report.write_agent(
         records, score_records(records), out, with_records=not args.records

@@ -23,6 +23,7 @@ from judge import (
     file_subjects,
     render_contexts,
     render_task_outputs,
+    task_views,
 )
 from judge_fake import FakeJudge
 from llm import LLMError
@@ -44,7 +45,7 @@ PROMPTS = SimpleNamespace(
     FAITHFULNESS_SYSTEM="Grade faithfulness.",
     FAITHFULNESS_USER="Contexts:\n{contexts}\n\nAnswer: {answer}",
     TASK_SYSTEM="Grade the task.",
-    TASK_USER="{request}\n---\n{final_output}\n---\n{subtask_outputs}\n---\n{criteria}",
+    TASK_USER="{request}\n---\n{outputs}\n---\n{criteria}",
 )
 
 CORRECT = {"reasoning": "Matches the reference.", "rating": 5}
@@ -167,12 +168,12 @@ def test_task_lists_the_criteria_without_saying_which_are_critical(tmp_path):
         ]
     }
     server = Server(tool_reply(reply))
-    verdict = make_judge(server, tmp_path).task("req", "final", "sub", criteria)
+    verdict = make_judge(server, tmp_path).task("req", "shown", criteria)
     assert verdict == TaskVerdict(**reply)
     user = server.requests[0]["messages"][0]["content"]
     assert (
         user
-        == "req\n---\nfinal\n---\nsub\n---\n- c1: Names the cache directory\n- c2: Cites a source"
+        == "req\n---\nshown\n---\n- c1: Names the cache directory\n- c2: Cites a source"
     )
     assert "critical" not in user
 
@@ -181,7 +182,7 @@ def test_task_lists_the_criteria_without_saying_which_are_critical(tmp_path):
     "call",
     [
         lambda j: j.faithfulness([], "an answer"),
-        lambda j: j.task("req", "final", "sub", []),
+        lambda j: j.task("req", "shown", []),
     ],
 )
 def test_nothing_to_judge_against_raises_before_any_call(tmp_path, call):
@@ -336,7 +337,7 @@ def test_the_fake_passes_everything_by_default():
     assert fake.faithfulness(CONTEXTS, "a").claims == [
         ClaimVerdict(claim="a", reasoning="scripted", supported=True)
     ]
-    assert fake.task("req", "final", "sub", criteria).criteria == [
+    assert fake.task("req", "shown", criteria).criteria == [
         CriterionVerdict(id="c1", reasoning="scripted", passed=True),
         CriterionVerdict(id="c2", reasoning="scripted", passed=True),
     ]
@@ -392,24 +393,61 @@ def test_file_subjects_map_each_file_criterion_to_its_path():
     assert file_subjects(task) == {"c2": "notes.md", "c4": "notes.md"}
 
 
-def test_subtask_reports_stay_out_when_every_criterion_names_a_deliverable():
-    task = agent_task("`notes.md` names UV_CACHE_DIR.", "The answer says where the note is.")
-    shown = render_task_outputs(task, {"notes.md": "Set UV_CACHE_DIR."}, REPORTS)
-    assert shown == '<file path="notes.md">\nSet UV_CACHE_DIR.\n</file>'
+FINAL = "The note is in notes.md."
+FINAL_BLOCK = "<final_output>\nThe note is in notes.md.\n</final_output>"
+NOTES = {"notes.md": "Set UV_CACHE_DIR.", "draft.md": "UV_CACHE_DIR, perhaps."}
+NOTES_BLOCK = '<file path="notes.md">\nSet UV_CACHE_DIR.\n</file>'
+EVERYTHING = (
+    f"{FINAL_BLOCK}\n\n{NOTES_BLOCK}\n\n"
+    '<file path="draft.md">\nUV_CACHE_DIR, perhaps.\n</file>\n\n'
+    '<subtask id="s1" specialist="research">\nTask: Look it up\nOutput:\n'
+    "UV_CACHE_DIR moves the cache.\n</subtask>"
+)
 
 
-def test_subtask_reports_come_after_the_files_when_a_criterion_needs_them():
-    task = agent_task("`notes.md` names UV_CACHE_DIR.", "Says why the cache matters.")
-    shown = render_task_outputs(task, {"notes.md": "Set UV_CACHE_DIR."}, REPORTS)
-    assert shown == (
-        '<file path="notes.md">\nSet UV_CACHE_DIR.\n</file>\n\n'
-        '<subtask id="s1" specialist="research">\nTask: Look it up\nOutput:\n'
-        "UV_CACHE_DIR moves the cache.\n</subtask>"
+def test_a_criterion_about_the_answer_is_shown_the_final_output_alone():
+    assert render_task_outputs("answer", FINAL, NOTES, REPORTS) == FINAL_BLOCK
+
+
+def test_a_criterion_about_a_file_is_shown_that_file_alone():
+    assert render_task_outputs("notes.md", FINAL, NOTES, REPORTS) == NOTES_BLOCK
+
+
+def test_a_file_the_run_never_wrote_has_nothing_to_show():
+    with pytest.raises(ValueError, match="never wrote notes.md"):
+        render_task_outputs("notes.md", FINAL, {}, REPORTS)
+
+
+def test_the_work_as_a_whole_is_shown_the_final_output_every_file_and_the_reports():
+    assert render_task_outputs(None, FINAL, NOTES, REPORTS) == EVERYTHING
+
+
+def test_each_subject_gets_one_call_in_the_order_the_criteria_first_name_it():
+    task = agent_task(
+        "`notes.md` names UV_CACHE_DIR.",
+        "The answer says where the note is.",
+        "Says why the cache matters.",
+        "`notes.md` says how to prune.",
     )
+    views = task_views(task, task.rubric, FINAL, NOTES, REPORTS)
+    assert [[c.id for c in v.criteria] for v in views] == [["c1", "c4"], ["c2"], ["c3"]]
+    assert [v.outputs for v in views] == [NOTES_BLOCK, FINAL_BLOCK, EVERYTHING]
+    # only the criteria asked about get a call, and none gets none
+    [view] = task_views(task, task.rubric[1:2], FINAL, NOTES, REPORTS)
+    assert (view.criteria, view.outputs) == (task.rubric[1:2], FINAL_BLOCK)
+    assert task_views(task, [], FINAL, NOTES, REPORTS) == []
 
 
-def test_nothing_to_show_says_so():
-    assert render_task_outputs(agent_task("The answer names it."), {}, REPORTS) == "(none)"
+def test_without_isolation_one_call_is_shown_what_version_2_showed():
+    # every criterion names a deliverable: everything but the subtasks' reports
+    task = agent_task("`notes.md` names UV_CACHE_DIR.", "The answer says where the note is.")
+    [view] = task_views(task, task.rubric, FINAL, NOTES, REPORTS, isolate=False)
+    assert [c.id for c in view.criteria] == ["c1", "c2"]
+    assert view.outputs == render_task_outputs(None, FINAL, NOTES, [])
+    # a criterion of the task names neither, even one decided by rule: the reports too
+    task = agent_task("`notes.md` names UV_CACHE_DIR.", "Says why the cache matters.")
+    [view] = task_views(task, task.rubric[:1], FINAL, NOTES, REPORTS, isolate=False)
+    assert view.outputs == EVERYTHING
 
 
 def test_the_suite_is_judged_on_deliverables_and_the_smoke_tasks_on_any_output():

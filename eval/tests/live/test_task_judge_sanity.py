@@ -9,11 +9,11 @@ are those runs doctored to fail one criterion each: FERRY-429 given the wrong me
 and a memo that was promised but never saved. Two more use real task rubrics to check
 the rules those rubrics rely on: a criterion about a file is judged on the file, not on
 a summary of it (the subtask report that states the missing fact isn't shown, as the
-harness renders it); an alternative the criterion accepts passes; and "no value, not
-even as general knowledge" fails an answer that adds one, without failing the other
-criteria. Every verdict must be the expected one. The criteria come verbatim from the
-task files, and verdicts are cached like any other judge call, so re-running unchanged
-prompts is free.
+harness renders it, one call per subject); an alternative the criterion accepts
+passes; and "no value, not even as general knowledge" fails an answer that adds one,
+without failing the other criteria. Every verdict must be the expected one. The
+criteria come verbatim from the task files, and verdicts are cached like any other
+judge call, so re-running unchanged prompts is free.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 from budget import Budget
-from judge import DEFAULT_PROVIDER, Judge, SubtaskOutput, render_task_outputs
+from judge import DEFAULT_PROVIDER, Judge, SubtaskOutput, task_views
 from llm import KEY_ENV, load_env
 from schemas import AgentTask
 
@@ -201,9 +201,12 @@ def test_the_task_judge_gives_the_expected_verdicts():
     lines, right, total = [], 0, 0
     for case in TRANSCRIPTS:
         task = tasks[case.task_id]
-        outputs = render_task_outputs(task, case.files, case.subtasks)
-        verdict = judge.task(task.request, case.final_output, outputs, task.rubric)
-        got = {c.id: c for c in verdict.criteria}
+        views = task_views(task, task.rubric, case.final_output, case.files, case.subtasks)
+        got = {}
+        for view in views:  # one call per subject, as the harness makes them
+            asked = {c.id for c in view.criteria}
+            verdict = judge.task(task.request, view.outputs, view.criteria)
+            got |= {c.id: c for c in verdict.criteria if c.id in asked}
         lines.append(f"{case.name}:")
         for cid, expected in case.expected.items():
             total += 1

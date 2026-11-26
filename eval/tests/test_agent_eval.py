@@ -11,14 +11,18 @@ import json
 from dataclasses import dataclass, field
 from pathlib import Path
 
+import anthropic
 import httpx
+import httpx2  # the Anthropic SDK's fork of httpx
 import pytest
 
 import agent_eval
 import report
+from budget import Budget, BudgetExceeded
+from judge import Judge
 from judge_fake import FakeJudge
 from llm import LLMError
-from schemas import CriterionVerdict, TaskVerdict
+from schemas import AgentTask, CriterionVerdict, TaskVerdict
 
 CONFIG = {
     "models": {
@@ -285,7 +289,7 @@ class Clock:
         self.now += seconds
 
 
-def failing_t02(request, final_output, subtask_outputs, criteria) -> TaskVerdict:
+def failing_t02(request, outputs, criteria) -> TaskVerdict:
     passed = "rank" not in request  # t02's request asks to rank: its criterion fails
     return TaskVerdict(
         criteria=[CriterionVerdict(id=c.id, reasoning="scripted", passed=passed) for c in criteria]
@@ -376,12 +380,11 @@ def test_approvals_stop_at_the_limit(tmp_path, tasks_file):
 def test_the_judge_sees_the_last_version_of_each_file_and_no_subtask_reports(tmp_path, tasks_file):
     judge = FakeJudge(task=failing_t02)
     run(tmp_path, tasks_file, FakeAgent(scripts()), judge=judge)
-    request, final_output, shown, criteria = judge.requests[0][1]
-    assert final_output == "Saved notes.md."
-    # t01's criteria all name notes.md, so the subtasks' reports stay out
+    # t01's criteria all name notes.md: that file alone, neither the answer nor a report
+    request, shown, criteria = judge.requests[0][1]
     assert shown == '<file path="notes.md">\nUV_CACHE_DIR moves it.\n</file>'
-    # t02's criterion names the answer: no files, no reports
-    assert judge.requests[1][1][2] == "(none)"
+    # t02's criterion names the answer: the final output alone
+    assert judge.requests[1][1][1] == "<final_output>\nqdrant > chroma > weaviate\n</final_output>"
 
 
 def test_cost_is_the_llm_total_plus_every_rag_ask(tmp_path, tasks_file):
@@ -591,7 +594,7 @@ def test_scores_per_task_and_label(tmp_path, tasks_file):
 def test_cross_vs_same_pairs_the_tasks(tmp_path, tasks_file):
     run(tmp_path, tasks_file, FakeAgent(scripts()))
 
-    def all_pass(request, final_output, subtask_outputs, criteria) -> TaskVerdict:
+    def all_pass(request, outputs, criteria) -> TaskVerdict:
         return TaskVerdict(
             criteria=[CriterionVerdict(id=c.id, reasoning="", passed=True) for c in criteria]
         )
@@ -959,8 +962,8 @@ def test_a_misnamed_file_fails_its_criteria_and_the_judge_sees_only_the_rest(tmp
     judge = FakeJudge(task=failing_t02)
     run(tmp_path, tasks, FakeAgent(misnamed()), judge=judge)
     t01 = raw(tmp_path)["t01"]
-    assert t01["scoring"] == agent_eval.SCORING_VERSION == 2
-    asked = [args[3] for kind, args in judge.requests if args[0] == TASKS[0]["request"]]
+    assert t01["scoring"] == agent_eval.SCORING_VERSION == 3
+    asked = [args[2] for kind, args in judge.requests if args[0] == TASKS[0]["request"]]
     assert [[c.id for c in criteria] for criteria in asked] == [["c3"]]
     verdicts = {c["id"]: (c["passed"], c["reasoning"]) for c in t01["verdict"]["criteria"]}
     assert verdicts["c1"] == verdicts["c2"] == (False, "the file was not written")
@@ -984,7 +987,7 @@ def test_a_missing_file_with_only_file_criteria_needs_no_judge_call(tmp_path, ta
 def test_a_written_file_leaves_its_criteria_to_the_judge(tmp_path, tasks_file):
     judge = FakeJudge(task=failing_t02)
     run(tmp_path, tasks_file, FakeAgent(scripts()), judge=judge)
-    asked = [args[3] for _, args in judge.requests if args[0] == TASKS[0]["request"]]
+    asked = [args[2] for _, args in judge.requests if args[0] == TASKS[0]["request"]]
     assert [[c.id for c in criteria] for criteria in asked] == [["c1", "c2"]]
 
 
@@ -1011,7 +1014,7 @@ def as_version_1(records: list[dict]) -> list[dict]:
 def test_version_1_records_score_by_the_rules_they_were_published_with(tmp_path, tasks_file):
     # Collected under version 1, t01's misnamed file was judged like any output and its
     # criteria passed; t02's failed code run counted as a success.
-    def everything_passes(request, final_output, subtask_outputs, criteria):
+    def everything_passes(request, outputs, criteria):
         return TaskVerdict(
             criteria=[CriterionVerdict(id=c.id, reasoning="", passed=True) for c in criteria]
         )
@@ -1042,3 +1045,217 @@ def test_version_1_records_score_by_the_rules_they_were_published_with(tmp_path,
     assert t01["non_critical"] == [False]  # c2 is about notes.md too
     assert v2["scoring"] == [2]
     assert "Scoring rules version 2" in (out / "agent.md").read_text()
+
+
+# --- version 3: each criterion judged on its own subject -----------------------------
+
+# Every kind of subject: the answer, two files the task requires, and the work as a
+# whole. Each output is a marker, so what a call was shown can be read off its input.
+SUBJECTS_TASK = {
+    "id": "t30",
+    "request": "Read the build log, write summary.md and errors.txt, and name the slowest step",
+    "category": "combined",
+    "must_call": [
+        {"tool": "file_write", "args": {"path": "summary.md"}},
+        {"tool": "file_write", "args": {"path": "errors.txt"}},
+    ],
+    "may_call": ["file_read"],
+    "forbidden": ["api_call"],
+    "rubric": [
+        {"id": "c1", "description": "The answer names the link step as the slowest."},
+        {"id": "c2", "description": "`summary.md` gives the build's total time."},
+        {"id": "c3", "description": "`errors.txt` lists both compiler errors."},
+        {"id": "c4", "description": "Says which step failed first.", "critical": False},
+        {"id": "c5", "description": "`summary.md` names the target.", "critical": False},
+    ],
+}
+MARKERS = ("FINAL-OUTPUT", "SUMMARY-FILE", "ERRORS-FILE", "EXTRA-FILE", "REPORT-S1")
+
+
+def subjects_script() -> dict[str, Script]:
+    return {
+        SUBJECTS_TASK["request"]: Script(
+            ["executing", "completed"],
+            final_output="FINAL-OUTPUT",
+            calls=[
+                call("file_write", "writing", path="summary.md", content="SUMMARY-FILE"),
+                call("file_write", "writing", path="errors.txt", content="ERRORS-FILE"),
+                call("file_write", "writing", path="extra.txt", content="EXTRA-FILE"),
+            ],
+            subtasks=[subtask("s1", "writing", output="REPORT-S1")],
+        )
+    }
+
+
+def test_each_subject_is_judged_in_its_own_call_shown_only_that_subject(tmp_path):
+    judge = FakeJudge()
+    run(tmp_path, tasks_with(tmp_path, SUBJECTS_TASK), FakeAgent(subjects_script()), judge=judge)
+    shown = {tuple(c.id for c in criteria): out for _, (_, out, criteria) in judge.requests}
+    assert {ids: [m for m in MARKERS if m in out] for ids, out in shown.items()} == {
+        ("c1",): ["FINAL-OUTPUT"],  # the answer: no file content
+        ("c2", "c5"): ["SUMMARY-FILE"],  # its file and nothing else
+        ("c3",): ["ERRORS-FILE"],
+        ("c4",): list(MARKERS),  # the work as a whole: everything, as under version 2
+    }
+    verdict = raw(tmp_path)["t30"]["verdict"]
+    assert [c["id"] for c in verdict["criteria"]] == ["c1", "c2", "c5", "c3", "c4"]
+
+
+def test_a_call_decides_only_the_criteria_it_was_asked_about(tmp_path):
+    rubric = AgentTask.model_validate(SUBJECTS_TASK).rubric
+
+    def answers_for_all(request, outputs, criteria) -> TaskVerdict:
+        # fails every criterion it wasn't shown the subject of
+        return TaskVerdict(
+            criteria=[CriterionVerdict(id=c.id, reasoning="", passed=c in criteria) for c in rubric]
+        )
+
+    run(
+        tmp_path,
+        tasks_with(tmp_path, SUBJECTS_TASK),
+        FakeAgent(subjects_script()),
+        judge=FakeJudge(task=answers_for_all),
+    )
+    verdict = raw(tmp_path)["t30"]["verdict"]
+    assert len(verdict["criteria"]) == 5
+    assert all(c["passed"] for c in verdict["criteria"])
+
+
+# The shape version 3 exists for: the request asks for no file, the run wrote one anyway,
+# and the final output points at it instead of stating the result.
+POINTER_TASK = {
+    "id": "t31",
+    "request": "From the demo database, find the team with the most open tickets",
+    "category": "data",
+    "must_call": [{"tool": "db_query"}],
+    "may_call": ["file_write"],
+    "forbidden": ["api_call"],
+    "rubric": [
+        {"id": "c1", "description": "The answer names platform as the team with the most."},
+    ],
+}
+
+
+def pointer_script() -> dict[str, Script]:
+    return {
+        POINTER_TASK["request"]: Script(
+            ["executing", "completed"],
+            final_output="The open tickets per team are saved in ticket_counts.txt.",
+            calls=[
+                call("db_query", "analysis", sql="SELECT team, count(*) FROM tickets GROUP BY 1"),
+                call("file_write", "analysis", path="ticket_counts.txt", content="platform 12"),
+            ],
+            subtasks=[subtask("s1", "analysis", output="platform has 12 open tickets")],
+        )
+    }
+
+
+def credits_what_it_sees(request, outputs, criteria) -> TaskVerdict:
+    """Passes a criterion when its fact is anywhere in what the call shows, whatever the
+    criterion is about: a judge that doesn't keep its own rule."""
+    passed = "platform" in outputs
+    return TaskVerdict(
+        criteria=[CriterionVerdict(id=c.id, reasoning="", passed=passed) for c in criteria]
+    )
+
+
+def test_an_answer_that_points_at_a_file_fails_a_criterion_about_the_answer(tmp_path):
+    judge = FakeJudge(task=credits_what_it_sees)
+    run(tmp_path, tasks_with(tmp_path, POINTER_TASK), FakeAgent(pointer_script()), judge=judge)
+    record = raw(tmp_path)["t31"]
+    assert record["verdict"]["criteria"][0]["passed"] is False
+    assert score(tmp_path)["scores"]["tasks"]["cross"][0]["success"] is False
+    # A record collected under version 2 is judged in one call, as version 2 did: shown
+    # the file as well, the same judge passes the criterion.
+    task = AgentTask.model_validate(POINTER_TASK)
+    older, stop = agent_eval._judge(judge, task, record | {"scoring": 2, "verdict": None})
+    assert stop is None and len(judge.requests) == 2
+    assert older["verdict"]["criteria"][0]["passed"] is True
+
+
+def anthropic_judge(tmp_path, budget: Budget, reply: dict) -> tuple[Judge, list[dict]]:
+    """The real judge and prompts, over a mocked Anthropic transport that sends ``reply``."""
+    sent: list[dict] = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return httpx2.Response(200, json=reply)
+
+    client = anthropic.Anthropic(
+        api_key="test",
+        max_retries=0,
+        http_client=httpx2.Client(transport=httpx2.MockTransport(handler)),
+    )
+    judge = Judge(
+        "anthropic", "claude-haiku-4-5", cache_dir=tmp_path / "judge", budget=budget, client=client
+    )
+    return judge, sent
+
+
+def verdict_reply(*ids: str, output_tokens: int = 60) -> dict:
+    criteria = [{"id": i, "reasoning": "It does.", "passed": True} for i in ids]
+    return {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-4-5",
+        "content": [
+            {"type": "tool_use", "id": "t1", "name": "verdict", "input": {"criteria": criteria}}
+        ],
+        "stop_reason": "tool_use",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 400, "output_tokens": output_tokens},
+    }
+
+
+def test_every_judge_call_is_checked_against_the_budget_and_a_resume_repeats_none(tmp_path):
+    task = AgentTask.model_validate(MIXED_T01)  # notes.md (c1, c2), then the answer (c3)
+    record = {
+        "outcome": "completed",
+        "scoring": agent_eval.SCORING_VERSION,
+        "calls": [call("file_write", "writing", path="notes.md", content="UV_CACHE_DIR moves it.")],
+        "bundle": {"final_output": "Saved notes.md.", "subtasks": []},
+        "verdict": None,
+    }
+    # Each call is checked at its worst case, about $0.011 (the prompt plus 2,048 output
+    # tokens at $5 per million). The first costs $0.0106 (400 in, 2,048 out), so a $0.02
+    # cap admits it and refuses the second before it is sent.
+    first = verdict_reply("c1", "c2", output_tokens=2048)
+    judge, sent = anthropic_judge(tmp_path, Budget(0.02), first)
+    stopped, stop = agent_eval._judge(judge, task, record)
+    assert isinstance(stop, BudgetExceeded)
+    assert len(sent) == 1 and stopped["verdict"] is None
+    # The resume sends the second call only, the first being cached: the answer's call,
+    # shown the final output and none of the file.
+    judge, sent = anthropic_judge(tmp_path, Budget(1.0), verdict_reply("c3"))
+    judged, stop = agent_eval._judge(judge, task, stopped)
+    assert stop is None and len(sent) == 1 and judge.cache_hits == 1
+    user = sent[0]["messages"][0]["content"]
+    assert "Saved notes.md." in user and "UV_CACHE_DIR moves it." not in user
+    verdict = judged["verdict"]
+    assert [c["id"] for c in verdict["criteria"]] == ["c1", "c2", "c3"]
+    assert verdict["cost_usd"] == pytest.approx(0.0007)  # the second call: 400 in, 60 out
+    assert verdict["prompt_version"] == "v3"
+
+
+def test_scoring_3_refuses_records_collected_under_an_earlier_version(
+    tmp_path, tasks_file, capsys
+):
+    run(tmp_path, tasks_file, FakeAgent(scripts()))
+    records = agent_eval.build_records(tmp_path / "runs" / "run1")
+    as_version_2 = [records[0], *({**r, "scoring": 2} for r in records[1:])]
+    for version, older in (("1", as_version_1(records)), ("2", as_version_2)):
+        path = tmp_path / f"v{version}" / "agent-records.jsonl"
+        path.parent.mkdir()
+        path.write_text("".join(json.dumps(r) + "\n" for r in older), "utf-8")
+        with pytest.raises(SystemExit) as exc:
+            agent_eval.main(["score", "--records", str(path), "--scoring", "3"])
+        assert exc.value.code == 2
+        assert f"collected under version {version}:" in capsys.readouterr().err
+        assert not (path.parent / "agent.json").exists()
+    # records collected under version 3 score under it, and the report says what it means
+    out = tmp_path / "v3"
+    runs = ["--runs", str(tmp_path / "runs")]
+    agent_eval.main(["score", "--run-id", "run1", *runs, "--scoring", "3", "--out", str(out)])
+    assert json.loads((out / "agent.json").read_text())["scores"]["scoring"] == [3]
+    assert "Scoring rules version 3" in (out / "agent.md").read_text()

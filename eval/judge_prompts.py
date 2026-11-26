@@ -10,7 +10,7 @@ Bump ``PROMPT_VERSION`` on any edit once a run has been scored with it: every ca
 entry and every report records it, so verdicts from two wordings are never mixed up.
 """
 
-PROMPT_VERSION = "v2"
+PROMPT_VERSION = "v3"
 
 # --- correctness: the answer against the reference answer ---------------------------
 
@@ -110,16 +110,16 @@ answer's claims and whether the passages support each."""
 
 TASK_SYSTEM = """\
 You check the work of a team of AI agents against a list of criteria. You see the \
-user's request, the final output the team delivered, and the outputs of the subtasks \
-the work was split into: the content of every file the team wrote, labelled with its \
-path, and, when a criterion needs them, what each subtask reported. Subtask outputs \
-may be shortened; judge only what is shown.
+user's request and the outputs the criteria are about: the final output the team \
+delivered, a file the team wrote, labelled with its path, or, for criteria about the \
+work as a whole, the final output, every file the team wrote and the report of each \
+subtask the work was split into. Outputs may be shortened; judge only what is shown.
 
 Decide each criterion on its own, from what the outputs actually say:
 - A criterion that starts with a file name is judged on that file's content alone, \
 and one that starts with "The answer" on the final output alone. A criterion that \
-starts with neither is about the work as a whole: it passes if the final output or \
-any subtask output states what it asks for.
+starts with neither is about the work as a whole: it passes if any output shown \
+states what it asks for.
 - Credit only what an output states. A summary of a deliverable ("the guide covers \
 the flags") doesn't show what the deliverable says, a promise doesn't show the work \
 was done, and a fact the text only hints at isn't stated. Fail a criterion whose \
@@ -139,20 +139,18 @@ contradicting it, whatever that output gets wrong elsewhere.
 Give a verdict for every criterion, with its id, in the order listed: first explain \
 briefly what the output it is about says, then decide whether it passed."""
 
-# {subtask_outputs} holds judge.render_task_outputs(): the files the run wrote and, only
-# when a criterion names neither a file nor the answer, what each subtask reported.
+# {outputs} holds judge.render_task_outputs() for the criteria of one call: the final
+# output for criteria about the answer, the one file for criteria about a file, and for
+# criteria about the work as a whole the final output, every file and each subtask's
+# report. Every block carries its own tag, so nothing that isn't shown leaves an empty one.
 TASK_USER = """\
 <request>
 {request}
 </request>
 
-<final_output>
-{final_output}
-</final_output>
-
-<subtask_outputs>
-{subtask_outputs}
-</subtask_outputs>
+<outputs>
+{outputs}
+</outputs>
 
 <criteria>
 {criteria}

@@ -88,10 +88,13 @@ counts the demo database doesn't hold; under `cross`, the same failure was rejec
   the deliverables, tool-call recall, precision and error rate from the agent's
   invocation log, cost (LLM plus `rag_ask`) and wall-clock, escalations, the
   reviewer's scores and the rework rate ([ADR 0008](../docs/decisions/0008-agent-evaluation.md)).
-  The scoring rules are versioned: records collected from now on carry `scoring: 2`
+  The scoring rules are versioned: records collected from now on carry `scoring: 3`
   (a criterion about a file the run never wrote fails without a judge call, a code
-  run that exits non-zero is a tool error, and cost includes the memory step), and
-  records without the field score under the rules they were published with.
+  run that exits non-zero is a tool error, and cost includes the memory step, as in
+  version 2; and the judge makes one call per subject, so a criterion about the answer
+  sees only the final output, one about a file only that file, and one about the work
+  as a whole every output), and records without the field score under the rules they
+  were published with.
 - **Agent diagnostics**, read from the same records with no model call and kept beside
   the run, not in the report: plan size and specialist order, whether the plan starts
   with research, completed subtasks with no tool call, calls that repeat an earlier
@@ -221,8 +224,10 @@ embeds the query (`text-embedding-3-small`: under $0.0001 per arm and split).
 .venv/bin/python -m rag_eval ablate --records runs/my-ablation/ablation-records.jsonl --out /tmp/t
 ```
 
-`agent_eval score --scoring 2` scores a run collected under the first rules by the
-current ones, for $0; give it its own `--out` so the published report stays as it was.
+`agent_eval score --scoring 2` scores a run collected under the first rules by
+version 2's, for $0; give it its own `--out` so the published report stays as it was.
+`--scoring 3` refuses records collected under 1 or 2: what the judge is shown is
+decided when the run is judged, so only a new run can be judged that way.
 `rag_eval stats --records reports/rag-records.jsonl` prints the RAG statistics as
 markdown and writes nothing ($0, no services). `agent_eval diagnose --run-id my-run` writes `diagnostics.md` and `diagnostics.json`
 into `runs/my-run/`, from the run's records alone ($0, no services).

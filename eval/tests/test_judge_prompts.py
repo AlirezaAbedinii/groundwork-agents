@@ -18,7 +18,7 @@ PLACEHOLDERS = {
     "FAITHFULNESS_SYSTEM": set(),
     "FAITHFULNESS_USER": {"contexts", "answer"},
     "TASK_SYSTEM": set(),
-    "TASK_USER": {"request", "final_output", "subtask_outputs", "criteria"},
+    "TASK_USER": {"request", "outputs", "criteria"},
 }
 MAX_CHARS = 2500
 
@@ -75,6 +75,14 @@ def test_the_task_judge_is_not_told_which_criteria_are_critical():
     # the same way; the criteria reach the judge without it.
     text = judge_prompts.TASK_SYSTEM + judge_prompts.TASK_USER
     assert "critical" not in text.lower()
+
+
+@_no_task_templates
+def test_the_task_template_holds_no_tag_for_an_output_a_call_isnt_shown():
+    # judge.render_task_outputs tags each output it shows; a fixed block in the template
+    # would sit empty in a call about one file and tell the judge what it can't see.
+    for tag in ("<final_output>", "<file", "<subtask"):
+        assert tag not in judge_prompts.TASK_USER
 
 
 @pytest.mark.parametrize("rating", range(1, 6))

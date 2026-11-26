@@ -34,9 +34,7 @@ def _faithful(contexts: Sequence[Context], answer: str) -> FaithfulnessVerdict:
     )
 
 
-def _all_passed(
-    request: str, final_output: str, subtask_outputs: str, criteria: Sequence[RubricCriterion]
-) -> TaskVerdict:
+def _all_passed(request: str, outputs: str, criteria: Sequence[RubricCriterion]) -> TaskVerdict:
     return TaskVerdict(
         criteria=[CriterionVerdict(id=c.id, reasoning=SCRIPTED, passed=True) for c in criteria]
     )
@@ -50,7 +48,7 @@ class FakeJudge:
         *,
         correctness: Callable[[str, str, str], CorrectnessVerdict] = _correct,
         faithfulness: Callable[[Sequence[Context], str], FaithfulnessVerdict] = _faithful,
-        task: Callable[[str, str, str, Sequence[RubricCriterion]], TaskVerdict] = _all_passed,
+        task: Callable[[str, str, Sequence[RubricCriterion]], TaskVerdict] = _all_passed,
         model: str = SCRIPTED,
         prompt_version: str = "fake",
     ) -> None:
@@ -74,13 +72,9 @@ class FakeJudge:
         return self._faithfulness(contexts, answer)
 
     def task(
-        self,
-        request: str,
-        final_output: str,
-        subtask_outputs: str,
-        criteria: Sequence[RubricCriterion],
+        self, request: str, outputs: str, criteria: Sequence[RubricCriterion]
     ) -> TaskVerdict:
         if not criteria:
             raise ValueError("a task verdict needs at least one rubric criterion")
-        self.requests.append(("task", (request, final_output, subtask_outputs, criteria)))
-        return self._task(request, final_output, subtask_outputs, criteria)
+        self.requests.append(("task", (request, outputs, criteria)))
+        return self._task(request, outputs, criteria)
