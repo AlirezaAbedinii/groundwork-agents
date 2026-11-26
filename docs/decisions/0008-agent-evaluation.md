@@ -182,3 +182,42 @@ once. A failed span export is only logged, so the span may never appear: after 6
 the count rule decides, as it does for every other outcome. Only a completed task has
 run the memory step, so for the others the count rule has no late call to wait for; a
 task that timed out is still running, and the reserve stands in for what it spends next.
+
+## Addendum, 2026-11-26: scoring rules version 3, each criterion judged on its own subject
+
+The judge prompt says a criterion that starts with a file's name is judged on that file
+alone and one that starts with "The answer" on the final output alone, but version 2
+showed every file to every criterion. A judge credits what it can see, whatever its
+prompt says: the reason the subtasks' reports were already hidden. Shown a file, it
+passed a criterion about the answer on the file's content, although the final output
+only named the file. So the rule is now kept by what each call is shown, not only by
+what the prompt says.
+
+- **One call per subject.** A task's open criteria are grouped by what they are about.
+  Criteria about the answer see the request and the final output. Criteria about a
+  file see the request and that file. A file the run never wrote still fails its
+  criteria without a call, as under version 2. Criteria about the work as a whole see
+  what version 2 showed: the final output, every file and the subtasks' reports. Each
+  call decides only the criteria it was asked about, so a verdict a call gives on a
+  criterion it wasn't shown the subject of is dropped.
+- **Cost.** Up to one call per subject instead of one per task, about $0.003 each with
+  claude-haiku-4-5; a task whose criteria all name one subject still costs one call.
+  Every call is checked against the budget before it is sent. A stop between calls
+  leaves the task unjudged, and the calls already made are cached, so a resume pays
+  only for the rest; the record's judge cost then leaves out the cached calls, which
+  the run's cap has already counted.
+- **Prompt version v3.** The user template has one slot for what the call is shown,
+  each output in its own tag, so a call about one file has no empty block for the
+  answer or the reports. The system prompt now says what is shown, and its rules are
+  unchanged, so v3 differs from v2 only in what each call sees.
+- **Versions.** `run` stamps new records `scoring: 3`. Records stamped 1 or 2 score
+  exactly as before, and a resumed run judges such a record in one call, as its
+  version did. `agent_eval score --scoring 3` refuses records collected under 1 or 2:
+  isolation happens when the judge is called, so it can't be applied for $0. The
+  scoring rules are otherwise version 2's.
+
+The pilot of 2026-11-26 was judged under version 2, and two of its verdicts, t07 c1 and
+t11 c5, passed criteria about the answer on files the final output only named. They are
+recorded as judge errors and left as collected, not edited. Under version 3 the pilot's
+t01 and t16 would be judged on the same inputs as before: t01's criteria all name its
+one file, and t16 wrote no file.
