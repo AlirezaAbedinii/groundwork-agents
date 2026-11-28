@@ -5,7 +5,7 @@ import pytest
 
 from rag.config import Settings
 from rag.generation.llm_client import ChatResult
-from rag.generation.prompts import REFUSAL_MESSAGE, is_model_refusal
+from rag.generation.prompts import REFUSAL_MESSAGE, build_grounded_prompt, is_model_refusal
 from rag.indexing.vector_store import ScoredChunk
 from rag.observability.metrics import Stopwatch, TokenUsage
 from rag.pipeline import RAGPipeline
@@ -258,3 +258,13 @@ def test_the_refusal_sentence_is_recognized(reply: str) -> None:
 )
 def test_an_answer_is_not_mistaken_for_a_refusal(reply: str) -> None:
     assert not is_model_refusal(reply)
+
+
+def test_the_prompt_asks_for_each_supported_reading_by_name() -> None:
+    """Rule 5: an ambiguous question gets each reading the context supports, named."""
+    system, _ = build_grounded_prompt("q", [ScoredChunk("c", "text", 0.9, {})])
+    rules = [line for line in system.splitlines() if line[:1].isdigit()]
+
+    assert [rule.split(".")[0] for rule in rules] == ["1", "2", "3", "4", "5"]
+    assert "more than one reading supported by the context" in rules[4]
+    assert "answer each reading separately and name it" in rules[4]

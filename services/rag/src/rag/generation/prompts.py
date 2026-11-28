@@ -51,7 +51,9 @@ GROUNDED_SYSTEM_PROMPT = (
     "to the context passage the claim comes from. Cite multiple as [1][3].\n"
     "3. If the context does not contain enough information to answer, reply "
     'exactly: "' + REFUSAL_MESSAGE + '" and nothing else.\n'
-    "4. Be concise and do not repeat the context verbatim."
+    "4. Be concise and do not repeat the context verbatim.\n"
+    "5. If the question has more than one reading supported by the context, answer "
+    "each reading separately and name it."
 )
 
 
