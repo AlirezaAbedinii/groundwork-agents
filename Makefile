@@ -64,6 +64,10 @@ eval-score: ## Re-score the published evaluation from its committed records ($0,
 	@cd eval && if [ -f reports/rag-records.jsonl ]; then \
 		$(EVAL_PYTHON) -m rag_eval score --records reports/rag-records.jsonl; \
 	else echo "no published RAG records yet (eval/reports/rag-records.jsonl)"; fi
+	@cd eval && for run in reports/rag-ablation reports/rag-ablation-cores; do \
+		if [ -f $$run/ablation-records.jsonl ]; then \
+			$(EVAL_PYTHON) -m rag_eval ablate --records $$run/ablation-records.jsonl; fi; \
+	done
 	@cd eval && if [ -f reports/agent-records.jsonl ]; then \
 		$(EVAL_PYTHON) -m agent_eval score --records reports/agent-records.jsonl; \
 	else echo "no published agent records yet (eval/reports/agent-records.jsonl)"; fi

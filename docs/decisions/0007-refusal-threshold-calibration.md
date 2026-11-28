@@ -121,3 +121,53 @@ report when it is next republished:
 Each statistic is also given per category, split and origin. These statistics change
 no existing number and no threshold. They provide the measurements for choosing a
 refusal objective that counts false refusals directly.
+
+## Addendum, 2026-11-28: thresholds chosen by false refusals, for the gte re-ranker
+
+Hybrid mode now re-ranks with `Alibaba-NLP/gte-reranker-modernbert-base`
+([ADR 0021](0021-hybrid-reranks-with-gte.md)), whose scores the old hybrid threshold
+was not chosen for, and the golden set has grown to 197 questions (79 dev, 118 test).
+Both thresholds were chosen again, by a different rule.
+
+The rule above maximised refusal F1, which weighs a false refusal and a missed refusal
+equally and counts only the gate. On the published run that left 14 of 57 answerable
+questions refused in each mode, a quarter of what the documents can answer. The rule is
+now: **the highest threshold at which at most 10 % of dev's answerable questions are
+refused, by the gate or by the model.** A user loses the answer either way, so the
+model's refusals count against the bound; a question the model refuses costs the gate
+nothing more. Within the bound, a higher threshold refuses more no_answer questions, so
+the rule takes the strictest gate the bound allows. It is `metrics.false_refusal_threshold`.
+
+The model's refusals are only known for questions the gate let through, so they come
+from an answer run with the gate off: every dev question in both modes, with both
+thresholds at 0, on the same image, settings and prompt as the published run. That run's
+compact rows (top score, and whether the model refused) are part of the published
+records, and the report recomputes the choice from them; no test question is used.
+
+With the gate off, the model alone refused 5 of dev's 63 answerable questions in dense
+mode and 4 in hybrid. The rule chose these thresholds, now the service's defaults
+(truncated to six decimals as before), measured on test in the published run:
+
+| mode | threshold | dev answerable refused at it, gate-off run | test answerable refused, end to end | test no_answer refused by the gate | test no_answer refused, end to end |
+|---|---|---|---|---|---|
+| dense | 0.499202 | 6/63 (gate 2, model 4) | 20/93 | 5/25 | 25/25 |
+| hybrid | 0.895311 | 6/63 (gate 4, model 2) | 13/93 | 7/25 | 25/25 |
+
+In the published run itself dev came out at 6/63 in hybrid mode and at 7/63 in dense
+mode, one over the bound. q047's dense top score was 0.500183 in the gate-off run and
+0.491032 in the published one, under the threshold: query embeddings from the API vary
+between calls, and 21 of the 79 dev questions' dense top scores differed between the two
+runs, by up to 0.0092, while the re-ranker's did not move. A threshold that sits on a dev
+question's score has no margin for that, so the question at it can fall on either side
+in another run. The rule was applied as fixed, and the miss is reported rather than
+corrected after seeing it; a margin for the variation would be a change to the rule.
+
+On dev the model declined all 16 no_answer questions in each mode with the gate off, so
+there the gate refused none the model would have answered; on test it refuses 5 and 7 of
+25 before any generation. At the F1 rule's thresholds, 0.617442 in dense mode and
+0.934309 in hybrid, the gate alone would refuse 38 and 16 of test's 93 answerable
+questions, against 7 and 9 at the configured ones.
+
+The F1 choice is still shown in the report beside the configured threshold, for
+comparison. Each threshold still equals the score of the lowest-scoring dev question it
+keeps, so that question passes with no margin.

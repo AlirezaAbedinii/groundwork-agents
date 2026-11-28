@@ -27,11 +27,12 @@ measures both services over their APIs, with every published number recomputable
 for free from committed records. Terraform deploys the whole system to Azure on
 demand, and a scheduled guard deletes it if it's left running.
 
-**Results** ([details](eval/README.md)): on a 75-question golden set over the uv,
-Pydantic and FastAPI docs, retrieval finds 76 % of the needed facts in the top 10
-and 67–69 % of answers are correct, with every unanswerable question refused. An LLM
-judge from another provider scores the answers; I graded 30 of them by hand without
-seeing its verdicts, and we agreed on 28 (Cohen's κ 0.83).
+**Results** ([details](eval/README.md)): on a 197-question golden set over the uv,
+Pydantic and FastAPI docs, hybrid retrieval finds 79 % of the needed facts in the top
+10 (dense 74 %) and 69–70 % of answers are correct, with every unanswerable question
+refused. An LLM judge from another provider scores the answers; I graded 30 answers
+of an earlier run by hand without seeing its verdicts, and we agreed on 28 (Cohen's
+κ 0.83).
 
 ## Layout
 

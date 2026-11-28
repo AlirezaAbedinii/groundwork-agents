@@ -126,7 +126,8 @@ search, which loads the reranker and builds the BM25 index.
 
 Measured: `make up` 599 s from nothing, seed and warm-up included (Postgres takes 4
 minutes of it, the environment 2). A scaled-to-zero app answers its first request in about 35 s; the first hybrid
-search takes 11 s, later ones about 2 s. `make down` takes about 25 minutes, almost all
+search takes 11 s, later ones about 2 s, with the earlier MiniLM re-ranker (gte's
+search time in Azure is not measured yet). `make down` takes about 25 minutes, almost all
 of it the environment's deletion. The variables, with their defaults and validation,
 are in [`terraform/variables.tf`](terraform/variables.tf); `rag_min_replicas = 1` keeps
 the RAG warm for a live demo (it draws on the free grant while idle, so set it back).

@@ -1,0 +1,1794 @@
+{
+  "run": {
+    "arms": [
+      {
+        "change": "dense, as published",
+        "config": {
+          "citation_verification": false,
+          "collection": "toolchain_docs",
+          "default_mode": "hybrid",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "generation_model": "gpt-4o-mini",
+          "hybrid": {
+            "rerank_candidates": 20,
+            "rerank_enabled": true,
+            "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+            "rrf_dense_weight": 0.7,
+            "rrf_k": 60,
+            "rrf_sparse_weight": 0.3,
+            "sparse_enabled": true
+          },
+          "index": {
+            "chunk_overlap": 120,
+            "chunk_size": 800,
+            "chunk_strategy": "fixed",
+            "chunks": 3571,
+            "dim": 1536,
+            "embedding_model": "text-embedding-3-small"
+          },
+          "llm_provider": "openai",
+          "rerank_top_k": 5,
+          "thresholds": {
+            "dense": 0.617442,
+            "hybrid": 0.963599
+          },
+          "top_k": 10
+        },
+        "mode": "dense",
+        "name": "A0"
+      },
+      {
+        "change": "A4a on 2 pinned cores",
+        "config": {
+          "citation_verification": false,
+          "collection": "toolchain_docs",
+          "default_mode": "hybrid",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "generation_model": "gpt-4o-mini",
+          "hybrid": {
+            "rerank_candidates": 20,
+            "rerank_enabled": true,
+            "reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+            "rrf_dense_weight": 0.7,
+            "rrf_k": 60,
+            "rrf_sparse_weight": 0.3,
+            "sparse_enabled": true
+          },
+          "index": {
+            "chunk_overlap": 120,
+            "chunk_size": 800,
+            "chunk_strategy": "fixed",
+            "chunks": 3571,
+            "dim": 1536,
+            "embedding_model": "text-embedding-3-small"
+          },
+          "llm_provider": "openai",
+          "rerank_top_k": 5,
+          "thresholds": {
+            "dense": 0.617442,
+            "hybrid": 0.963599
+          },
+          "top_k": 10
+        },
+        "mode": "hybrid",
+        "name": "A4a-2c"
+      },
+      {
+        "change": "A4a on 4 pinned cores",
+        "config": {
+          "citation_verification": false,
+          "collection": "toolchain_docs",
+          "default_mode": "hybrid",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "generation_model": "gpt-4o-mini",
+          "hybrid": {
+            "rerank_candidates": 20,
+            "rerank_enabled": true,
+            "reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+            "rrf_dense_weight": 0.7,
+            "rrf_k": 60,
+            "rrf_sparse_weight": 0.3,
+            "sparse_enabled": true
+          },
+          "index": {
+            "chunk_overlap": 120,
+            "chunk_size": 800,
+            "chunk_strategy": "fixed",
+            "chunks": 3571,
+            "dim": 1536,
+            "embedding_model": "text-embedding-3-small"
+          },
+          "llm_provider": "openai",
+          "rerank_top_k": 5,
+          "thresholds": {
+            "dense": 0.617442,
+            "hybrid": 0.963599
+          },
+          "top_k": 10
+        },
+        "mode": "hybrid",
+        "name": "A4a-4c"
+      },
+      {
+        "change": "A6 on 2 pinned cores",
+        "config": {
+          "citation_verification": false,
+          "collection": "toolchain_docs_headings",
+          "default_mode": "hybrid",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "generation_model": "gpt-4o-mini",
+          "hybrid": {
+            "rerank_candidates": 50,
+            "rerank_enabled": true,
+            "reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+            "rrf_dense_weight": 0.7,
+            "rrf_k": 60,
+            "rrf_sparse_weight": 0.3,
+            "sparse_enabled": true
+          },
+          "index": {
+            "chunk_overlap": 0,
+            "chunk_size": 800,
+            "chunk_strategy": "recursive+heading_path",
+            "chunks": 3692,
+            "dim": 1536,
+            "embedding_model": "text-embedding-3-small"
+          },
+          "llm_provider": "openai",
+          "rerank_top_k": 5,
+          "thresholds": {
+            "dense": 0.617442,
+            "hybrid": 0.963599
+          },
+          "top_k": 10
+        },
+        "mode": "hybrid",
+        "name": "A6-2c"
+      },
+      {
+        "change": "A6 on 4 pinned cores",
+        "config": {
+          "citation_verification": false,
+          "collection": "toolchain_docs_headings",
+          "default_mode": "hybrid",
+          "embedding_model": "text-embedding-3-small",
+          "embedding_provider": "openai",
+          "generation_model": "gpt-4o-mini",
+          "hybrid": {
+            "rerank_candidates": 50,
+            "rerank_enabled": true,
+            "reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
+            "rrf_dense_weight": 0.7,
+            "rrf_k": 60,
+            "rrf_sparse_weight": 0.3,
+            "sparse_enabled": true
+          },
+          "index": {
+            "chunk_overlap": 0,
+            "chunk_size": 800,
+            "chunk_strategy": "recursive+heading_path",
+            "chunks": 3692,
+            "dim": 1536,
+            "embedding_model": "text-embedding-3-small"
+          },
+          "llm_provider": "openai",
+          "rerank_top_k": 5,
+          "thresholds": {
+            "dense": 0.617442,
+            "hybrid": 0.963599
+          },
+          "top_k": 10
+        },
+        "mode": "hybrid",
+        "name": "A6-4c"
+      }
+    ],
+    "golden": {
+      "rows": 197,
+      "sha256": "7be5db05284cc33eaa92349705e648edd5d1fc2dced2e2aed649c2f3ca1ce415"
+    },
+    "record": "ablation",
+    "reference": "A0",
+    "run_id": "2026-11-20-ablation-cores",
+    "top_k": 10
+  },
+  "scores": {
+    "reference": "A0",
+    "splits": {
+      "dev": {
+        "A0": {
+          "MRR@10": 0.641534,
+          "R@1": 0.433069,
+          "R@10": 0.742857,
+          "R@3": 0.617196,
+          "R@5": 0.683333,
+          "latency_ms": {
+            "n": 63,
+            "p50": 198.521,
+            "p95": 639.537
+          },
+          "n": 63,
+          "nDCG@10": 0.646982,
+          "rerank_ms": null,
+          "vs_reference": null
+        },
+        "A4a-2c": {
+          "MRR@10": 0.699647,
+          "R@1": 0.489418,
+          "R@10": 0.818254,
+          "R@3": 0.70291,
+          "R@5": 0.781217,
+          "latency_ms": {
+            "n": 63,
+            "p50": 8569.587,
+            "p95": 10360.258
+          },
+          "n": 63,
+          "nDCG@10": 0.714921,
+          "rerank_ms": {
+            "n": 63,
+            "p50": 8312.309,
+            "p95": 9851.451
+          },
+          "vs_reference": {
+            "MRR@10": {
+              "all": {
+                "difference": 0.058113,
+                "high": 0.15,
+                "low": -0.033951,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.060185,
+                  "high": 0.222222,
+                  "low": -0.351852,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.067664,
+                  "high": 0.184473,
+                  "low": -0.047721,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.076852,
+                  "high": 0.25463,
+                  "low": -0.087037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": -0.003704,
+                  "high": 0.109259,
+                  "low": -0.114815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.159259,
+                  "high": 0.369444,
+                  "low": -0.055556,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.031893,
+                  "high": 0.170782,
+                  "low": -0.097737,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@1": {
+              "all": {
+                "difference": 0.056349,
+                "high": 0.168254,
+                "low": -0.060053,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.0,
+                  "high": 0.25,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.059829,
+                  "high": 0.230769,
+                  "low": -0.119658,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.067593,
+                  "high": 0.166667,
+                  "low": -0.02037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.009259,
+                  "high": 0.203704,
+                  "low": -0.203704,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.143519,
+                  "high": 0.407407,
+                  "low": -0.125,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.02963,
+                  "high": 0.166667,
+                  "low": -0.107407,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@10": {
+              "all": {
+                "difference": 0.075397,
+                "high": 0.138889,
+                "low": 0.01455,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.027778,
+                  "high": 0.277778,
+                  "low": -0.333333,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.059829,
+                  "high": 0.136752,
+                  "low": 0.0,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.143519,
+                  "high": 0.25463,
+                  "low": 0.032407,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.078704,
+                  "high": 0.152778,
+                  "low": 0.018519,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.027778,
+                  "high": 0.111111,
+                  "low": -0.037037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.104938,
+                  "high": 0.240741,
+                  "low": -0.018519,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@3": {
+              "all": {
+                "difference": 0.085714,
+                "high": 0.173016,
+                "low": 0.003704,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.083333,
+                  "high": 0.0,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.111111,
+                  "high": 0.239316,
+                  "low": 0.0,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.087037,
+                  "high": 0.203704,
+                  "low": -0.035185,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.046296,
+                  "high": 0.12037,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.138889,
+                  "high": 0.305556,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.076543,
+                  "high": 0.239506,
+                  "low": -0.083951,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@5": {
+              "all": {
+                "difference": 0.097884,
+                "high": 0.164021,
+                "low": 0.037037,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.055556,
+                  "high": 0.305556,
+                  "low": -0.194444,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.08547,
+                  "high": 0.179487,
+                  "low": 0.008547,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.138889,
+                  "high": 0.240741,
+                  "low": 0.046296,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.064815,
+                  "high": 0.138889,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.046296,
+                  "high": 0.12037,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.154321,
+                  "high": 0.290123,
+                  "low": 0.030864,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "nDCG@10": {
+              "all": {
+                "difference": 0.067939,
+                "high": 0.13602,
+                "low": 0.000507,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.016203,
+                  "high": 0.248178,
+                  "low": -0.279187,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.065492,
+                  "high": 0.159287,
+                  "low": -0.022865,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.101288,
+                  "high": 0.198624,
+                  "low": 0.0133,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.020804,
+                  "high": 0.097197,
+                  "low": -0.061552,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.094898,
+                  "high": 0.223798,
+                  "low": -0.033899,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.08139,
+                  "high": 0.201696,
+                  "low": -0.02931,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            }
+          }
+        },
+        "A4a-4c": {
+          "MRR@10": 0.699647,
+          "R@1": 0.489418,
+          "R@10": 0.818254,
+          "R@3": 0.70291,
+          "R@5": 0.781217,
+          "latency_ms": {
+            "n": 63,
+            "p50": 4659.951,
+            "p95": 5550.004
+          },
+          "n": 63,
+          "nDCG@10": 0.714921,
+          "rerank_ms": {
+            "n": 63,
+            "p50": 4391.362,
+            "p95": 5203.865
+          },
+          "vs_reference": {
+            "MRR@10": {
+              "all": {
+                "difference": 0.058113,
+                "high": 0.15,
+                "low": -0.033951,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.060185,
+                  "high": 0.222222,
+                  "low": -0.351852,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.067664,
+                  "high": 0.184473,
+                  "low": -0.047721,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.076852,
+                  "high": 0.25463,
+                  "low": -0.087037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": -0.003704,
+                  "high": 0.109259,
+                  "low": -0.114815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.159259,
+                  "high": 0.369444,
+                  "low": -0.055556,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.031893,
+                  "high": 0.170782,
+                  "low": -0.097737,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@1": {
+              "all": {
+                "difference": 0.056349,
+                "high": 0.168254,
+                "low": -0.060053,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.0,
+                  "high": 0.25,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.059829,
+                  "high": 0.230769,
+                  "low": -0.119658,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.067593,
+                  "high": 0.166667,
+                  "low": -0.02037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.009259,
+                  "high": 0.203704,
+                  "low": -0.203704,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.143519,
+                  "high": 0.407407,
+                  "low": -0.125,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.02963,
+                  "high": 0.166667,
+                  "low": -0.107407,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@10": {
+              "all": {
+                "difference": 0.075397,
+                "high": 0.138889,
+                "low": 0.01455,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.027778,
+                  "high": 0.277778,
+                  "low": -0.333333,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.059829,
+                  "high": 0.136752,
+                  "low": 0.0,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.143519,
+                  "high": 0.25463,
+                  "low": 0.032407,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.078704,
+                  "high": 0.152778,
+                  "low": 0.018519,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.027778,
+                  "high": 0.111111,
+                  "low": -0.037037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.104938,
+                  "high": 0.240741,
+                  "low": -0.018519,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@3": {
+              "all": {
+                "difference": 0.085714,
+                "high": 0.173016,
+                "low": 0.003704,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.083333,
+                  "high": 0.0,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.111111,
+                  "high": 0.239316,
+                  "low": 0.0,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.087037,
+                  "high": 0.203704,
+                  "low": -0.035185,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.046296,
+                  "high": 0.12037,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.138889,
+                  "high": 0.305556,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.076543,
+                  "high": 0.239506,
+                  "low": -0.083951,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@5": {
+              "all": {
+                "difference": 0.097884,
+                "high": 0.164021,
+                "low": 0.037037,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.055556,
+                  "high": 0.305556,
+                  "low": -0.194444,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.08547,
+                  "high": 0.179487,
+                  "low": 0.008547,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.138889,
+                  "high": 0.240741,
+                  "low": 0.046296,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.064815,
+                  "high": 0.138889,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.046296,
+                  "high": 0.12037,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.154321,
+                  "high": 0.290123,
+                  "low": 0.030864,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "nDCG@10": {
+              "all": {
+                "difference": 0.067939,
+                "high": 0.13602,
+                "low": 0.000507,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.016203,
+                  "high": 0.248178,
+                  "low": -0.279187,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.065492,
+                  "high": 0.159287,
+                  "low": -0.022865,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.101288,
+                  "high": 0.198624,
+                  "low": 0.0133,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.020804,
+                  "high": 0.097197,
+                  "low": -0.061552,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.094898,
+                  "high": 0.223798,
+                  "low": -0.033899,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.08139,
+                  "high": 0.201696,
+                  "low": -0.02931,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            }
+          }
+        },
+        "A6-2c": {
+          "MRR@10": 0.76746,
+          "R@1": 0.531746,
+          "R@10": 0.869841,
+          "R@3": 0.725132,
+          "R@5": 0.793122,
+          "latency_ms": {
+            "n": 63,
+            "p50": 16924.625,
+            "p95": 23526.679
+          },
+          "n": 63,
+          "nDCG@10": 0.768293,
+          "rerank_ms": {
+            "n": 63,
+            "p50": 16378.854,
+            "p95": 23200.229
+          },
+          "vs_reference": {
+            "MRR@10": {
+              "all": {
+                "difference": 0.125926,
+                "high": 0.214286,
+                "low": 0.041975,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.030093,
+                  "high": 0.252315,
+                  "low": -0.178241,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.118661,
+                  "high": 0.219943,
+                  "low": 0.023647,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.173611,
+                  "high": 0.37037,
+                  "low": -0.013889,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.111111,
+                  "high": 0.25,
+                  "low": -0.027778,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.168981,
+                  "high": 0.356481,
+                  "low": -0.016204,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.107099,
+                  "high": 0.232099,
+                  "low": -0.007202,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@1": {
+              "all": {
+                "difference": 0.098677,
+                "high": 0.191799,
+                "low": 0.002646,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.083333,
+                  "high": 0.25,
+                  "low": 0.0,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.08547,
+                  "high": 0.230769,
+                  "low": -0.051282,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.132407,
+                  "high": 0.25463,
+                  "low": 0.017593,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.092593,
+                  "high": 0.277778,
+                  "low": -0.101852,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.125,
+                  "high": 0.347222,
+                  "low": -0.097222,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.085185,
+                  "high": 0.203704,
+                  "low": -0.007407,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@10": {
+              "all": {
+                "difference": 0.126984,
+                "high": 0.206349,
+                "low": 0.05291,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.111111,
+                  "high": 0.416667,
+                  "low": -0.166667,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.102564,
+                  "high": 0.205128,
+                  "low": 0.017094,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.185185,
+                  "high": 0.305556,
+                  "low": 0.055556,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.060185,
+                  "high": 0.143519,
+                  "low": -0.018519,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.050926,
+                  "high": 0.157407,
+                  "low": -0.046296,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.222222,
+                  "high": 0.376543,
+                  "low": 0.080247,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@3": {
+              "all": {
+                "difference": 0.107937,
+                "high": 0.198413,
+                "low": 0.027513,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.083333,
+                  "high": 0.0,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.153846,
+                  "high": 0.273504,
+                  "low": 0.042735,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.072222,
+                  "high": 0.203704,
+                  "low": -0.064815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.074074,
+                  "high": 0.157407,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.027778,
+                  "high": 0.185185,
+                  "low": -0.12037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.183951,
+                  "high": 0.345679,
+                  "low": 0.037037,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@5": {
+              "all": {
+                "difference": 0.109788,
+                "high": 0.195767,
+                "low": 0.031746,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.0,
+                  "high": 0.25,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.128205,
+                  "high": 0.239316,
+                  "low": 0.025641,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.106481,
+                  "high": 0.25,
+                  "low": -0.037037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.027778,
+                  "high": 0.138889,
+                  "low": -0.083333,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.013889,
+                  "high": 0.101852,
+                  "low": -0.064815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.228395,
+                  "high": 0.388889,
+                  "low": 0.074074,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "nDCG@10": {
+              "all": {
+                "difference": 0.121311,
+                "high": 0.190071,
+                "low": 0.058748,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.083914,
+                  "high": 0.30589,
+                  "low": -0.118519,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.110451,
+                  "high": 0.198835,
+                  "low": 0.030268,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.157309,
+                  "high": 0.266749,
+                  "low": 0.053619,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.070823,
+                  "high": 0.169944,
+                  "low": -0.022901,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.091402,
+                  "high": 0.20285,
+                  "low": -0.014186,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.17491,
+                  "high": 0.290214,
+                  "low": 0.069451,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            }
+          }
+        },
+        "A6-4c": {
+          "MRR@10": 0.76746,
+          "R@1": 0.531746,
+          "R@10": 0.869841,
+          "R@3": 0.725132,
+          "R@5": 0.793122,
+          "latency_ms": {
+            "n": 63,
+            "p50": 9722.807,
+            "p95": 14893.29
+          },
+          "n": 63,
+          "nDCG@10": 0.768293,
+          "rerank_ms": {
+            "n": 63,
+            "p50": 9376.156,
+            "p95": 14528.049
+          },
+          "vs_reference": {
+            "MRR@10": {
+              "all": {
+                "difference": 0.125926,
+                "high": 0.214286,
+                "low": 0.041975,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.030093,
+                  "high": 0.252315,
+                  "low": -0.178241,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.118661,
+                  "high": 0.219943,
+                  "low": 0.023647,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.173611,
+                  "high": 0.37037,
+                  "low": -0.013889,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.111111,
+                  "high": 0.25,
+                  "low": -0.027778,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.168981,
+                  "high": 0.356481,
+                  "low": -0.016204,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.107099,
+                  "high": 0.232099,
+                  "low": -0.007202,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@1": {
+              "all": {
+                "difference": 0.098677,
+                "high": 0.191799,
+                "low": 0.002646,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.083333,
+                  "high": 0.25,
+                  "low": 0.0,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.08547,
+                  "high": 0.230769,
+                  "low": -0.051282,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.132407,
+                  "high": 0.25463,
+                  "low": 0.017593,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.092593,
+                  "high": 0.277778,
+                  "low": -0.101852,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.125,
+                  "high": 0.347222,
+                  "low": -0.097222,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.085185,
+                  "high": 0.203704,
+                  "low": -0.007407,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@10": {
+              "all": {
+                "difference": 0.126984,
+                "high": 0.206349,
+                "low": 0.05291,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.111111,
+                  "high": 0.416667,
+                  "low": -0.166667,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.102564,
+                  "high": 0.205128,
+                  "low": 0.017094,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.185185,
+                  "high": 0.305556,
+                  "low": 0.055556,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.060185,
+                  "high": 0.143519,
+                  "low": -0.018519,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.050926,
+                  "high": 0.157407,
+                  "low": -0.046296,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.222222,
+                  "high": 0.376543,
+                  "low": 0.080247,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@3": {
+              "all": {
+                "difference": 0.107937,
+                "high": 0.198413,
+                "low": 0.027513,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": -0.083333,
+                  "high": 0.0,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.153846,
+                  "high": 0.273504,
+                  "low": 0.042735,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.072222,
+                  "high": 0.203704,
+                  "low": -0.064815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.074074,
+                  "high": 0.157407,
+                  "low": 0.0,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.027778,
+                  "high": 0.185185,
+                  "low": -0.12037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.183951,
+                  "high": 0.345679,
+                  "low": 0.037037,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "R@5": {
+              "all": {
+                "difference": 0.109788,
+                "high": 0.195767,
+                "low": 0.031746,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.0,
+                  "high": 0.25,
+                  "low": -0.25,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.128205,
+                  "high": 0.239316,
+                  "low": 0.025641,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.106481,
+                  "high": 0.25,
+                  "low": -0.037037,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.027778,
+                  "high": 0.138889,
+                  "low": -0.083333,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.013889,
+                  "high": 0.101852,
+                  "low": -0.064815,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.228395,
+                  "high": 0.388889,
+                  "low": 0.074074,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            },
+            "nDCG@10": {
+              "all": {
+                "difference": 0.121311,
+                "high": 0.190071,
+                "low": 0.058748,
+                "n": 63,
+                "resamples": 10000,
+                "seed": 0
+              },
+              "by_category": {
+                "ambiguous": {
+                  "difference": 0.083914,
+                  "high": 0.30589,
+                  "low": -0.118519,
+                  "n": 6,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "lookup": {
+                  "difference": 0.110451,
+                  "high": 0.198835,
+                  "low": 0.030268,
+                  "n": 39,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "multi_hop": {
+                  "difference": 0.157309,
+                  "high": 0.266749,
+                  "low": 0.053619,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              },
+              "by_phrasing": {
+                "exact_token": {
+                  "difference": 0.070823,
+                  "high": 0.169944,
+                  "low": -0.022901,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "paraphrase": {
+                  "difference": 0.091402,
+                  "high": 0.20285,
+                  "low": -0.014186,
+                  "n": 18,
+                  "resamples": 10000,
+                  "seed": 0
+                },
+                "unlabelled": {
+                  "difference": 0.17491,
+                  "high": 0.290214,
+                  "low": 0.069451,
+                  "n": 27,
+                  "resamples": 10000,
+                  "seed": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -26,6 +26,7 @@ supersedes it.
 | [0018](0018-a-rules-version-on-every-task.md) | A rules version on every task | accepted |
 | [0019](0019-required-files-checked-before-delivery.md) | Required files are checked before delivery, and synthesis adds nothing | accepted |
 | [0020](0020-review-from-the-evidence.md) | Review from the evidence, and no review when the tools returned nothing | accepted |
+| [0021](0021-hybrid-reranks-with-gte.md) | Hybrid search re-ranks with gte-reranker-modernbert-base, on the same chunks | accepted |
 
 ## Format
 

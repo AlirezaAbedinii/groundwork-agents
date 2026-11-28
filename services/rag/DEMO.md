@@ -90,9 +90,10 @@ rank change and the answer's citation now hitting the exact configuration table.
 
 **Say:** "Embeddings are great at meaning but blur exact tokens — error codes,
 config keys. Hybrid runs BM25 alongside dense retrieval, fuses the rankings, and
-reranks with a cross-encoder. On the evaluated docs corpus, with strong
-embeddings, the two modes come out level, so hybrid is cheap insurance for exact
-tokens, and each mode's refusal gate has its own calibrated threshold."
+reranks with a cross-encoder. On the evaluated docs corpus the re-ranker is what
+pays: hybrid finds more of the needed facts than dense, nDCG@10 0.71 against 0.62,
+for seconds of CPU a search, and each mode's refusal gate has its own calibrated
+threshold."
 
 ## Scene 5 — The latency/cost story (3:00 – 3:45)
 
@@ -106,9 +107,9 @@ curl -s localhost:8000/v1/stats | jq
 service rollup — **P50/P95/P99 per stage**, refusal rate, mean cost per query.
 
 **Say:** "Every request logs a full trace — so 'how fast' and 'how much' are
-queries, not guesses: P95 sits around 5 to 6 seconds and a query costs about
-$0.0002, with the breakdown showing exactly which stage you'd optimize next —
-retrieval is free, the LLM calls dominate." *(Confirm against the live numbers
+queries, not guesses: P95 sits around 6 seconds in dense mode and 23 in hybrid on
+one CPU, and a query costs about $0.00025, with the breakdown showing exactly which
+stage you'd optimize next — the LLM calls in dense mode, the re-ranker in hybrid." *(Confirm against the live numbers
 on screen while recording.)*
 
 ## Close (3:45 – 3:55)
@@ -116,8 +117,8 @@ on screen while recording.)*
 **Show:** README header — CI badge green, headline eval numbers.
 
 **Say:** "A RAG system with hybrid search — dense plus BM25, rank fusion, and
-reranking — that answers 67 to 69 % of a 75-question golden set correctly, with
-91 to 96 % of its claims supported by the passages it cites and every
+reranking — that answers 69 to 70 % of a 197-question golden set correctly, with
+91 to 95 % of its claims supported by the passages it cites and every
 unanswerable question refused, as judged by a model from another provider and
 checked against a person, with per-stage latency and cost-per-query instrumented
 end to end."

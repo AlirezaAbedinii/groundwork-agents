@@ -7,16 +7,18 @@ The retrieval service of [Groundwork](../../README.md).
 [![Ruff](https://img.shields.io/badge/lint-ruff-261230)](https://github.com/astral-sh/ruff)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Hybrid-search RAG over technical docs. On a 75-question golden set over the uv,
-> Pydantic and FastAPI documentation, **67–69 % of answers are correct** and
-> **0.91–0.96 of their claims are supported** by the passages they cite, as judged
-> by a model from another provider; **every unanswerable question is refused**; a
-> query costs about **$0.0002** with a **P95 of 5–6 s**.
+> Hybrid-search RAG over technical docs. On a 197-question golden set over the uv,
+> Pydantic and FastAPI documentation, hybrid search finds **79 % of the needed facts**
+> in its top 10 (dense 74 %), **69–70 % of answers are correct** and **0.91–0.95 of
+> their claims are supported** by the passages they cite, as judged by a model from
+> another provider; **every unanswerable question is refused**; a query costs about
+> **$0.00025**, with a **P95 of 6 s** dense and **23 s** hybrid on one CPU.
 >
 > The numbers come from the repository's evaluation suite and its published
-> [report](../../eval/reports/rag.md) (2026-10-06, `text-embedding-3-small`,
-> `gpt-4o-mini`, citation verification on); [`eval/`](../../eval/README.md) explains
-> how they were measured and recomputes them for free.
+> [report](../../eval/reports/rag.md) (2026-11-28, `text-embedding-3-small`,
+> `gte-reranker-modernbert-base`, `gpt-4o-mini`, citation verification on);
+> [`eval/`](../../eval/README.md) explains how they were measured and recomputes them
+> for free.
 
 A production-grade **Retrieval-Augmented Generation** service: it ingests
 multi-format documentation, retrieves the most relevant passages, and generates
@@ -65,12 +67,16 @@ runs both, merges the rankings with **Reciprocal Rank Fusion**, and lets a local
 **cross-encoder** rerank the shortlist for precision.
 
 The evaluation puts that claim to the test, and the answer depends on the
-embeddings. With `text-embedding-3-small` on the 3,571-chunk docs corpus, the two
-modes find the same share of the needed facts (Recall@10 0.763 dense, 0.761
-hybrid) and answer about equally well (69 % and 67 % correct; no evidence of a
-difference on 75 questions): strong embeddings already carry the exact tokens.
-Hybrid stays the default because it costs little (BM25 and the reranker run
-locally) and protects the weaker, keyless embedding setup. Its reranker scores
+re-ranker. With `text-embedding-3-small` on the 3,571-chunk docs corpus and
+`ms-marco-MiniLM-L-6-v2` re-ranking, the two modes found the same share of the
+needed facts. With `gte-reranker-modernbert-base`, hybrid finds more: nDCG@10 0.705
+against 0.620 over 156 answerable questions, and +0.096 [+0.055, +0.140] on the test
+split, question by question. BM25 adds no candidate at these fusion weights, so the
+gain is the re-ranker's: strong embeddings already carry the exact tokens. Answers
+are about equally often correct (70 % and 69 %; no evidence of a difference on 197
+questions). Hybrid is the default: it costs no API spend (BM25 and the re-ranker run
+locally) but seconds of CPU per search
+([ADR 0021](../../docs/decisions/0021-hybrid-reranks-with-gte.md)). Its reranker scores
 also feed the refusal gate on a different scale from dense cosine similarity, which
 is why each mode has its own calibrated threshold
 ([ADR 0007](../../docs/decisions/0007-refusal-threshold-calibration.md)).
@@ -165,26 +171,30 @@ request here:
 ## Evaluation results
 
 The service is evaluated from outside, over its API, by the suite in
-[`eval/`](../../eval/README.md), with a golden set of 75 questions over the docs
+[`eval/`](../../eval/README.md), with a golden set of 197 questions over the docs
 corpus (lookups, multi-hop questions, questions the docs can't answer, and ambiguous
 ones), labelled with verbatim evidence quotes. Answers are judged by
 `claude-haiku-4-5`, from another provider than the generator, and a blind human check
-agrees with the judge at κ 0.83 ([full report](../../eval/reports/rag.md)).
+of an earlier run's answers agreed with the judge at κ 0.83
+([full report](../../eval/reports/rag.md)).
 
 | Metric | Dense | Hybrid |
 |---|---|---|
-| Recall@10 (57 answerable questions) | 0.763 | 0.761 |
-| nDCG@10 | 0.661 | 0.655 |
-| Answers correct (75 questions) | 0.693 [0.58, 0.79] | 0.667 [0.55, 0.76] |
-| Faithfulness (supported claims) | 0.910 | 0.963 |
-| Unanswerable questions refused (test split) | 11/11 | 11/11 |
-| Answerable questions refused too (test split) | 6 of 34 | 8 of 34 |
-| Cost per query | $0.00019 | $0.00020 |
-| P50 / P95 latency | 2.3 s / 5.4 s | 2.7 s / 6.2 s |
+| Recall@10 (156 answerable questions) | 0.736 | 0.785 |
+| nDCG@10 | 0.620 | 0.705 |
+| Answers correct (197 questions) | 0.685 [0.62, 0.75] | 0.701 [0.63, 0.76] |
+| Faithfulness (supported claims) | 0.913 | 0.951 |
+| Unanswerable questions refused (test split) | 25/25 | 25/25 |
+| Answerable questions refused too (test split) | 20 of 93 | 13 of 93 |
+| Cost per query | $0.00024 | $0.00025 |
+| P50 / P95 latency | 3.0 s / 6.3 s | 18.3 s / 23.1 s |
 
-Where it falls short: ambiguous questions score 0/6 (the prompt never asks the model
-to name the readings), and hybrid's gate, calibrated where the reranker's scores
-crowd near 1, refuses some answerable questions just below its threshold. The
+Where it falls short: ambiguous questions score 1 of 15 in both modes, even with a
+prompt rule asking for each reading by name, since the top 5 hits rarely hold more
+than one reading. A hybrid answer takes 18 s at the median on one CPU, most of it
+re-ranking: inside the 30 s timeout of MCP and agent calls, but the slowest took
+28 s. Each gate refuses at most a tenth of the dev split's answerable questions by
+design, and the model declines some more. The
 tables measured on the earlier seven-file Ferry corpus, with the retired harness,
 are in the [history](https://github.com/AlirezaAbedinii/groundwork-agents/tree/940677e9078e4cd4d8a70aecb74f26c8295435d0/services/rag).
 
@@ -197,12 +207,14 @@ prices) into a SQLite trace store. `GET /v1/stats` serves the rollup —
 **P50/P95/P99 per stage** plus cost totals — and the Streamlit UI shows the same
 per-request panel.
 
-Measured in the evaluation's answer run (75 questions per mode, `gpt-4o-mini`,
-citation verification on): P50 2.3 s and P95 5.4 s in dense mode, 2.7 s and 6.2 s
-in hybrid mode, at $0.00019–0.00020 per query. The per-stage breakdown on the earlier Ferry
-corpus put retrieval at a few milliseconds and the CPU reranker at about 350 ms,
-with the LLM round trips (generation, then one verification per citation) taking
-the rest, so batching the verification is the lever, not retrieval.
+Measured in the evaluation's answer run (197 questions per mode, `gpt-4o-mini`,
+citation verification on, the service limited to 1 CPU and 2 GiB as in the cloud):
+P50 3.0 s and P95 6.3 s in dense mode, 18.3 s and 23.1 s in hybrid mode, at
+$0.00024–0.00025 per query. In dense mode the LLM round trips (generation, then one
+verification per citation) take most of the time. In hybrid mode the re-ranker does:
+15.4 s at the median for 20 candidates. On one pinned core the same re-rank takes
+about 7.4 s; under a CPU quota, OpenMP and tokenizer threads beyond the limit cost
+the rest ([ADR 0021](../../docs/decisions/0021-hybrid-reranks-with-gte.md)).
 
 ## Design decisions
 
@@ -212,8 +224,11 @@ the rest, so batching the verification is the lever, not retrieval.
   apples-to-apples.
 - **Retrieval:** dense top-k over pgvector (cosine, HNSW) fused with BM25 via **RRF**
   at 0.7 dense / 0.3 sparse (configurable, k=60), then a local cross-encoder
-  (`ms-marco-MiniLM-L-6-v2`) reranks top-20 → top-5 — precision without extra
-  LLM spend. The BM25 tokenizer keeps compound tokens (`FERRY-429`,
+  (`gte-reranker-modernbert-base`) reranks top-20 → top-5 — precision without extra
+  LLM spend, at several seconds a search on one CPU
+  ([ADR 0021](../../docs/decisions/0021-hybrid-reranks-with-gte.md)). At these weights
+  and this pool BM25 adds no candidate the dense top 20 lacks, so the gain on the
+  docs corpus is the re-ranker's. The BM25 tokenizer keeps compound tokens (`FERRY-429`,
   `ferry.worker.concurrency`) whole, which is what makes exact-token retrieval
   work. `SPARSE_ENABLED` and `RERANK_ENABLED` switch the BM25 leg and the
   re-ranker off independently, so each stage's effect can be measured
@@ -223,7 +238,8 @@ the rest, so batching the verification is the lever, not retrieval.
   threshold, the service returns a structured refusal **before** calling the
   LLM: no fabrication, no wasted generation cost. Dense scores are cosine
   similarities and hybrid scores come from the reranker, so each mode has its own
-  threshold (0.617442 dense, 0.963599 hybrid), chosen on held-out questions for
+  threshold (0.499202 dense, 0.895311 hybrid): the highest at which at most 10 % of
+  the dev split's answerable questions are refused, by the gate or by the model, for
   `text-embedding-3-small` and this reranker
   ([ADR 0007](../../docs/decisions/0007-refusal-threshold-calibration.md)). The model
   can still decline after reading the contexts, and the response says which one

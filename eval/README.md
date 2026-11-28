@@ -13,35 +13,50 @@ byte for byte, without a service or a key.
 
 ## Results at a glance
 
-**Retrieval** ([full report](reports/rag.md)), 57 answerable questions, top 10 from
+**Retrieval** ([full report](reports/rag.md)), 156 answerable questions, top 10 from
 `/v1/search`, `text-embedding-3-small` embeddings; relevance is counted per evidence
 item, not per chunk:
 
 | mode | R@1 | R@5 | R@10 | MRR@10 | nDCG@10 |
 |---|---|---|---|---|---|
-| dense | 0.471 | 0.675 | 0.763 | 0.678 | 0.661 |
-| hybrid (BM25 + RRF + cross-encoder) | 0.459 | 0.664 | 0.761 | 0.670 | 0.655 |
+| dense | 0.391 | 0.651 | 0.736 | 0.604 | 0.620 |
+| hybrid (BM25 + RRF + `gte-reranker-modernbert-base`) | 0.494 | 0.750 | 0.785 | 0.711 | 0.705 |
 
-**Answers**, all 75 questions through `/v1/ask` (`gpt-4o-mini`, 5 contexts in both
+On the test split, question by question, hybrid's nDCG@10 is +0.096 above dense
+[+0.055, +0.140] and its Recall@3, the hits an agent reads whole, +0.124 [+0.063,
++0.189] (95 % paired bootstrap intervals). The configuration was chosen on dev from ten
+([ADR 0021](../docs/decisions/0021-hybrid-reranks-with-gte.md)).
+
+**Answers**, all 197 questions through `/v1/ask` (`gpt-4o-mini`, 5 contexts in both
 modes), judged by `claude-haiku-4-5`, a model from another provider:
 
 | mode | correct [95 % CI] | faithfulness | fully supported | cost/query | P95 |
 |---|---|---|---|---|---|
-| dense | 0.693 [0.58, 0.79] | 0.910 | 0.814 | $0.00019 | 5.4 s |
-| hybrid | 0.667 [0.55, 0.76] | 0.963 | 0.884 | $0.00020 | 6.2 s |
+| dense | 0.685 [0.62, 0.75] | 0.913 | 0.760 | $0.00024 | 6.3 s |
+| hybrid | 0.701 [0.63, 0.76] | 0.951 | 0.869 | $0.00025 | 23.1 s |
 
-There is no evidence of a correctness difference between the modes on this set.
-Every unanswerable question is refused in both modes (end-to-end recall 1.000 on the
-test split), at a precision of 0.647 (dense) and 0.579 (hybrid): some answerable
-questions are refused too.
+There is no evidence of a correctness difference between the modes on this set
+(exact McNemar p 0.66: 12 questions only hybrid gets right, 9 only dense). Hybrid's
+latency is the re-ranker on the service's one CPU. Every unanswerable question is
+refused in both modes (end-to-end recall 1.000 on the test split), at a precision of
+0.556 (dense) and 0.658 (hybrid): some answerable questions are refused too, 27 of 156
+in dense mode and 19 in hybrid, over every split.
 
-**Refusal gate**: one threshold per mode, chosen on the dev split and measured on
-the test split ([ADR 0007](../docs/decisions/0007-refusal-threshold-calibration.md)):
-dense 0.617442 (precision 0.615, recall 0.727), hybrid 0.963599 (precision 0.500,
-recall 0.545). The previous shared 0.30 refused nothing in dense mode.
+**Refusal gate**: one threshold per mode, the highest at which at most 10 % of the dev
+split's answerable questions are refused, by the gate or by the model
+([ADR 0007](../docs/decisions/0007-refusal-threshold-calibration.md), addendum of
+2026-11-28): dense 0.499202, hybrid 0.895311. In the published run that refused 6 of
+63 in hybrid mode and 7 of 63 in dense mode, one over the bound: q047's dense score was
+0.500183 in the run the threshold was chosen from and 0.491032 in this one, because
+query embeddings vary between calls, and the threshold sits on a dev score with no
+margin. On the test split the gate itself refuses 5 (dense) and 7 (hybrid) of the 25
+unanswerable questions, and the model declines the rest after reading the contexts.
 
-**The judge against a person**: 30 judged answers graded pass or fail blind to the
-judge: raw agreement 0.933, Cohen's κ 0.830. In one of the two disagreements the
+**The judge against a person**: 30 judged answers of the previous answer run (75
+questions, the same judge and prompts) graded pass or fail blind to the judge: raw
+agreement 0.933, Cohen's κ 0.830. A grade joins only the exact answer it was given
+for, so the current report counts the 4 answers that came out word for word the same.
+In one of the two disagreements the
 judge was too lenient: q019 rated 4 an answer that never says what plain
 `uv cache prune` removes, against its own rule that a missing part rates 3 or below.
 In the other, the person's pass was the miss: s024's answer never gives the
@@ -104,8 +119,8 @@ counts the demo database doesn't hold; under `cross`, the same failure was rejec
   required file was written at its exact path. They locate where a run's work went
   missing; they don't change how a run is scored. Records collected before a field
   existed show `n/a` for what needs it.
-- **RAG statistics**, printed by `rag_eval stats` from a records file with no model
-  call, and not yet part of the report: the answerable questions each mode refused,
+- **RAG statistics**, in the report and printed by `rag_eval stats` from a records
+  file with no model call: the answerable questions each mode refused,
   by the gate and by the model, with Wilson intervals; hybrid against dense question
   by question, an exact McNemar test on correctness and a paired bootstrap interval
   (10,000 resamples, seed 0) for the difference in each retrieval metric; and how
@@ -125,22 +140,23 @@ variables, flags, config keys) and vocabulary shared across the three projects
 ("dependencies" means two things) keep the dense-vs-hybrid question meaningful.
 
 The [golden set](golden/golden_set.jsonl) ([schema and rules](golden/SCHEMA.md)) has
-197 questions. The published RAG results use its first 75: 37 lookup, 14 multi-hop, 18
-with no answer in the docs, and 6 ambiguous, split 40/60 into dev and test within each
-category. Fifty are targeted: written from
+197 questions, all in the published RAG results: 98 lookup, 43 multi-hop, 41 with no
+answer in the docs, and 15 ambiguous, 79 in the dev split and 118 in test. The first 75
+(37 lookup, 14 multi-hop, 18 no-answer, 6 ambiguous, split 40/60 into dev and test
+within each category) came first. Fifty of them are targeted: written from
 the docs to a coverage spec (exact-token lookups, paraphrases, cross-project
 multi-hops, near-miss and out-of-scope refusals) and checked by hand. The other 25 are
 synthetic: drafted by `gpt-4o-mini` from a single chunk, then verified by hand. Of 40
 drafts, 10 were rejected (4 not answerable from their chunk, 3 trivial, 2 meaningful
 only in the chunk's own example, 1 partial), and every accepted question and answer
 was rewritten, because the drafts copied their chunk's wording or answered beyond
-their quote. Synthetic questions still flatter retrieval: R@10 0.800 against 0.733
-for targeted ones (dense), 0.840 against 0.699 (hybrid).
+their quote. Synthetic questions still flatter retrieval: R@10 0.800 against 0.724
+for targeted ones (dense), 0.840 against 0.774 (hybrid).
 
-The other 122 are targeted rows added on 2026-11-14 and not yet in a published result:
-61 lookup and 29 multi-hop, each marked exact-token or paraphrase, 9 ambiguous and 23
-no-answer, written from the corpus files without running retrieval, checked by hand,
-and split 40/60 inside each category × phrasing stratum
+The other 122 are targeted rows added on 2026-11-14: 61 lookup and 29 multi-hop, each
+marked exact-token or paraphrase, 9 ambiguous and 23 no-answer, written from the
+corpus files without running retrieval, checked by hand, and split 40/60 inside each
+category × phrasing stratum
 ([ADR 0006](../docs/decisions/0006-evaluation-harness-and-judge.md), addendum).
 
 The [agent tasks](tasks/agent_tasks.jsonl) are 28 requests. The first 18 are 6 docs
@@ -224,6 +240,26 @@ embeds the query (`text-embedding-3-small`: under $0.0001 per arm and split).
 .venv/bin/python -m rag_eval ablate --records runs/my-ablation/ablation-records.jsonl --out /tmp/t
 ```
 
+The two ablations that chose hybrid's configuration are published with their records:
+[`reports/rag-ablation/`](reports/rag-ablation/ablation.md) (ten arms, chosen on dev, test
+searched once) and [`reports/rag-ablation-cores/`](reports/rag-ablation-cores/ablation.md)
+(the gte arms on 2 and 4 cores). `make eval-score` re-scores both
+([ADR 0021](../docs/decisions/0021-hybrid-reranks-with-gte.md)).
+
+**Calibrating the refusal thresholds.** Answer the dev questions with a service started
+with both thresholds at 0, so the model's own refusals are known for every question,
+then score the published run with that run beside it: `--calibration` adds its compact
+rows to the records and the report chooses each threshold from them, the highest at
+which at most 10 % of dev's answerable questions are refused by the gate or the model
+([ADR 0007](../docs/decisions/0007-refusal-threshold-calibration.md), addendum of
+2026-11-28). The fake judge is enough there, since a refusal needs no verdict:
+
+```bash
+.venv/bin/python -m rag_eval collect --stage answers --run-id gate-off --ids "$DEV_IDS" \
+  --judge fake --max-cost-usd 0.20                         # generation only
+.venv/bin/python -m rag_eval score --run-id my-run --calibration gate-off
+```
+
 `agent_eval score --scoring 2` scores a run collected under the first rules by
 version 2's, for $0; give it its own `--out` so the published report stays as it was.
 `--scoring 3` refuses records collected under 1 or 2: what the judge is shown is
@@ -232,8 +268,9 @@ decided when the run is judged, so only a new run can be judged that way.
 markdown and writes nothing ($0, no services). `agent_eval diagnose --run-id my-run` writes `diagnostics.md` and `diagnostics.json`
 into `runs/my-run/`, from the run's records alone ($0, no services).
 
-The published runs cost $2.31 in all: indexing $0.01, synthetic drafts $0.004, the
-judge's sanity checks $0.13, the answer run $0.58, and the agent runs $1.58.
+The published runs cost $3.61 in all: indexing $0.01, synthetic drafts $0.004, the
+judge's sanity checks $0.13, the retrieval ablations $0.012, the calibration run
+$0.043, the answer run $1.83, and the agent runs $1.58.
 
 ## Against the Azure deployment
 
@@ -289,19 +326,24 @@ the gitignored `runs/`.
 - **The reviewer is most of the cost.** `claude-sonnet-5` writes about 470 billed
   output tokens per review (it reasons before it answers), `gpt-4o` about 130.
 
-**Retrieval and answers.** With `text-embedding-3-small`, hybrid retrieval no longer
-beats dense (on the local MiniLM embeddings it led clearly): the reranker's edge on
-exact tokens is matched by the stronger embeddings. Ambiguous questions score 0/6 in
-both modes, because the generation prompt never asks the model to name the readings.
-Hybrid's threshold sits on the steep end of the reranker's scores, so several
-answerable questions just under it are refused. MCP `search` kept 3 hits of 300
+**Retrieval and answers.** With `ms-marco-MiniLM-L-6-v2` as its re-ranker, hybrid
+retrieval was level with dense on `text-embedding-3-small`; with
+`gte-reranker-modernbert-base` it finds more of the needed facts, most of all at the
+top 3. BM25 adds nothing at the 0.7/0.3 fusion weights, so the gain is the re-ranker's,
+and it costs about 15 s a search on one CPU against 0.2 s dense
+([ADR 0021](../docs/decisions/0021-hybrid-reranks-with-gte.md)). Better retrieval has
+not shown up in correctness on this set. Ambiguous questions score 1 of 15 in both
+modes, even with a prompt rule asking for each reading by name: for most of them the
+top 5 hits hold at most one reading. Both thresholds refuse at most about a tenth of
+dev's answerable questions, so the model, not the gate, declines most unanswerable
+ones. MCP `search` kept 3 hits of 300
 characters, since 5 of 150 lost 8 points of recall; it now returns whole passages
 within a budget, and at `top_k` 3 it shows as much evidence as whole chunks on the
 test split.
 
 ## Limits
 
-- **Small samples.** 57 answerable questions, 13 agent tasks per policy: the
+- **Small samples.** 156 answerable questions (93 on test), 13 agent tasks per policy: the
   intervals are wide, and 1/13 against 1/13 can't separate the reviewer policies.
 - **One run per configuration.** Models sample, and repeated runs would differ: t10
   passed under one policy and failed under the other, where its "run the code"
@@ -315,7 +357,9 @@ test split.
   faithfulness margin it errs both ways on about 2–3 % of claims.
 - **The synthetic third** shares its chunks' wording; read retrieval by origin.
 - **Thresholds are tied to `text-embedding-3-small` and the reranker** and have to be
-  calibrated again when either changes; `/v1/config` shows what a service runs.
+  calibrated again when either changes; `/v1/config` shows what a service runs. A
+  threshold set on a dev question's score has no margin for the variation in query
+  embeddings between calls, up to 0.009 in cosine similarity across the dev questions.
 
 ## Layout
 
