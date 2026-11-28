@@ -78,8 +78,8 @@ class Settings(BaseSettings):
         description="Embedding model id (or a sentence-transformers id for offline).",
     )
     reranker_model: str = Field(
-        default="cross-encoder/ms-marco-MiniLM-L-6-v2",
-        description="Local cross-encoder reranker model id (V1).",
+        default="Alibaba-NLP/gte-reranker-modernbert-base",
+        description="Local cross-encoder reranker model id; the image bakes in the default.",
     )
 
     # -- Token prices (USD per 1,000,000 tokens) ---------------------------
@@ -153,17 +153,18 @@ class Settings(BaseSettings):
     # The gate compares the top hit's score with its mode's threshold, and the two
     # scores mean different things: a cosine similarity in dense mode, the
     # cross-encoder's sigmoid in hybrid mode. Both defaults were chosen on the
-    # golden set's dev split (highest refusal F1) and hold for text-embedding-3-small
-    # with cross-encoder/ms-marco-MiniLM-L-6-v2; recalibrate when either changes
+    # golden set's dev split (the highest with at most 10 % of answerable questions
+    # refused, by the gate or the model) and hold for text-embedding-3-small with
+    # Alibaba-NLP/gte-reranker-modernbert-base; recalibrate when either changes
     # (eval/reports/rag.md, docs/decisions/0007-refusal-threshold-calibration.md).
     retrieval_confidence_threshold_dense: float = Field(
-        default=0.617442,
+        default=0.499202,
         ge=0.0,
         le=1.0,
         description="Dense mode: below this top cosine similarity, refuse instead of generating.",
     )
     retrieval_confidence_threshold_hybrid: float = Field(
-        default=0.963599,
+        default=0.895311,
         ge=0.0,
         le=1.0,
         description="Hybrid mode: below this top reranker score, refuse instead of generating.",

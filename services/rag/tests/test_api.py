@@ -333,7 +333,7 @@ def test_config_reports_how_hybrid_retrieves(tmp_path) -> None:
     assert default["hybrid"] == {
         "sparse_enabled": True,
         "rerank_enabled": True,
-        "reranker_model": "cross-encoder/ms-marco-MiniLM-L-6-v2",
+        "reranker_model": "Alibaba-NLP/gte-reranker-modernbert-base",
         "rerank_candidates": 20,
         "rrf_k": 60,
         "rrf_dense_weight": 0.7,

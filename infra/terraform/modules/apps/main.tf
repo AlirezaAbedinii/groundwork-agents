@@ -51,6 +51,7 @@ locals {
     EMBEDDING_PROVIDER = "openai"
     HF_HUB_OFFLINE     = "1"
     LLM_PROVIDER       = "openai"
+    RERANKER_MODEL     = "Alibaba-NLP/gte-reranker-modernbert-base" # baked into the image
   }
 
   # Plain app secret, not a Key Vault one: an ingestion key, not a credential.

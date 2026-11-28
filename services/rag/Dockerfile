@@ -52,16 +52,19 @@ COPY pyproject.toml README.md LICENSE ./
 COPY src ./src
 RUN pip install -c /tmp/constraints.txt -e ".[api,ingestion,indexing,llm,rerank,telemetry]"
 
-# The reranker the settings name, into HF_HOME.
+# The reranker the settings name, into HF_HOME, owned by the non-root user (uid 10001,
+# created below) in this layer: a chown in a later layer would store the model twice.
+# The user owns HF_HOME so a keyless setup can download models at run time, such as
+# the MiniLM embeddings.
 RUN python -c "from sentence_transformers import CrossEncoder; \
-from rag.config import Settings; CrossEncoder(Settings(_env_file=None).reranker_model)"
+from rag.config import Settings; CrossEncoder(Settings(_env_file=None).reranker_model)" \
+    && chown -R 10001 /opt/hf
 
 # Then the rest of the project (scripts, ui, sample corpus).
 COPY . .
 
-# Non-root. The user owns data/ (the trace store) and HF_HOME (models a keyless
-# setup downloads at run time, such as the MiniLM embeddings).
-RUN useradd --uid 10001 --create-home rag && mkdir -p data && chown -R rag /app/data /opt/hf
+# Non-root. The user owns data/ (the trace store).
+RUN useradd --uid 10001 --create-home rag && mkdir -p data && chown -R rag /app/data
 USER 10001
 
 # The image's tag, passed in by images.yml, so it stays right however the image gets
