@@ -153,3 +153,44 @@ Where they disagree (the judge passes a rating of 4 or 5):
 | id | mode | category | judge rating | judge | person | person's note |
 |---|---|---|---|---|---|---|
 | s002 | hybrid | lookup | 2 | fail | pass | - |
+
+## Answerable questions refused
+
+Every split. A refusal of an answerable question withholds an answer the docs hold; the gate refuses before generation, the model after reading the contexts. Shares with 95 % Wilson intervals.
+
+| stratum | dense: refused | dense: by gate | dense: by model | hybrid: refused | hybrid: by gate | hybrid: by model |
+|---|---|---|---|---|---|---|
+| all | 2/4 · 0.500 [0.15, 0.85] | 1/4 · 0.250 [0.05, 0.70] | 1/4 · 0.250 [0.05, 0.70] | 0/4 · 0.000 [0.00, 0.49] | 0/4 · 0.000 [0.00, 0.49] | 0/4 · 0.000 [0.00, 0.49] |
+| category lookup | 1/3 · 0.333 [0.06, 0.79] | 1/3 · 0.333 [0.06, 0.79] | 0/3 · 0.000 [0.00, 0.56] | 0/3 · 0.000 [0.00, 0.56] | 0/3 · 0.000 [0.00, 0.56] | 0/3 · 0.000 [0.00, 0.56] |
+| category multi_hop | 1/1 · 1.000 [0.21, 1.00] | 0/1 · 0.000 [0.00, 0.79] | 1/1 · 1.000 [0.21, 1.00] | 0/1 · 0.000 [0.00, 0.79] | 0/1 · 0.000 [0.00, 0.79] | 0/1 · 0.000 [0.00, 0.79] |
+| split dev | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] |
+| split test | 1/2 · 0.500 [0.09, 0.91] | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] |
+| origin synthetic | 1/2 · 0.500 [0.09, 0.91] | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] |
+| origin targeted | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 1/2 · 0.500 [0.09, 0.91] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] | 0/2 · 0.000 [0.00, 0.66] |
+
+## Hybrid against dense, question by question
+
+End-to-end correctness, every question (a no_answer question is correct iff refused). Exact McNemar test: only the questions one mode gets right and the other wrong count; p is two-sided.
+
+| stratum | questions | only dense correct | only hybrid correct | p |
+|---|---|---|---|---|
+| all | 6 | 0 | 3 | 0.250 |
+| category lookup | 3 | 0 | 1 | 1.000 |
+| category multi_hop | 1 | 0 | 1 | 1.000 |
+| category no_answer | 2 | 0 | 1 | 1.000 |
+| split dev | 3 | 0 | 2 | 0.500 |
+| split test | 3 | 0 | 1 | 1.000 |
+| origin synthetic | 2 | 0 | 1 | 1.000 |
+| origin targeted | 4 | 0 | 2 | 0.500 |
+
+Retrieval, answerable questions: the mean of hybrid − dense per question, with a 95 % paired bootstrap percentile interval (10,000 resamples, seed 0).
+
+| stratum | questions | R@1 | R@3 | R@5 | R@10 | MRR@10 | nDCG@10 |
+|---|---|---|---|---|---|---|---|
+| all | 4 | +0.375 [+0.000, +0.750] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.125 [+0.000, +0.375] | +0.112 [+0.000, +0.277] |
+| category lookup | 3 | +0.333 [+0.000, +1.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.167 [+0.000, +0.500] | +0.123 [+0.000, +0.369] |
+| category multi_hop | 1 | +0.500 [+0.500, +0.500] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.080 [+0.080, +0.080] |
+| split dev | 2 | +0.250 [+0.000, +0.500] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.040 [+0.000, +0.080] |
+| split test | 2 | +0.500 [+0.000, +1.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.250 [+0.000, +0.500] | +0.185 [+0.000, +0.369] |
+| origin synthetic | 2 | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] |
+| origin targeted | 2 | +0.750 [+0.500, +1.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.000 [+0.000, +0.000] | +0.250 [+0.000, +0.500] | +0.225 [+0.080, +0.369] |

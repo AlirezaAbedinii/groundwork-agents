@@ -445,9 +445,15 @@ def _answer_record(q: GoldenQuestion, mode: str, raw: dict, grade: dict | None) 
     }
 
 
-def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = None) -> list[dict]:
+def build_records(
+    run_dir: Path,
+    golden_path: Path,
+    grades_path: Path | None = None,
+    calibration_dir: Path | None = None,
+) -> list[dict]:
     """The run joined with the golden set: a header, then one record per question, mode
-    and stage. A human grade joins only the exact answer it was given for."""
+    and stage. A human grade joins only the exact answer it was given for. With
+    ``calibration_dir``, the gate-off run the thresholds were chosen from joins too."""
     run = read_run(run_dir)
     questions = load_golden(golden_path)
     grades = {
@@ -499,7 +505,53 @@ def build_records(run_dir: Path, golden_path: Path, grades_path: Path | None = N
                 "judges": sorted({j for r in rows for j in r["judges"]}),
             }
         records += rows
+    if calibration_dir is not None:
+        header["calibration"], rows = calibration_records(calibration_dir, questions, header)
+        records += rows
     return [header, *records]
+
+
+def calibration_records(
+    run_dir: Path, questions: Sequence[GoldenQuestion], header: dict
+) -> tuple[dict, list[dict]]:
+    """The answers of a run with the gate off (every threshold 0) as compact rows: each
+    question's top score and whether the model refused it. The thresholds are chosen
+    from them (``calibration_scores``), so the run must serve what the published run did."""
+    stage = read_run(run_dir)["stages"].get("answers")
+    if stage is None:
+        raise SystemExit(f"{run_dir.name}: no answer stage to calibrate from")
+    config = stage["config"]
+    if any(config["thresholds"].values()):
+        raise SystemExit(f"{run_dir.name}: the gate was on ({config['thresholds']})")
+    published = stage_config(header, "answers") if header["answers"] else header["config"]
+    keys = (*SHARED_CONFIG, "hybrid", "generation_model")
+    if differ := [k for k in keys if config.get(k) != published.get(k)]:
+        raise SystemExit(f"{run_dir.name}: serves other settings ({', '.join(differ)} differ)")
+    raw = latest(run_dir / "answers.jsonl")
+    modes, missing, rows = sorted({mode for _, mode in raw}), 0, []
+    for mode in modes:
+        for q in questions:
+            r = raw.get((q.id, mode))
+            if r is not None and "error" in r:
+                missing += 1
+            elif r is not None:
+                row = {"record": "calibration", "id": q.id, "mode": mode, "category": q.category}
+                rows.append(
+                    row
+                    | {
+                        "split": q.split,
+                        "top_score": r["retrieval_confidence"],
+                        "refused_by": r["refused_by"],
+                    }
+                )
+    calibration = {
+        "run_id": run_dir.name,
+        "collected": stage["started_at"][:10],
+        "config": config,
+        "modes": modes,
+        "missing": missing,
+    }
+    return calibration, rows
 
 
 def stage_config(header: dict, stage: str) -> dict:
@@ -818,9 +870,60 @@ def score_answers(header: dict, rows: list[dict]) -> dict:
     return scores
 
 
+def calibration_scores(header: dict, rows: list[dict]) -> dict:
+    """Per mode, the threshold the dev split's gate-off answers choose, and what it refuses
+    there: the answerable questions by the gate and by the model, and the no_answer ones."""
+    configured = stage_config(header, "answers")["thresholds"] if header["answers"] else {}
+    out = {}
+    for mode in header["calibration"]["modes"]:
+        dev = [r for r in rows if r["mode"] == mode and r["split"] == "dev"]
+        answerable = [r for r in dev if r["category"] != "no_answer"]
+        no_answer = [r for r in dev if r["category"] == "no_answer"]
+        try:
+            chosen = metrics.false_refusal_threshold(
+                [r["top_score"] for r in answerable],
+                [r["refused_by"] == "model" for r in answerable],
+            )
+        except ValueError:
+            chosen = None
+
+        def refused_by(r: dict, t: float) -> str | None:
+            return "gate" if r["top_score"] < t else r["refused_by"]  # the gate comes first
+
+        out[mode] = {
+            "bound": metrics.FALSE_REFUSAL_BOUND,
+            "chosen_threshold": chosen,
+            "chosen_threshold_config": (
+                None if chosen is None else config_value(chosen, [r["top_score"] for r in dev])
+            ),
+            "configured_threshold": configured.get(mode),
+            "gate_off": _false_refusals([r["refused_by"] for r in answerable]),
+            "chosen": (
+                None
+                if chosen is None
+                else _false_refusals([refused_by(r, chosen) for r in answerable])
+            ),
+            "no_answer": {
+                "n": len(no_answer),
+                "model_gate_off": sum(r["refused_by"] == "model" for r in no_answer),
+                "refused_chosen": (
+                    None
+                    if chosen is None
+                    else sum(refused_by(r, chosen) is not None for r in no_answer)
+                ),
+            },
+        }
+    return out
+
+
 def score_records(records: list[dict]) -> dict:
     header, rows = records[0], records[1:]
+    calibration = [r for r in rows if r["record"] == "calibration"]
     return {
+        "calibration": (
+            calibration_scores(header, calibration) if header.get("calibration") else None
+        ),
+        "paired": paired_stats(records),
         "retrieval": (
             score_retrieval(header, [r for r in rows if r["record"] == "retrieval"])
             if header["retrieval"]
@@ -1280,6 +1383,9 @@ def main(
     source.add_argument("--records", type=Path, help="a rag-records.jsonl written by score")
     score.add_argument("--golden", type=Path, default=Path("golden/golden_set.jsonl"))
     score.add_argument("--grades", type=Path, default=Path("golden/human_grades.jsonl"))
+    score.add_argument(
+        "--calibration", metavar="RUN_ID", help="with --run-id: the gate-off run under --runs"
+    )
     score.add_argument("--runs", type=Path, default=Path("runs"))
     score.add_argument(
         "--out", type=Path, help="report directory (default: runs/<id>/report, or the records' own)"
@@ -1368,7 +1474,8 @@ def main(
             parser.error(f"{args.records} isn't a records file written by score")
         out = args.out or args.records.parent
     else:
-        records = build_records(args.runs / args.run_id, args.golden, args.grades)
+        calibration = args.runs / args.calibration if args.calibration else None
+        records = build_records(args.runs / args.run_id, args.golden, args.grades, calibration)
         out = args.out or args.runs / args.run_id / "report"
     written = report.write_rag(records, score_records(records), out, with_records=not args.records)
     print("\n".join(f"wrote {path}" for path in written))

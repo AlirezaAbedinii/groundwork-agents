@@ -475,6 +475,880 @@
         }
       }
     },
+    "calibration": null,
+    "paired": {
+      "ambiguous": [],
+      "bootstrap": {
+        "MRR@10": {
+          "all": {
+            "difference": 0.125,
+            "high": 0.375,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.166667,
+              "high": 0.5,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.25,
+              "high": 0.5,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.25,
+              "high": 0.5,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        },
+        "R@1": {
+          "all": {
+            "difference": 0.375,
+            "high": 0.75,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.333333,
+              "high": 1.0,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.5,
+              "high": 0.5,
+              "low": 0.5,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.75,
+              "high": 1.0,
+              "low": 0.5,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.25,
+              "high": 0.5,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.5,
+              "high": 1.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        },
+        "R@10": {
+          "all": {
+            "difference": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        },
+        "R@3": {
+          "all": {
+            "difference": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        },
+        "R@5": {
+          "all": {
+            "difference": 0.0,
+            "high": 0.0,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        },
+        "nDCG@10": {
+          "all": {
+            "difference": 0.112337,
+            "high": 0.276803,
+            "low": 0.0,
+            "n": 4,
+            "resamples": 10000,
+            "seed": 0
+          },
+          "by_category": {
+            "lookup": {
+              "difference": 0.123023,
+              "high": 0.36907,
+              "low": 0.0,
+              "n": 3,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "multi_hop": {
+              "difference": 0.080279,
+              "high": 0.080279,
+              "low": 0.080279,
+              "n": 1,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "difference": 0.0,
+              "high": 0.0,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "targeted": {
+              "difference": 0.224675,
+              "high": 0.36907,
+              "low": 0.080279,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          },
+          "by_split": {
+            "dev": {
+              "difference": 0.04014,
+              "high": 0.080279,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            },
+            "test": {
+              "difference": 0.184535,
+              "high": 0.36907,
+              "low": 0.0,
+              "n": 2,
+              "resamples": 10000,
+              "seed": 0
+            }
+          }
+        }
+      },
+      "false_refusals": {
+        "dense": {
+          "all": {
+            "gate": {
+              "ci": [
+                0.045586,
+                0.699364
+              ],
+              "k": 1,
+              "n": 4,
+              "rate": 0.25
+            },
+            "model": {
+              "ci": [
+                0.045586,
+                0.699364
+              ],
+              "k": 1,
+              "n": 4,
+              "rate": 0.25
+            },
+            "refused": {
+              "ci": [
+                0.150036,
+                0.849964
+              ],
+              "k": 2,
+              "n": 4,
+              "rate": 0.5
+            }
+          },
+          "by_category": {
+            "lookup": {
+              "gate": {
+                "ci": [
+                  0.06149,
+                  0.792345
+                ],
+                "k": 1,
+                "n": 3,
+                "rate": 0.333333
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.561506
+                ],
+                "k": 0,
+                "n": 3,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.06149,
+                  0.792345
+                ],
+                "k": 1,
+                "n": 3,
+                "rate": 0.333333
+              }
+            },
+            "multi_hop": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.793457
+                ],
+                "k": 0,
+                "n": 1,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.206543,
+                  1.0
+                ],
+                "k": 1,
+                "n": 1,
+                "rate": 1.0
+              },
+              "refused": {
+                "ci": [
+                  0.206543,
+                  1.0
+                ],
+                "k": 1,
+                "n": 1,
+                "rate": 1.0
+              }
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "gate": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              }
+            },
+            "targeted": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              },
+              "refused": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              }
+            }
+          },
+          "by_split": {
+            "dev": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              },
+              "refused": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              }
+            },
+            "test": {
+              "gate": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.094529,
+                  0.905471
+                ],
+                "k": 1,
+                "n": 2,
+                "rate": 0.5
+              }
+            }
+          }
+        },
+        "hybrid": {
+          "all": {
+            "gate": {
+              "ci": [
+                0.0,
+                0.4899
+              ],
+              "k": 0,
+              "n": 4,
+              "rate": 0.0
+            },
+            "model": {
+              "ci": [
+                0.0,
+                0.4899
+              ],
+              "k": 0,
+              "n": 4,
+              "rate": 0.0
+            },
+            "refused": {
+              "ci": [
+                0.0,
+                0.4899
+              ],
+              "k": 0,
+              "n": 4,
+              "rate": 0.0
+            }
+          },
+          "by_category": {
+            "lookup": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.561506
+                ],
+                "k": 0,
+                "n": 3,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.561506
+                ],
+                "k": 0,
+                "n": 3,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.561506
+                ],
+                "k": 0,
+                "n": 3,
+                "rate": 0.0
+              }
+            },
+            "multi_hop": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.793457
+                ],
+                "k": 0,
+                "n": 1,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.793457
+                ],
+                "k": 0,
+                "n": 1,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.793457
+                ],
+                "k": 0,
+                "n": 1,
+                "rate": 0.0
+              }
+            }
+          },
+          "by_origin": {
+            "synthetic": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              }
+            },
+            "targeted": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              }
+            }
+          },
+          "by_split": {
+            "dev": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              }
+            },
+            "test": {
+              "gate": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "model": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              },
+              "refused": {
+                "ci": [
+                  0.0,
+                  0.657628
+                ],
+                "k": 0,
+                "n": 2,
+                "rate": 0.0
+              }
+            }
+          }
+        }
+      },
+      "mcnemar": {
+        "all": {
+          "n": 6,
+          "only_a": 0,
+          "only_b": 3,
+          "p_value": 0.25
+        },
+        "by_category": {
+          "lookup": {
+            "n": 3,
+            "only_a": 0,
+            "only_b": 1,
+            "p_value": 1.0
+          },
+          "multi_hop": {
+            "n": 1,
+            "only_a": 0,
+            "only_b": 1,
+            "p_value": 1.0
+          },
+          "no_answer": {
+            "n": 2,
+            "only_a": 0,
+            "only_b": 1,
+            "p_value": 1.0
+          }
+        },
+        "by_origin": {
+          "synthetic": {
+            "n": 2,
+            "only_a": 0,
+            "only_b": 1,
+            "p_value": 1.0
+          },
+          "targeted": {
+            "n": 4,
+            "only_a": 0,
+            "only_b": 2,
+            "p_value": 0.5
+          }
+        },
+        "by_split": {
+          "dev": {
+            "n": 3,
+            "only_a": 0,
+            "only_b": 2,
+            "p_value": 0.5
+          },
+          "test": {
+            "n": 3,
+            "only_a": 0,
+            "only_b": 1,
+            "p_value": 1.0
+          }
+        }
+      },
+      "modes": [
+        "dense",
+        "hybrid"
+      ]
+    },
     "retrieval": {
       "dense": {
         "refusal": {

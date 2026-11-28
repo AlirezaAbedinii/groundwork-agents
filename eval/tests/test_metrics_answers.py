@@ -113,6 +113,47 @@ def test_choose_threshold_needs_something_to_refuse():
         metrics.choose_threshold(points)
 
 
+# --- choosing a threshold by false refusals -----------------------------------------
+TENTHS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]  # ten answerable questions
+
+
+def test_false_refusal_threshold_is_the_highest_within_the_bound():
+    # 10 % of 10 allows one refusal: 0.2 refuses only 0.1, 0.3 would refuse two.
+    assert metrics.false_refusal_threshold(TENTHS, [F] * 10) == 0.2
+
+
+def test_a_model_refusal_below_the_threshold_costs_the_gate_nothing():
+    # The model refuses 0.1, which 0.2 would refuse anyway: still one refusal.
+    assert metrics.false_refusal_threshold(TENTHS, [T] + [F] * 9) == 0.2
+
+
+def test_a_model_refusal_above_the_threshold_uses_the_bound():
+    # The model refuses 0.9: that is the one refusal allowed, so the gate refuses nothing.
+    assert metrics.false_refusal_threshold(TENTHS, [F] * 8 + [T, F]) == 0.1
+
+
+def test_tied_scores_are_kept_or_refused_together():
+    # 20 questions allow two refusals; 0.5 refuses one (0.3) and keeps both at 0.5, the
+    # next score up (0.9) would refuse three.
+    scores = [0.3, 0.5, 0.5] + [0.9] * 17
+    t = metrics.false_refusal_threshold(scores, [F] * 20)
+    assert t == 0.5
+    assert sum(s < t for s in scores) == 1
+
+
+def test_no_threshold_when_the_model_alone_refuses_too_many():
+    with pytest.raises(ValueError, match="model alone refuses 2 of 10"):
+        metrics.false_refusal_threshold(TENTHS, [T, T] + [F] * 8)
+
+
+@pytest.mark.parametrize(
+    ("scores", "refused"), [([], []), ([0.5], [F, F]), ([math.nan], [F])]
+)
+def test_false_refusal_threshold_rejects_bad_input(scores, refused):
+    with pytest.raises(ValueError):
+        metrics.false_refusal_threshold(scores, refused)
+
+
 # --- Wilson intervals ---------------------------------------------------------------
 
 

@@ -454,6 +454,98 @@ def test_missing_searches_are_reported_not_scored(tmp_path, golden):
     assert "| dense | 3 |" in report  # 3 answerable questions left in dense mode
 
 
+# --- the refusal calibration --------------------------------------------------------
+GATE_OFF = CONFIG | {"thresholds": {"dense": 0.0, "hybrid": 0.0}}
+# (id, mode) -> (top score, refused by the model), as a run with the gate off records
+# them. Dev: q002 and s001 answerable, q004 no_answer; q001 is a test question.
+GATE_OFF_ASKS = {
+    ("q002", "dense"): (0.55, False),
+    ("s001", "dense"): (0.70, True),
+    ("q004", "dense"): (0.50, True),
+    ("q002", "hybrid"): (0.90, False),
+    ("s001", "hybrid"): (0.97, False),
+    ("q004", "hybrid"): (0.05, False),
+    ("q001", "hybrid"): (0.10, False),
+}
+
+
+def gate_off_run(tmp_path, config=GATE_OFF) -> None:
+    run_dir = tmp_path / "runs" / "gate-off"
+    run_dir.mkdir(parents=True)
+    stage = {"started_at": "2026-11-28T10:00:00+00:00", "config": config}
+    run = {"run_id": "gate-off", "started_at": stage["started_at"], "stages": {"answers": stage}}
+    (run_dir / "run.json").write_text(json.dumps(run))
+    rows = [
+        {
+            "id": qid,
+            "mode": mode,
+            "answer": "x",
+            "refused": model,
+            "refused_by": "model" if model else None,
+            "retrieval_confidence": score,
+            "contexts": [],
+            "citations": [],
+            "cost_usd": 0.0,
+            "total_ms": 1.0,
+        }
+        for (qid, mode), (score, model) in GATE_OFF_ASKS.items()
+    ]
+    (run_dir / "answers.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
+
+
+def test_thresholds_are_chosen_from_the_gate_off_run_on_dev_alone(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    gate_off_run(tmp_path)
+    calibration = tmp_path / "runs" / "gate-off"
+    records = rag_eval.build_records(tmp_path / "runs" / "run1", golden, None, calibration)
+    found = rag_eval.score_records(records)["calibration"]
+
+    # Hybrid: two answerable dev questions allow no refusal, so the threshold is the lower
+    # of their scores (0.90), not test q001's 0.10; it refuses dev's no_answer q004.
+    hybrid = found["hybrid"]
+    assert (hybrid["chosen_threshold"], hybrid["configured_threshold"]) == (0.90, None)
+    assert hybrid["chosen"]["refused"]["k"] == 0
+    assert hybrid["no_answer"] == {"n": 1, "model_gate_off": 0, "refused_chosen": 1}
+    # Dense: the model alone refuses s001, past the bound, so no threshold meets it.
+    dense = found["dense"]
+    assert dense["chosen_threshold"] is None
+    assert dense["gate_off"]["model"]["k"] == 1
+    assert dense["no_answer"]["model_gate_off"] == 1
+
+    text = report.rag_markdown(records[0], rag_eval.score_records(records))
+    assert "## Refusal calibration" in text
+    assert "| hybrid | 0/2 · 0.000 [0.00, 0.66] | 0.9 | n/a |" in text
+    assert "(highest F1 on dev)" in text
+
+
+def test_the_calibration_rows_rescore_from_the_records(tmp_path, golden):
+    collect(tmp_path, golden, FakeRag())
+    gate_off_run(tmp_path)
+    first, second = tmp_path / "first", tmp_path / "second"
+    args = ["score", "--run-id", "run1", "--golden", str(golden), "--runs", str(tmp_path / "runs")]
+    args += ["--grades", str(tmp_path / "none.jsonl"), "--calibration", "gate-off"]
+    assert rag_eval.main([*args, "--out", str(first)]) == 0
+    rescore = ["score", "--records", str(first / "rag-records.jsonl"), "--out", str(second)]
+    assert rag_eval.main(rescore) == 0
+    for name in ["rag.md", "rag.json", "refusal_dense.svg", "refusal_hybrid.svg"]:
+        assert (second / name).read_bytes() == (first / name).read_bytes(), name
+
+
+@pytest.mark.parametrize(
+    ("config", "message"),
+    [(CONFIG, "the gate was on"), (GATE_OFF | {"collection": "other"}, "collection differ")],
+)
+def test_a_calibration_run_must_have_the_gate_off_and_the_same_settings(
+    tmp_path, golden, config, message
+):
+    collect(tmp_path, golden, FakeRag())
+    gate_off_run(tmp_path, config)
+    with pytest.raises(SystemExit, match=message):
+        rag_eval.build_records(
+            tmp_path / "runs" / "run1", golden, None, tmp_path / "runs" / "gate-off"
+        )
+
+
 # --- the report ---------------------------------------------------------------------
 
 

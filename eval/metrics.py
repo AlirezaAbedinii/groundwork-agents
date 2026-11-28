@@ -204,6 +204,51 @@ def choose_threshold(points: Sequence[SweepPoint]) -> float:
     return max(points, key=lambda p: (p.prf.f1, -p.threshold)).threshold
 
 
+# The share of answerable dev questions the system may refuse, gate and model together.
+FALSE_REFUSAL_BOUND = 0.10
+
+
+def false_refusal_threshold(
+    scores: Sequence[float], model_refused: Sequence[bool], bound: float = FALSE_REFUSAL_BOUND
+) -> float:
+    """The highest gate threshold at which at most ``bound`` of answerable questions are
+    refused, by the gate or by the model.
+
+    One entry per answerable question, from an answer run with the gate off: its top
+    hit's score, and whether the model refused it after reading the contexts. At
+    threshold t a question is refused if its score is below t or the model refused it, so
+    the share refused only rises with t, and the highest t within the bound refuses the
+    most no_answer questions the bound allows. The model's refusals count against the
+    bound because a user loses the answer either way; a question the model refuses costs
+    the gate nothing more. The result is one of the scores, the lowest-scoring question
+    kept, which passes because the gate refuses strictly below it. Raises ValueError when
+    there is no question, or when the model alone refuses more than the bound allows.
+    """
+    if len(scores) != len(model_refused):
+        raise ValueError(f"{len(scores)} scores for {len(model_refused)} model refusals")
+    if not scores:
+        raise ValueError("no answerable question to calibrate on")
+    if not all(math.isfinite(s) for s in scores):
+        raise ValueError("scores must be finite numbers")
+    if not 0.0 <= bound <= 1.0:
+        raise ValueError(f"bound {bound} is not a share")
+    allowed = math.floor(bound * len(scores) + 1e-9)  # the most questions refused
+    if sum(model_refused) > allowed:
+        raise ValueError(
+            f"the model alone refuses {sum(model_refused)} of {len(scores)}, more than the "
+            f"bound of {bound:.0%} allows"
+        )
+    # Ascending, each threshold refuses every question below it: stop before the first
+    # one that refuses too many.
+    best = min(scores)
+    for t in sorted(set(scores)):
+        refused = sum(s < t or m for s, m in zip(scores, model_refused, strict=True))
+        if refused > allowed:
+            break
+        best = t
+    return best
+
+
 # The two refusers of the RAG service, in the order a question meets them.
 REFUSERS = ("gate", "model")
 

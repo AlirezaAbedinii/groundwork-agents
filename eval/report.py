@@ -86,9 +86,15 @@ def rag_markdown(header: dict, scores: dict) -> str:
         modes = header["retrieval"]["modes"]
         lines += _retrieval_section(header, scores["retrieval"], modes)
         lines += _snippet_section(scores["retrieval"], modes)
-        lines += _refusal_section(scores["retrieval"], modes)
+    if scores.get("calibration"):
+        lines += _calibration_section(header["calibration"], scores["calibration"])
+    if scores["retrieval"]:
+        calibrated = bool(scores.get("calibration"))
+        lines += _refusal_section(scores["retrieval"], header["retrieval"]["modes"], calibrated)
     if scores["answers"]:
         lines += _answers_section(header, scores["answers"])
+    if scores.get("paired"):
+        lines += _stats_sections(scores["paired"])
     return "\n".join(lines) + "\n"
 
 
@@ -184,12 +190,67 @@ def _snippet_section(scores: dict, modes: list[str]) -> list[str]:
     return lines
 
 
-def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
+def _calibration_section(info: dict, scores: dict) -> list[str]:
     rows = []
+    for m, c in scores.items():
+        chosen, at, na = c["chosen_threshold_config"], c["chosen"], c["no_answer"]
+        configured = c["configured_threshold"]
+        rows.append(
+            [
+                m,
+                _share_ci(c["gate_off"]["model"]),
+                "n/a" if chosen is None else threshold_text(chosen),
+                "n/a" if configured is None else threshold_text(configured),
+                "n/a"
+                if at is None
+                else f"{_share_ci(at['refused'])}: gate {at['gate']['k']}, "
+                f"model {at['model']['k']}",
+                f"{na['model_gate_off']}/{na['n']}",
+                "n/a" if na["refused_chosen"] is None else f"{na['refused_chosen']}/{na['n']}",
+            ]
+        )
+    bound = next(iter(scores.values()))["bound"]
+    missing = (
+        [f"{info['missing']} question-mode pairs of that run have no answer and are left out."]
+        if info["missing"]
+        else []
+    )
+    return [
+        "",
+        "## Refusal calibration",
+        "",
+        f"Each mode's threshold is chosen on the dev split alone, from run `{info['run_id']}` "
+        f"(collected {info['collected']}), which answered with the gate off (every threshold "
+        "0), so the model's own refusals are known for every question. The threshold is the "
+        f"highest at which at most {bound:.0%} of dev's answerable questions are refused, by "
+        "the gate or by the model: a user loses the answer either way, and a higher threshold "
+        "refuses more no_answer questions, so it is the strictest gate the bound allows. It is "
+        "printed as the value to configure; the gate refuses strictly below it, so the "
+        "question it was chosen at passes.",
+        *missing,
+        "",
+        *_table(
+            [
+                "mode",
+                "answerable refused by the model, gate off",
+                "threshold chosen",
+                "configured",
+                "answerable refused at it",
+                "no_answer refused by the model, gate off",
+                "no_answer refused at it",
+            ],
+            rows,
+        ),
+    ]
+
+
+def _refusal_section(scores: dict, modes: list[str], calibrated: bool = False) -> list[str]:
+    rows = []
+    best = "highest F1 on dev" if calibrated else "chosen on dev"
     for m in modes:
         r = scores[m]["refusal"]
         for label, threshold, result in (
-            ("chosen on dev", r["chosen_threshold_config"], r["chosen"] and r["chosen"]["test"]),
+            (best, r["chosen_threshold_config"], r["chosen"] and r["chosen"]["test"]),
             ("configured", r["configured_threshold"], r["configured"]),
         ):
             if threshold is None or result is None:
@@ -206,16 +267,24 @@ def _refusal_section(scores: dict, modes: list[str]) -> list[str]:
                 ]
             )
     test = scores[modes[0]]["refusal"]["test"] if modes else {"n": 0, "should_refuse": 0}
+    chosen = (
+        "The configured threshold is the one chosen by false refusals (Refusal calibration); "
+        "the threshold with the highest F1 on the dev split (ties to the lower) is shown "
+        "beside it. Both are measured"
+        if calibrated
+        else "Each mode's threshold is chosen on the dev split (the highest F1, ties to the "
+        "lower threshold) and measured"
+    )
     return [
         "",
         "## Refusal gate",
         "",
         "The gate refuses before generating when the top hit's score is below the mode's "
-        "threshold; a question should be refused if and only if it is no_answer. Each "
-        "mode's threshold is chosen on the dev split (the highest F1, ties to the lower "
-        f"threshold) and measured on the test split ({test['n']} questions, "
-        f"{test['should_refuse']} to refuse), with 95 % Wilson intervals; the configured "
-        "threshold is shown for comparison. A chosen threshold is printed as the value to "
+        "threshold; a question should be refused if and only if it is no_answer. "
+        f"{chosen} on the test split ({test['n']} questions, "
+        f"{test['should_refuse']} to refuse), with 95 % Wilson intervals"
+        + ("." if calibrated else "; the configured threshold is shown for comparison.")
+        + " A chosen threshold is printed as the value to "
         "configure: the dev score it was chosen at, truncated so that every decision stays "
         "the same (the gate refuses strictly below it, so rounding up would refuse that "
         "question). Gate only: refusals by the model itself come from the answer run.",
@@ -533,10 +602,11 @@ def write_rag(records: list[dict], scores: dict, out: Path, *, with_records: boo
             )
             for split in ("dev", "test")
         ]
+        calibrated = (scores.get("calibration") or {}).get(mode)
         files[f"refusal_{mode}.svg"] = svg.refusal_chart(
             f"Refusal gate, {mode}: precision and recall against the threshold",
             panels,
-            r["chosen_threshold_config"],
+            calibrated["chosen_threshold_config"] if calibrated else r["chosen_threshold_config"],
         )
     if with_records:
         files["rag-records.jsonl"] = "".join(
@@ -1198,11 +1268,17 @@ def stats_markdown(header: dict, stats: dict) -> str:
         "",
         f"Run `{header['run_id']}`, collected {header['collected']}; computed from its "
         "records alone.",
+        *_stats_sections(stats),
     ]
+    return "\n".join(lines) + "\n"
+
+
+def _stats_sections(stats: dict) -> list[str]:
+    lines: list[str] = []
     if stats["false_refusals"]:
         lines += _false_refusal_section(stats["false_refusals"])
     if stats["mcnemar"] or stats["bootstrap"]:
         lines += _paired_section(stats)
     if stats["ambiguous"]:
         lines += _ambiguous_section(stats["ambiguous"])
-    return "\n".join(lines) + "\n"
+    return lines
