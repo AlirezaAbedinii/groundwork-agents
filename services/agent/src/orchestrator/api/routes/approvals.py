@@ -89,7 +89,7 @@ async def _lint_modified_plan(approval: dict, body: ResolveRequest) -> None:
     plan = ExecutionPlan.model_validate((body.payload or {}).get("plan"))  # the schema was checked first
     errors, rejected = check(
         plan, await current_registry(), task.get("request", ""), deliverables=rules.check_deliverables,
-        only_requested=rules.only_requested_files,
+        only_requested=rules.only_requested_files, one_specialist=rules.one_specialist_one_subtask,
     )
     if rejected:
         raise HTTPException(status_code=422, detail="Modified plan fails the plan lint: " + " ".join(errors))

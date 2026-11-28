@@ -51,24 +51,23 @@ class Transcript:
 
 
 # The smoke runs, as the fixtures script them (services/agent/tests/fixtures/llm).
-FERRY_FINAL = "FINAL: FERRY-429 explained from the Ferry documentation."  # it_84
-
-
-def ferry_subtasks(meaning: str, short_meaning: str) -> tuple[SubtaskOutput, ...]:
+def ferry_answer(meaning: str) -> str:
+    """The one research subtask's reviewed output (it_82), which is also the final answer."""
     return (
-        SubtaskOutput(  # it_82
+        f"FERRY-429-FACTS: FERRY-429 means {meaning}. The response carries Retry-After: wait "
+        "for that interval, then retry with backoff as ferry.retry.* sets it "
+        "(source: 04-error-codes.md)."
+    )
+
+
+def ferry_subtasks(meaning: str) -> tuple[SubtaskOutput, ...]:
+    return (
+        SubtaskOutput(
             "s1",
             "research",
-            "Look up FERRY-429 in the internal documentation",
-            f"FERRY-429-FACTS: FERRY-429 means {meaning}; the response carries Retry-After, "
-            "and clients retry per ferry.retry.* (source: 04-error-codes.md).",
-        ),
-        SubtaskOutput(  # it_83
-            "s2",
-            "writing",
-            "Write a short explanation of FERRY-429 and how clients should retry",
-            f"FERRY-429 EXPLAINER: FERRY-429 means {short_meaning}. Wait for the Retry-After "
-            "interval, then retry with backoff as ferry.retry.* sets it.",
+            "Look up FERRY-429 in the internal documentation and explain what it means and how "
+            "clients should retry",
+            ferry_answer(meaning),
         ),
     )
 
@@ -103,10 +102,8 @@ TRANSCRIPTS = [
     Transcript(
         "smoke-ferry as the fixtures run it",
         "smoke-ferry",
-        FERRY_FINAL,
-        ferry_subtasks(
-            "the client exceeded its submission quota", "the submission quota was exceeded"
-        ),
+        ferry_answer("the client exceeded its submission quota"),
+        ferry_subtasks("the client exceeded its submission quota"),
         {"c1": True, "c2": True},
     ),
     Transcript(
@@ -120,8 +117,8 @@ TRANSCRIPTS = [
     Transcript(
         "doctored: FERRY-429 given the wrong meaning",
         "smoke-ferry",
-        FERRY_FINAL,
-        ferry_subtasks("the Ferry server is temporarily overloaded", "the server is overloaded"),
+        ferry_answer("the Ferry server is temporarily overloaded"),
+        ferry_subtasks("the Ferry server is temporarily overloaded"),
         {"c1": False, "c2": True},
     ),
     Transcript(

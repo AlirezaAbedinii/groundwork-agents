@@ -47,6 +47,9 @@ from orchestrator.tools.registry import ToolRegistry
 pytestmark = pytest.mark.anyio
 
 SHAPES = Path(__file__).parents[1] / "fixtures" / "review_evidence"
+# failed_queries' plan gives analysis's work to a writing subtask after it, which rules
+# version 6 refuses; version 5, the last that allows it, checks the evidence the same way.
+SPLIT_RULES = 5
 RANK_REQUEST = "Using only the demo database, rank Chroma, Qdrant and Weaviate by GitHub stars and give the counts."
 TIMEOUT_REQUEST = "From the team's documentation only: what is the default idle timeout of the gateway's connection pool?"
 
@@ -138,7 +141,7 @@ def openings(prompts: list[str]) -> list[str]:
 
 
 async def test_estimates_after_every_query_failed_go_back_without_review():
-    task_id, state, repo, llm = await run("failed_queries", RANK_REQUEST)
+    task_id, state, repo, llm = await run("failed_queries", RANK_REQUEST, SPLIT_RULES)
 
     s1 = state["subtask_results"]["s1"]
     assert (s1["status"], s1["score"], s1["no_tool_result"]) == ("rework", None, ["db_query"])

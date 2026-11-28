@@ -110,11 +110,13 @@ class Supervisor(BaseAgent):
         lint_plans: bool = True,
         check_deliverables: bool = True,
         only_requested_files: bool = True,
+        one_specialist_one_subtask: bool = True,
     ) -> Planned:
         """A plan for ``request`` from the tools in ``registry``, with what the lint found."""
         return await decompose(
             self.llm, request, registry, memories=memories,
             lint_plans=lint_plans, check_deliverables=check_deliverables, only_requested_files=only_requested_files,
+            one_specialist_one_subtask=one_specialist_one_subtask,
         )
 
     async def synthesize(

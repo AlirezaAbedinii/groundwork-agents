@@ -15,7 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-CURRENT_RULES_VERSION = 5
+CURRENT_RULES_VERSION = 6
 
 
 class UnknownRulesVersion(ValueError):
@@ -39,24 +39,30 @@ class Rules:
     # The lint refuses a deliverable whose path the request does not name, and file_write
     # in a plan that delivers no file the request names.
     only_requested_files: bool
+    # The lint refuses a plan of more than one subtask when one specialist owns every
+    # tool its subtasks list.
+    one_specialist_one_subtask: bool
 
 
 _SWITCHES = {
     # before ADR 0017
     1: Rules(lint_plans=False, deliver_single_output=False, check_deliverables=False, require_tool_results=False,
-             only_requested_files=False),
+             only_requested_files=False, one_specialist_one_subtask=False),
     # ADR 0017
     2: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=False, require_tool_results=False,
-             only_requested_files=False),
+             only_requested_files=False, one_specialist_one_subtask=False),
     # ADR 0019
     3: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=False,
-             only_requested_files=False),
+             only_requested_files=False, one_specialist_one_subtask=False),
     # ADR 0020
     4: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True,
-             only_requested_files=False),
+             only_requested_files=False, one_specialist_one_subtask=False),
     # ADR 0019, addendum of 2026-11-26
     5: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True,
-             only_requested_files=True),
+             only_requested_files=True, one_specialist_one_subtask=False),
+    # ADR 0017, addendum of 2026-11-28
+    6: Rules(lint_plans=True, deliver_single_output=True, check_deliverables=True, require_tool_results=True,
+             only_requested_files=True, one_specialist_one_subtask=True),
 }
 
 

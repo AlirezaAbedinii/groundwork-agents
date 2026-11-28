@@ -5,7 +5,8 @@ decompose and saw no tools: work given to a specialist that does not own the too
 it needs, tool-less research and analysis steps, code written in one subtask and
 run in another, and four to eight subtasks that open with research. Each must
 fail. A plan with one subtask, or one subtask per owner of the tools it needs,
-must pass. Files the request asks to save must be the plan's deliverables, each
+must pass, and work one specialist owns every tool of must be one subtask. Files the
+request asks to save must be the plan's deliverables, each
 written by a subtask that owns and lists file_write; a deliverable must be named in the
 request, and a plan without one writes no file.
 """
@@ -140,7 +141,7 @@ def test_code_written_in_one_subtask_and_run_in_another_after_research_fails_on_
 
 
 def test_a_research_first_plan_of_six_steps_fails_on_size():
-    shape = plan(*(step(f"s{n}", "research", ["web_search"]) for n in range(1, 7)))
+    shape = plan(step("s1", "research", ["web_search"]), *(step(f"s{n}", "analysis", ["db_query"]) for n in range(2, 7)))
 
     assert lint(shape, registry(), 4)[0].startswith("The plan has 6 subtasks")
     assert lint(shape, registry(), 6) == []  # the cap is a setting
@@ -176,11 +177,86 @@ def test_every_problem_is_reported_once():
                  "Summarise the docs into notes.md.", id="docs to a file in one research subtask"),
     pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "research", ["web_search"])),
                  "", id="one subtask per owner"),
-    pytest.param(plan(step("s1", "code", ["code_exec"]), step("s2", "writing", [], depends_on=["s1"])),
-                 "", id="writing from its inputs"),
+    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "research", ["web_search"]),
+                      step("s3", "writing", [], depends_on=["s1", "s2"])),
+                 "", id="writing from two specialists' outputs"),
 ])
 def test_a_minimal_plan_passes(shape, request_text):
     assert lint(shape, registry(), 4, request_text) == []
+
+
+# --- the lint: one specialist's work is one subtask ------------------------------------
+
+
+def split(named: str, tools: str, deliverable: bool = False) -> str:
+    """The message for a plan that splits work ``named`` owns every listed tool of."""
+    files = " and writes every deliverable" if deliverable else ""
+    return (
+        f"The plan splits work that one specialist can do: {named} owns every tool its subtasks list ({tools}). "
+        f"Plan exactly one {named} subtask that lists them all and does the whole task{files}; add a subtask only "
+        "for work that needs another specialist's tools."
+    )
+
+
+@pytest.mark.parametrize(("shape", "message"), [
+    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "analysis", ["code_exec"], depends_on=["s1"])),
+                 split("analysis", "db_query, code_exec"), id="one specialist in two subtasks"),
+    pytest.param(plan(step("s1", "code", ["code_exec"]), step("s2", "analysis", ["code_exec"], depends_on=["s1"])),
+                 split("code", "code_exec"), id="two specialists that both own the tool"),
+    pytest.param(plan(step("s1", "research", ["rag_search"]), step("s2", "writing", ["file_write"], depends_on=["s1"]),
+                      deliverables={"notes.md": "s2"}),
+                 split("research", "rag_search, file_write", deliverable=True), id="a writer for a file research can write"),
+    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "writing", [], depends_on=["s1"])),
+                 split("analysis", "db_query"), id="a writing subtask with no tools adds none"),
+    pytest.param(plan(step("s1", "writing", ["file_read"]), step("s2", "code", ["code_exec"], depends_on=["s1"])),
+                 split("code", "file_read, code_exec"), id="named: the first in the plan that owns every tool"),
+])
+def test_a_plan_that_splits_work_one_specialist_owns_fails(shape, message):
+    assert lint(shape, registry(), 4, "Put the notes in `notes.md`." if shape.deliverables else "") == [message]
+
+
+def test_a_plan_whose_subtasks_list_no_tools_is_one_subtask():
+    shape = plan(step("s1", "writing", []), step("s2", "writing", [], depends_on=["s1"]))
+
+    assert lint(shape, registry(), 4) == [
+        "The plan splits work that one specialist can do: its subtasks list no tools. Plan exactly one writing "
+        "subtask that does the whole task; add a subtask only for work that needs another specialist's tools."
+    ]
+
+
+def test_a_misassigned_split_names_the_specialist_that_owns_every_tool():
+    shape = plan(step("s1", "research", ["db_query"]), step("s2", "analysis", ["code_exec"], depends_on=["s1"]))
+
+    assert lint(shape, registry(), 4) == [
+        "s1: 'db_query' belongs to analysis, not research; give this subtask to a specialist that owns all of its "
+        "tools.",
+        split("analysis", "db_query, code_exec"),
+    ]
+
+
+@pytest.mark.parametrize("specialist", ["research", "analysis", "code"])
+def test_the_check_stands_aside_while_a_tool_bound_subtask_lists_no_tools(specialist):
+    shape = plan(step("s1", "analysis", ["db_query"]), step("s2", specialist, [], depends_on=["s1"]))
+
+    (error,) = lint(shape, registry(), 4)
+    assert error.startswith(f"s2: list the tools this {specialist} subtask will call")
+
+
+@pytest.mark.parametrize("shape", [
+    pytest.param(plan(step("s1", "analysis", ["db_query"]), step("s2", "research", ["web_search"])),
+                 id="two specialists' tools"),
+    pytest.param(plan(step("s1", "analysis", ["db_query", "code_exec"])), id="one subtask"),
+    pytest.param(plan(step("s1", "code", ["code_exec"]), step("s2", "research", ["teleport"])),
+                 id="a tool nobody owns"),
+])
+def test_a_plan_no_single_specialist_can_carry_out_is_not_merged(shape):
+    assert not any(e.startswith("The plan splits work") for e in lint(shape, registry(), 4))
+
+
+def test_without_the_switch_one_specialists_work_may_be_split():
+    shape = plan(step("s1", "analysis", ["db_query"]), step("s2", "analysis", ["code_exec"], depends_on=["s1"]))
+
+    assert lint(shape, registry(), 4, one_specialist=False) == []
 
 
 def test_the_lint_changes_neither_the_plan_nor_the_registry():
@@ -263,6 +339,33 @@ async def test_with_the_lint_off_its_findings_are_reported_but_reject_nothing(tm
 
     assert planned.plan == WRONG_OWNER
     assert planned.lint_errors == lint(WRONG_OWNER, registry(), 4)
+    assert len(llm.prompts) == 1
+
+
+SPLIT = plan(step("s1", "analysis", ["db_query"], "Fetch the rows"),
+             step("s2", "analysis", ["code_exec"], "Compute the ranking", ["s1"]))
+WHOLE = plan(step("s1", "analysis", ["db_query", "code_exec"], "Fetch the rows and compute the ranking"))
+
+
+@pytest.mark.anyio
+async def test_a_split_plan_is_retried_once_with_the_specialist_named(tmp_path):
+    llm = fixtures(tmp_path, SPLIT, WHOLE)
+
+    planned = await decompose(llm, "rank the rows", registry())
+
+    assert planned.plan == WHOLE
+    first, retry = llm.prompts
+    assert "2. If one specialist owns every tool the task needs, plan exactly one subtask for it." in first
+    assert f"Validation error:\n{split('analysis', 'db_query, code_exec')}" in retry
+
+
+@pytest.mark.anyio
+async def test_a_split_plan_under_rules_before_the_check_is_kept(tmp_path):
+    llm = fixtures(tmp_path, SPLIT, WHOLE)
+
+    planned = await decompose(llm, "rank the rows", registry(), one_specialist_one_subtask=False)
+
+    assert planned.plan == SPLIT and planned.lint_errors == []
     assert len(llm.prompts) == 1
 
 

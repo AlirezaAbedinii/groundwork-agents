@@ -11,7 +11,7 @@ REQUEST = (
     "compute the GitHub star ranking from the demo database, generate a comparison "
     "table using Python, and write a comparison memo saved as memo.md."
 )
-REFUSED = "Unknown rules version 99; this build knows [1, 2, 3, 4, 5]"
+REFUSED = "Unknown rules version 99; this build knows [1, 2, 3, 4, 5, 6]"
 
 
 def _pending(client, task_id: str) -> dict:

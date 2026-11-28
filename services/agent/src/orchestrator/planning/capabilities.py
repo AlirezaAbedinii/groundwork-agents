@@ -7,6 +7,10 @@ that names it fails the lint. A specialist is only ever offered the tools it own
 so a subtask given to the wrong specialist would not fail on its own: it would be
 answered from the model's memory. The lint catches that before anything runs.
 
+A plan has one subtask when one specialist owns every tool it lists: each further
+subtask is another hand-off and another review, and work one specialist owns gains
+nothing by being split.
+
 A plan also lists the files the task must deliver. The lint cannot know every file a
 request asks for, so it cross-checks the plan against a conservative scan of the
 request (``requested_files``): a back-quoted file name that the request asks to save.
@@ -114,6 +118,7 @@ def lint(
     *,
     deliverables: bool = True,
     only_requested: bool = True,
+    one_specialist: bool = True,
 ) -> list[str]:
     """What is wrong with ``plan`` for this registry and ``request``, one message per problem;
     empty if nothing.
@@ -123,7 +128,8 @@ def lint(
     ``deliverables`` (the rules of a task from before deliverables were checked) the
     plan's deliverables are not linted; without ``only_requested`` (before deliverables
     had to be named in the request) a deliverable the request does not name, and
-    file_write in a plan without one, are allowed.
+    file_write in a plan without one, are allowed; without ``one_specialist`` (before
+    plans had to keep one specialist's work in one subtask) a plan may split it.
     """
     available = _available(registry)
     errors: list[str] = []
@@ -151,9 +157,41 @@ def lint(
                     f"{subtask.id}: {tool!r} belongs to {' or '.join(owners)}, not {subtask.specialist}; "
                     "give this subtask to a specialist that owns all of its tools."
                 )
+    if one_specialist:
+        errors.extend(_lint_one_specialist(plan, registry))
     if deliverables:
         errors.extend(_lint_deliverables(plan, registry, request, only_requested))
     return errors
+
+
+def _lint_one_specialist(plan: ExecutionPlan, registry: ToolRegistry) -> list[str]:
+    """A plan of several subtasks whose listed tools one specialist owns is to be a single subtask.
+
+    A subtask that lists no tools adds none: a writing subtask that works from its inputs
+    needs no other specialist's tools, so it is no reason to split. The check stands aside
+    while a research, analysis or code subtask lists no tools. That is already an error, and
+    a specialist named from an incomplete list of tools can be the wrong one. The specialist
+    named is the first in the plan that owns every tool, or else the first that does.
+    """
+    if len(plan.subtasks) < 2 or any(not s.tools and s.specialist in TOOL_BOUND for s in plan.subtasks):
+        return []
+    listed = list(dict.fromkeys(tool for subtask in plan.subtasks for tool in subtask.tools))
+    owners = [
+        specialist for specialist in SPECIALISTS
+        if set(listed) <= {spec.name for spec in registry.tools_for(specialist)}
+    ]
+    if not owners:
+        return []
+    named = next((s.specialist for s in plan.subtasks if s.specialist in owners), owners[0])
+    if listed:
+        reason, scope = f"{named} owns every tool its subtasks list ({', '.join(listed)})", "lists them all and does"
+    else:
+        reason, scope = "its subtasks list no tools", "does"
+    files = " and writes every deliverable" if plan.deliverables else ""
+    return [
+        f"The plan splits work that one specialist can do: {reason}. Plan exactly one {named} subtask that "
+        f"{scope} the whole task{files}; add a subtask only for work that needs another specialist's tools."
+    ]
 
 
 def _lint_deliverables(plan: ExecutionPlan, registry: ToolRegistry, request: str, only_requested: bool) -> list[str]:
@@ -210,10 +248,12 @@ def check(
     *,
     deliverables: bool = True,
     only_requested: bool = True,
+    one_specialist: bool = True,
 ) -> tuple[list[str], bool]:
     """The lint's findings under ``MAX_PLAN_SUBTASKS``, and whether ``PLAN_LINT`` makes them reject the plan."""
     settings = get_settings()
     errors = lint(
-        plan, registry, settings.max_plan_subtasks, request, deliverables=deliverables, only_requested=only_requested
+        plan, registry, settings.max_plan_subtasks, request,
+        deliverables=deliverables, only_requested=only_requested, one_specialist=one_specialist,
     )
     return errors, bool(errors) and settings.plan_lint == "enforce"

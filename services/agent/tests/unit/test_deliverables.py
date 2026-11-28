@@ -27,6 +27,11 @@ pytestmark = pytest.mark.anyio
 
 FEEDBACK = "Required file not written: `notes.md`"
 
+# The last rules version under which a plan may split one specialist's work into
+# several subtasks, as the plans here do; version 6 refuses such a plan (test_plan_lint).
+# What these tests check is the same under both versions.
+SPLIT_RULES = 5
+
 
 def fx(directory, name: str, agent: str, text: str = "", match: list[str] | None = None,
        writes: list[str] | None = None, search: bool = False) -> None:
@@ -104,7 +109,7 @@ def fixtures(tmp_path):
 
 
 async def run(fixtures, request: str = "Look the topic up and keep notes in notes.md.",
-              rules_version: int = CURRENT_RULES_VERSION):
+              rules_version: int = SPLIT_RULES):
     repo, store, llm = InMemoryTaskRepo(), InMemoryInvocationStore(), Recording(MockLLMClient(fixtures))
     graph = build_graph(llm=llm, registry=build_default_registry(store), repo=repo, checkpointer=None,
                         approvals=InMemoryApprovalQueue())
@@ -262,7 +267,8 @@ async def test_a_deliverable_the_request_does_not_name(fixtures, rules_version, 
 
     assert task["status"] == status
     if status == "failed":
-        assert task["error"].startswith("Plan invalid after retry: The task does not name `notes.md`")
+        assert task["error"].startswith("Plan invalid after retry: ")
+        assert "The task does not name `notes.md`" in task["error"]
         assert llm.prompts("writing") == []
     else:
         assert state["deliverables_outcome"] == "ok"

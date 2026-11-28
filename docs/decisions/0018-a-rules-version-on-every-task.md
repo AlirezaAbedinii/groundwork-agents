@@ -116,3 +116,12 @@ addendum of 2026-11-26). Both checks apply to the planner's plan, to a plan modi
 the plan gate, and in the approvals API. A new task gets version 5. A task from version
 4 replays and resumes without the checks. The planner's rule on deliverables and the
 synthesis rule for a plan without files are prompt text, so they need no version.
+
+## Addendum (2026-11-28): version 6
+
+Version 6 adds one switch, `one_specialist_one_subtask`, and keeps version 5's on. With
+it, the plan lint refuses a plan of more than one subtask when one specialist owns every
+tool its subtasks list (ADR 0017, addendum of 2026-11-28). The check applies to the
+planner's plan, to a plan modified at the plan gate, and in the approvals API. A new
+task gets version 6. A task from version 5 replays and resumes without the check. The
+planner's rule 2, which asks for the same plan, is prompt text and is unchanged.

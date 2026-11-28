@@ -6,6 +6,6 @@
     "-> rag_list_sources returned:"
   ],
   "response": {
-    "text": "FERRY-429-FACTS: FERRY-429 means the client exceeded its submission quota; the response carries Retry-After, and clients retry per ferry.retry.* (source: 04-error-codes.md)."
+    "text": "FERRY-429-FACTS: FERRY-429 means the client exceeded its submission quota. The response carries Retry-After: wait for that interval, then retry with backoff as ferry.retry.* sets it (source: 04-error-codes.md)."
   }
 }

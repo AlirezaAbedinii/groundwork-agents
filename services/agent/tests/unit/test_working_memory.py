@@ -18,7 +18,12 @@ from orchestrator.memory import working
 from orchestrator.memory.working import InMemoryWorkingMemory
 from orchestrator.tools.base import InMemoryInvocationStore
 from orchestrator.tools.defaults import build_default_registry
-from orchestrator.rules import CURRENT_RULES_VERSION
+
+
+# The last rules version under which a plan may split one specialist's work into
+# several subtasks, as a plan here does; version 6 refuses such a plan (test_plan_lint).
+# What these tests check is the same under both versions.
+SPLIT_RULES = 5
 
 
 def test_plan_roundtrip_and_user():
@@ -140,7 +145,7 @@ async def test_graph_shares_and_clears_working_memory(tmp_path):
     task_id = repo.create_task("look up A and summarize", user_id="alice")
     await graph.ainvoke({"task_id": task_id, "request": "look up A and summarize",
                          "user_id": "alice", "subtask_results": {}, "dispatch_log": [],
-                         "rules_version": CURRENT_RULES_VERSION})
+                         "rules_version": SPLIT_RULES})
 
     assert ("start", task_id, "alice") in memory.calls
     assert ("set_plan", task_id) in memory.calls

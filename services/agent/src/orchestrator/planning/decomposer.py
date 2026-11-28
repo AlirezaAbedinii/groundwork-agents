@@ -8,12 +8,14 @@ Pydantic can run (unique ids, known dependencies, no cycles), and the plan lint
 (every tool exists and belongs to its subtask's specialist, a tool-bound subtask
 names its tools, the plan is within the size limit, each deliverable's producer owns
 file_write, every file the request asks to save is a deliverable, every deliverable is
-named in the request, and a plan without one writes no file). A plan that fails either is
+named in the request, a plan without one writes no file, and a plan whose tools one
+specialist owns has one subtask). A plan that fails either is
 retried exactly once with the errors appended to the prompt. With
 ``plan_lint="off"`` the lint's findings are reported but reject nothing, and
 without ``lint_plans`` (the rules of a task from before the lint, orchestrator/rules.py)
 the lint does not run; without ``check_deliverables`` it leaves deliverables alone, and
-without ``only_requested_files`` it allows deliverables the request does not name.
+without ``only_requested_files`` it allows deliverables the request does not name, and
+without ``one_specialist_one_subtask`` it lets one specialist's work be split.
 """
 
 from __future__ import annotations
@@ -103,6 +105,7 @@ async def decompose(
     lint_plans: bool = True,
     check_deliverables: bool = True,
     only_requested_files: bool = True,
+    one_specialist_one_subtask: bool = True,
 ) -> Planned:
     settings = get_settings()
     prompt = PLAN_PROMPT.format(
@@ -120,7 +123,8 @@ async def decompose(
         if not lint_plans:
             return plan
         errors, rejected = check(
-            plan, registry, request, deliverables=check_deliverables, only_requested=only_requested_files
+            plan, registry, request, deliverables=check_deliverables, only_requested=only_requested_files,
+            one_specialist=one_specialist_one_subtask,
         )
         found.extend(errors)
         if rejected:

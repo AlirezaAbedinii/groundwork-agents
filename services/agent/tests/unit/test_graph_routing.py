@@ -38,6 +38,11 @@ def plan_text(subtasks: list[dict], confidence: float) -> str:
     return json.dumps({"task_summary": "test", "subtasks": subtasks, "confidence": confidence})
 
 
+# The last rules version under which a plan may split one specialist's work into
+# several subtasks, as some plans here do; version 6 refuses such a plan (test_plan_lint).
+# What these tests check is the same under both versions.
+SPLIT_RULES = 5
+
 # A tool each specialist owns, so a plan built from subtask() passes the plan lint.
 TOOL_OF = {"research": ["web_search"], "analysis": ["db_query"], "code": ["code_exec"], "writing": []}
 
@@ -76,7 +81,8 @@ def repo():
     return InMemoryTaskRepo()
 
 
-async def run(tmp_path, repo, request_text: str, store: InMemoryInvocationStore | None = None):
+async def run(tmp_path, repo, request_text: str, store: InMemoryInvocationStore | None = None,
+              rules_version: int = CURRENT_RULES_VERSION):
     graph = build_graph(
         llm=MockLLMClient(tmp_path),
         registry=build_default_registry(store if store is not None else InMemoryInvocationStore()),
@@ -87,7 +93,7 @@ async def run(tmp_path, repo, request_text: str, store: InMemoryInvocationStore 
     task_id = repo.create_task(request_text)
     return task_id, await graph.ainvoke(
         {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": [],
-         "rules_version": CURRENT_RULES_VERSION}
+         "rules_version": rules_version}
     )
 
 
@@ -101,14 +107,15 @@ def build(tmp_path, repo, queue, checkpointer):
     )
 
 
-async def run_until_pause(tmp_path, repo, request_text: str, queue, checkpointer=None):
+async def run_until_pause(tmp_path, repo, request_text: str, queue, checkpointer=None,
+                          rules_version: int = CURRENT_RULES_VERSION):
     """Build an interrupt-capable graph (MemorySaver) and run to the pause."""
     graph = build(tmp_path, repo, queue, checkpointer or MemorySaver())
     task_id = repo.create_task(request_text)
     config = {"configurable": {"thread_id": task_id}}
     state = await graph.ainvoke(
         {"task_id": task_id, "request": request_text, "subtask_results": {}, "dispatch_log": [],
-         "rules_version": CURRENT_RULES_VERSION},
+         "rules_version": rules_version},
         config,
     )
     return task_id, state, graph, config
@@ -125,7 +132,7 @@ async def test_happy_path_with_parallel_wave(tmp_path, repo):
     fx(tmp_path, "writing", "writing", "SUMMARY-OK")
     fx(tmp_path, "reviewer", "reviewer", verdict(5, "solid"))
 
-    task_id, state = await run(tmp_path, repo, "compare A and B")
+    task_id, state = await run(tmp_path, repo, "compare A and B", rules_version=SPLIT_RULES)
 
     assert state["final_output"] == "DONE"
     assert state["dispatch_log"][0] == ["s1", "s2"]  # independent subtasks batched together
@@ -152,17 +159,19 @@ async def test_every_specialist_sees_the_request_the_plan_paraphrased(tmp_path, 
     fx(tmp_path, "writing_with_request", "writing", "REPORT-OK", match=["Report the results", "2h5m"])
     fx(tmp_path, "reviewer", "reviewer", verdict(5, "solid"))
 
-    _, state = await run(tmp_path, repo, request)
+    _, state = await run(tmp_path, repo, request, rules_version=SPLIT_RULES)
 
     results = state["subtask_results"]
     assert (results["s1"]["output"], results["s2"]["output"]) == ("5415, 45, 7500, 5400", "REPORT-OK")
 
 
-@pytest.mark.parametrize(("specialists", "final", "synthesis_calls"), [
-    pytest.param(["research"], "OUT-research", 0, id="one subtask: its output, no synthesis"),
-    pytest.param(["research", "writing"], "DONE", 1, id="two subtasks: synthesized"),
+@pytest.mark.parametrize(("specialists", "final", "synthesis_calls", "rules_version"), [
+    pytest.param(["research"], "OUT-research", 0, CURRENT_RULES_VERSION, id="one subtask: its output, no synthesis"),
+    pytest.param(["research", "writing"], "DONE", 1, SPLIT_RULES, id="two subtasks: synthesized"),
 ])
-async def test_only_a_plan_of_several_subtasks_is_synthesized(tmp_path, repo, specialists, final, synthesis_calls):
+async def test_only_a_plan_of_several_subtasks_is_synthesized(
+    tmp_path, repo, specialists, final, synthesis_calls, rules_version
+):
     fx(tmp_path, "plan", "supervisor",
        plan_text([subtask(f"s{n}", name, f"step {n}") for n, name in enumerate(specialists, 1)], 0.9),
        match=["Create an execution plan"])
@@ -182,7 +191,7 @@ async def test_only_a_plan_of_several_subtasks_is_synthesized(tmp_path, repo, sp
                         checkpointer=None, approvals=InMemoryApprovalQueue())
     task_id = repo.create_task("do the steps")
     state = await graph.ainvoke({"task_id": task_id, "request": "do the steps", "subtask_results": {},
-                                 "dispatch_log": [], "rules_version": CURRENT_RULES_VERSION})
+                                 "dispatch_log": [], "rules_version": rules_version})
 
     assert state["final_output"] == repo.tasks[task_id]["final_output"] == final
     assert sum("Synthesize the final deliverable" in prompt for prompt in asked) == synthesis_calls
@@ -244,6 +253,33 @@ async def test_a_modified_plan_that_fails_the_lint_ends_the_run(tmp_path, repo):
     )
     assert not finished.get("dispatch_log") and not finished.get("subtask_results")
     assert len(repo.plans[task_id]) == 1  # the modified plan was never saved
+
+
+@pytest.mark.parametrize(("rules_version", "status"), [
+    pytest.param(CURRENT_RULES_VERSION, "failed", id="current rules: refused"),
+    pytest.param(SPLIT_RULES, "completed", id="version 5: it runs"),
+])
+async def test_a_modified_plan_that_splits_one_specialists_work(tmp_path, repo, rules_version, status):
+    fx(tmp_path, "plan", "supervisor", plan_text([subtask("s1", "research", "vague thing")], 0.3),
+       match=["Create an execution plan"])
+    fx(tmp_path, "synth", "supervisor", "DONE", match=["Synthesize the final deliverable"])
+    searched(tmp_path, "RESEARCH-OK")
+    fx(tmp_path, "reviewer", "reviewer", verdict(5))
+    queue = InMemoryApprovalQueue()
+    task_id, _, graph, config = await run_until_pause(tmp_path, repo, "look up A and B", queue,
+                                                      rules_version=rules_version)
+    halves = json.loads(plan_text([subtask("s1", "research", "look up A"), subtask("s2", "research", "look up B")],
+                                  0.9))
+
+    await decide(graph, config, queue, "modify", {"plan": halves})
+
+    assert repo.tasks[task_id]["status"] == status
+    if status == "failed":
+        assert repo.tasks[task_id]["error"] == (
+            "Modified plan fails the plan lint: The plan splits work that one specialist can do: research owns "
+            "every tool its subtasks list (web_search). Plan exactly one research subtask that lists them all and "
+            "does the whole task; add a subtask only for work that needs another specialist's tools."
+        )
 
 
 async def test_a_modified_plan_with_a_file_the_request_does_not_name_ends_the_run(tmp_path, repo):
@@ -586,7 +622,8 @@ async def test_the_allowance_escalates_an_attempt_that_no_counter_catches(tmp_pa
 async def test_a_subtask_waiting_for_its_escalation_does_not_run_meanwhile(tmp_path, repo):
     doomed_plan(tmp_path, sids=("s1", "s2"))
     queue = InMemoryApprovalQueue()
-    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "doomed pair", queue)
+    task_id, state, graph, config = await run_until_pause(tmp_path, repo, "doomed pair", queue,
+                                                          rules_version=SPLIT_RULES)
     # both failed twice in the same waves; gather takes s1 first
     assert paused_at(state)["sid"] == "s1"
     assert [counters(state, sid)[0] for sid in ("s1", "s2")] == [2, 2]

@@ -85,7 +85,7 @@ async def test_a_cyclic_plan_is_retried_once_with_the_error_then_fails(tmp_path)
 
 
 async def test_a_valid_plan_comes_back_parsed_without_reading_the_text():
-    plan = ExecutionPlan.model_validate(_plan([_subtask("s1", []), _subtask("s2", ["s1"])]))
+    plan = ExecutionPlan.model_validate(_plan([_subtask("s1", [])]))
     # text that no parser could read: decompose must use the provider-parsed object
     llm = RecordingLLM(CannedLLM(LLMResponse(text="<not json>", parsed=plan)))
 

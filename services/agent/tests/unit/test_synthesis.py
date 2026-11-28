@@ -26,11 +26,16 @@ from orchestrator.hitl.queue import InMemoryApprovalQueue
 from orchestrator.llm.messages import render_messages
 from orchestrator.llm.mock import LLMResponse, MockLLMClient
 from orchestrator.planning.schemas import ExecutionPlan
-from orchestrator.rules import CURRENT_RULES_VERSION
 from orchestrator.tools.base import InMemoryInvocationStore, InvocationRecord
 from orchestrator.tools.defaults import build_default_registry
 
 pytestmark = pytest.mark.anyio
+
+
+# The last rules version under which a plan may split one specialist's work into
+# several subtasks, as a plan here does; version 6 refuses such a plan (test_plan_lint).
+# What these tests check is the same under both versions.
+SPLIT_RULES = 5
 
 
 def step(sid: str, specialist: str, description: str, depends_on: list[str] | None = None) -> dict:
@@ -216,7 +221,7 @@ async def test_the_graphs_synthesis_sees_the_tasks_invocations(tmp_path, monkeyp
     task_id = repo.create_task("Write a memo to `memo.md`.")
     await graph.ainvoke({"task_id": task_id, "request": "Write a memo to `memo.md`.", "subtask_results": {},
                          "dispatch_log": [],
-                         "rules_version": CURRENT_RULES_VERSION})
+                         "rules_version": SPLIT_RULES})
 
     (prompt,) = [text for agent, text in llm.prompts if agent == "supervisor" and SYNTH_MARKER in text]
     assert "[s1] research: look it up\nTool calls: web_search succeeded\nReported by research:\nNOT DOCUMENTED" in prompt
